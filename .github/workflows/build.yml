@@ -1,0 +1,52 @@
+name: Build
+
+on:
+  push:
+    tags: [ "**" ]
+    branches: [ "main" ]
+
+jobs:
+  build:
+    permissions:
+      contents: write
+      actions: read
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+
+    - name: Install jq
+      run: sudo apt-get update && sudo apt-get install -y jq
+
+    - name: Export Settings
+      run: |
+        PROJECT_NAME=$(jq -r '.name' .claude-plugin/plugin.json)
+        echo "PROJECT_NAME=$PROJECT_NAME" >> $GITHUB_ENV
+        PROJECT_VERSION=$(jq -r '.version' .claude-plugin/plugin.json)
+        echo "PROJECT_VERSION=$PROJECT_VERSION" >> $GITHUB_ENV
+
+    - name: Create Release
+      id: create_release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: ${{ github.ref }}
+        release_name: ${{ env.PROJECT_NAME }} v${{ env.PROJECT_VERSION }}
+        draft: true
+
+    - name: Package Release
+      run: |
+        mkdir -p publish
+        zip -r publish/${{ env.PROJECT_NAME }}.zip skills/${{ env.PROJECT_NAME }}
+
+    - name: Upload Release
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: publish/${{ env.PROJECT_NAME }}.zip
+        asset_name: ${{ env.PROJECT_NAME }}.zip
+        asset_content_type: application/zip
