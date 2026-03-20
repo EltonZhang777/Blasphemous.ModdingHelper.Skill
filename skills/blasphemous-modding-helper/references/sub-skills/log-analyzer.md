@@ -8,8 +8,7 @@ Analyze log files for the game Blasphemous, focusing on debugging mod-related is
 - Prioritize mod code issues when analyzing bugs
 
 ## Log File Paths
-- Blasphemous Unity log file: `C:\Users\<username>\AppData\LocalLow\TheGameKitchen\Blasphemous\output_log.txt`
-  - In powershell, use `Join-Path $env:USERPROFILE "AppData\LocalLow\TheGameKitchen\Blasphemous\output_log.txt"`
+- Blasphemous Unity log file: `$env:USERPROFILE/AppData/LocalLow/TheGameKitchen/Blasphemous/output_log.txt`
 - BepInEx log file: `<modding_profile_path>/BepInEx/LogOutput.log`
   - `<modding_profile_path>` should be acquired from `preferences.md`
 

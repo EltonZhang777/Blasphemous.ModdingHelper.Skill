@@ -79,7 +79,7 @@ options:
 Validate if the user input paths exist and are valid using command-line tools. 
 
 Validation criteria:
-- At least one of `full_source_code_path` or `lightweight_source_code_path` must be valid.
+- The user should provide at least one of `full_source_code_path` or `lightweight_source_code_path`. Validate all user's provided paths as follows:
   - `full_source_code_path` is the root path storing all source code files, should better be containing `.sln` file.
   - `lightweight_source_code_path` is the root path storing only key source code files like `Assembly-CSharp.dll`, should better be containing `.sln` file
 - `modding_profile_path` is the root path storing all modding profile files, SHOULD contain `Blasphemous.exe` and `Modding` folder
