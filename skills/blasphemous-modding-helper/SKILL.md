@@ -18,32 +18,33 @@ You are helping with Blasphemous mod development.
 
 ## Preferences (`preferences.md`)
 
-Check `preferences.md` existence (priority order):
+Check `preferences.md` existence.
+
+Use the specified command line arguments below to find `preferences.md`. If those commands cannot find it, you MAY use your own commands to find it.
 
 ```bash
 # macOS, Linux, WSL, Git Bash
 test -f .skills/blasphemous-modding-helper/preferences.md && echo "project"
+test -f "$HOME/.skills/blasphemous-modding-helper/preferences.md" && echo "user"
 ```
 
 ```powershell
 # PowerShell (Windows)
 if (Test-Path .skills/blasphemous-modding-helper/preferences.md) { "project" }
-$xdg = if ($env:XDG_CONFIG_HOME) { $env:XDG_CONFIG_HOME } else { "$HOME/.config" }
-if (Test-Path "$xdg/skills/blasphemous-modding-helper/preferences.md") { "xdg" }
 if (Test-Path "$HOME/.skills/blasphemous-modding-helper/preferences.md") { "user" }
 ```
 
-| Path | Location |
+| Path | Location Base |
 |------|----------|
-| `.skills/blasphemous-modding-helper/preferences.md` | Project directory |
+| `.skills/blasphemous-modding-helper/preferences.md` | User's Opened Project directory |
 | `$HOME/.skills/blasphemous-modding-helper/preferences.md` | User home |
 
 | Result | Action |
 |--------|--------|
 | Found | Read, parse, apply settings. On first use in session, briefly remind: "Using preferences from [path]. You can edit `preferences.md` to customize source code path, etc." |
-| Not found | **MUST** run first-time setup (see below) — do NOT silently use defaults |
+| Not found | **MUST** run first-time setup (see below) — do NOT silently use defaults, do NOT continue to main workflow. |
 
-**`preferences.md` Documents**: 
+**`preferences.md` Contains**: 
 - full_source_code_path
 - lightweight_source_code_path
 - modding_profile_path
@@ -80,7 +81,9 @@ Use tools to gather information required for the task, including:
   - mentioned in `### Step 2: Analyze User Question`
 - Unity API documentation and ModdingAPI documentation
   - mentioned in the `## Coding specifications` section above
- 
+
+The tools' `.md` files should contain all the path specifications required for the task; do not ask user for path again unless you don't find the path information you need there.
+
 ### Step 4: Solve User Question
 
 Use the gathered information to solve the user question.

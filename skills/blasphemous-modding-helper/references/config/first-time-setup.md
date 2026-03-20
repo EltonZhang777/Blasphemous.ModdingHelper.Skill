@@ -17,40 +17,20 @@ ONLY ask the questions in this setup flow, save `preferences.md`, and then conti
 
 ## Setup Flow
 
-```
-No `preferences.md` found
-        |
-        v
-+---------------------+
-| AskUserQuestion     |
-| (all questions)     |
-+---------------------+
-        |
-        v
-+---------------------+
-| Validate User Input |
-|   Are paths valid?  |
-+---------------------+
-        |
-        |
-        |-------- No ----------> AskUserQuestion again until input is checked to be valid
-        |
-        |  Yes
-        |
-        v
-+--------------------------+
-| Create `preferences.md`  |
-+--------------------------+
-        |
-        v
-    Continue
-```
+1. No `preferences.md` found
+2. AskUserQuestion (all questions)
+3. Validate User Input (Are paths valid?)
+- If No: AskUserQuestion again until input is checked to be valid
+- If Yes: Create `preferences.md`
+4. Continue
 
 ## AskUserQuestion Questions
 
-**Language**: Use user's input language or language preference of the editor/cli they're using.
+**Language of AskUserQuestion Questions**: you SHOULD attempt to use the user's input language or language preference of the editor/cli they're using when asking questions.
+- This means you SHOULD attempt to translate the questions' header, question, options, etc. However, you SHOULD NEVER translate the user input or any file, path, etc.
+- Default to English only when user's input language is not available. 
 
-Use AskUserQuestion with ALL questions in ONE call:
+Use AskUserQuestion with **ALL** questions in **ONE** call:
 
 ### Question 1: Full Source Code Path
 
