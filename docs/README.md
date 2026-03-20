@@ -21,6 +21,17 @@ Currently only supports manual installation.
 2. Extract the skill to the skill folder of your AI coding tool (Claude Code, OpenCode, TRAE, etc).
 3. Restart the AI coding tool to load the skill if the skill doesn't show up.
 
+## Usage
+
+Prompt the AI in natural language to get assistance. 
+- Explicitly mention this skill or its sub-skills for better AI performance.
+- Provide clear objectives in user input -- for example, indicate the class in the source code that you want to explain, or a certain error in the log file that you want to debug.
+
+Examples:
+- "Find and explain the class that handles the map UI in Blasphemous source code"
+- "Read the logs of modded Blasphemous to find errors, and find what in my mod causes the error"
+- "Explain the AI of the boss Isidora, start by searching in the namespace `Gameplay.GameControllers.Bosses.Isidora`"
+
 ## Requirements
 
 - Any AI coding tool that supports skills.
