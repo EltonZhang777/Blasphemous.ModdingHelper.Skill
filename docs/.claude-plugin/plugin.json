@@ -1,0 +1,11 @@
+{
+  "name": "blasphemous-modding-helper",
+  "description": "Adds a `blasphemous-modding-helper` skill for modding the game Blasphemous",
+  "version": "1.0.0",
+  "author": {
+    "name": "EltonZhang777"
+  },
+  "repository": "https://github.com/EltonZhang777/Blasphemous.ModdingHelper.Skill",
+  "license": "MIT",
+  "keywords": ["game-modding", "game", "ai-agent"]
+}
