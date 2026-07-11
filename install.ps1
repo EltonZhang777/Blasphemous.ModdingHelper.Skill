@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-  Blasphemous Modding Helper ¡ª Unified Installer (Windows npx shim)
+  Blasphemous Modding Helper - Unified Installer (Windows npx shim)
 .DESCRIPTION
   Thin wrapper around bin/install.js (the unified Node installer).
   Detects AI coding agents on your machine and installs the skill
