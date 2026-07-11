@@ -1,6 +1,6 @@
 {
   "name": "blasphemous-modding-helper-installer",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Installer for Blasphemous Modding Helper skill — detects AI coding agents and installs the skill for each one.",
   "license": "MIT",
   "author": "EltonZhang777",
