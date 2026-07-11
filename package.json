@@ -1,0 +1,28 @@
+{
+  "name": "blasphemous-modding-helper-installer",
+  "version": "1.0.0",
+  "description": "Installer for Blasphemous Modding Helper skill — detects AI coding agents and installs the skill for each one.",
+  "license": "MIT",
+  "author": "EltonZhang777",
+  "homepage": "https://github.com/EltonZhang777/Blasphemous.ModdingHelper.Skill",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/EltonZhang777/Blasphemous.ModdingHelper.Skill.git"
+  },
+  "bugs": {
+    "url": "https://github.com/EltonZhang777/Blasphemous.ModdingHelper.Skill/issues"
+  },
+  "bin": {
+    "blasphemous-modding-helper": "./bin/install.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "files": [
+    "bin/",
+    "skills/",
+    ".claude-plugin/",
+    "gemini-extension.json",
+    "README.md"
+  ]
+}

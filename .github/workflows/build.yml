@@ -40,8 +40,10 @@ jobs:
       run: |
         mkdir -p publish
         zip -r publish/${{ env.PROJECT_NAME }}.zip skills/${{ env.PROJECT_NAME }}
+        cp install.sh publish/install.sh
+        cp install.ps1 publish/install.ps1
 
-    - name: Upload Release
+    - name: Upload Skill Zip
       uses: actions/upload-release-asset@v1
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -50,3 +52,23 @@ jobs:
         asset_path: publish/${{ env.PROJECT_NAME }}.zip
         asset_name: ${{ env.PROJECT_NAME }}.zip
         asset_content_type: application/zip
+
+    - name: Upload Install Script (Unix)
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: publish/install.sh
+        asset_name: install.sh
+        asset_content_type: application/x-sh
+
+    - name: Upload Install Script (Windows)
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: publish/install.ps1
+        asset_name: install.ps1
+        asset_content_type: application/x-powershell
