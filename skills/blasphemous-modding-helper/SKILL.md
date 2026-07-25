@@ -20,19 +20,19 @@ You are helping with Blasphemous mod development.
 
 Check `preferences.md` existence.
 
-Use the specified command line arguments below to find `preferences.md`. If those commands cannot find it, you MAY use your own commands to find it.
+Use the check-preferences scripts to find `preferences.md`:
 
 ```bash
 # macOS, Linux, WSL, Git Bash
-test -f .skills/blasphemous-modding-helper/preferences.md && echo "project"
-test -f "$HOME/.skills/blasphemous-modding-helper/preferences.md" && echo "user"
+bash scripts/check_preferences.sh
 ```
 
 ```powershell
 # PowerShell (Windows)
-if (Test-Path .skills/blasphemous-modding-helper/preferences.md) { "project" }
-if (Test-Path "$HOME/.skills/blasphemous-modding-helper/preferences.md") { "user" }
+& .\scripts\check_preferences.ps1
 ```
+
+Output is one of: `"project"`, `"user"`, or nothing (not found).
 
 | Path | Location Base |
 |------|----------|
@@ -87,3 +87,10 @@ The tools' `.md` files should contain all the path specifications required for t
 ### Step 4: Solve User Question
 
 Use the gathered information to solve the user question.
+
+### Step 5: Path Failure Recovery
+
+If any source code analysis or modding operation fails with file-not-found or path-related errors, the agent MUST ask the user: "Some operations failed using the saved paths in `preferences.md`. Would you like to re-run the first-time setup to update them?"
+
+- **If Yes**: Delete `preferences.md` and trigger first-time setup again (see Step 1). This allows the user to correct outdated or incorrect paths.
+- **If No**: Continue with current paths, report the specific failure to the user.
