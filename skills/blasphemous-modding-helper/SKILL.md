@@ -34,28 +34,18 @@ bash scripts/check_preferences.sh
 
 Output is one of: `"project"`, `"user"`, or nothing (not found).
 
-| Path | Location Base |
-|------|----------|
-| `.skills/blasphemous-modding-helper/preferences.md` | User's Opened Project directory |
-| `$HOME/.skills/blasphemous-modding-helper/preferences.md` | User home |
+`preferences.md` lives at `.skills/blasphemous-modding-helper/preferences.md` (project) or `$HOME/.skills/blasphemous-modding-helper/preferences.md` (user home). Full locations table: [references/config/first-time-setup.md#save-locations](references/config/first-time-setup.md#save-locations).
 
 | Result | Action |
 |--------|--------|
 | Found | Read, parse, apply settings. On first use in session, briefly remind: "Using preferences from [path]. You can edit `preferences.md` to customize source code path, etc." |
 | Not found | **MUST** run first-time setup (see below) — do NOT silently use defaults, do NOT continue to main workflow. |
 
-**`preferences.md` Contains**: 
-- full_source_code_path
-- lightweight_source_code_path
-- modding_profile_path
-
-Schema for `preferences.md`: [references/config/preferences-schema.md](references/config/preferences-schema.md)
+**`preferences.md` Contains**: `full_source_code_path`, `lightweight_source_code_path`, `modding_profile_path` — see [references/config/preferences-schema.md](references/config/preferences-schema.md) for the full schema.
 
 ### First-Time Setup (BLOCKING)
 
-**CRITICAL**: When `preferences.md` is not found, you **MUST** run the first-time setup before ANY action. This is a **BLOCKING** operation.
-
-You **MUST** reference [references/config/first-time-setup.md](references/config/first-time-setup.md) for first-time setup.
+**CRITICAL**: When `preferences.md` is not found, you **MUST** run the first-time setup (a **BLOCKING** operation) before ANY action, following [references/config/first-time-setup.md](references/config/first-time-setup.md).
 
 
 ## Workflow

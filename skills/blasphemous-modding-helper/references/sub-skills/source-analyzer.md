@@ -16,16 +16,6 @@ Analyze and understand the Blasphemous game source code, focusing on understandi
 5. You SHOULD check for available MCP tools at this step to see if any tool can help you quickly navigate and analyze C# code structure (e.g. roslyn-code-navigator). 
 6. Prioritize using MCP tools if available. 
 7. If no relevant MCP tool is available, use command line tools to search for and read relevant class files and code sections. Utilize the following tips to help searching:
-    - Use [../source_code_navigation/MAIN.md](../source_code_navigation/MAIN.md) to navigate around major sections of the source code.
-    - Use the specialized navigation documents for targeted searches:
-      - [core.md](../source_code_navigation/core.md) — Core framework: Managers, Attributes, Audio, Dialog, Map, Penitences, DLC, Achievements
-      - [player.md](../source_code_navigation/player.md) — Player Penitent: Abilities, Attacks, Movement, Input, Animation
-      - [enemy.md](../source_code_navigation/enemy.md) — Enemy system: All enemy types, AI Framework, Entity base classes
-      - [bosses.md](../source_code_navigation/bosses.md) — Boss system: All bosses, BossFightManager, Common Attacks
-      - [ui.md](../source_code_navigation/ui.md) — UI system: UIController, Widgets, MenuLogic, HUD, Console commands
-      - [items.md](../source_code_navigation/items.md) — Item/Equipment: Inventory types, Effects, Achievements
-      - [level.md](../source_code_navigation/level.md) — Level/Environment: Actionables, Interactables, Layout
-      - [tools.md](../source_code_navigation/tools.md) — Tools: PlayMaker Actions/Conditions/Events, Audio, Data containers, NPC
-      - [localization.md](../source_code_navigation/localization.md) — Localization: I2.Loc, Blasphemous LocalizationManager
+    - Use [../source_code_navigation/MAIN.md](../source_code_navigation/MAIN.md) to navigate around major sections of the source code — it indexes every specialized navigation document (core, player, enemy, bosses, ui, items, level, tools, localization) with its coverage.
     - Prioritize searching in the Assembly-CSharp folder, as almost all game logic code is located there.
 

@@ -92,4 +92,4 @@ The repository uses:
 
 ## 📄 License
 
-MIT — see [LICENSE](docs/LICENSE).
+MIT — see [LICENSE](LICENSE).

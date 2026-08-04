@@ -33,4 +33,4 @@ The core Manager layer in the Framework, located at `Framework/Managers/`. All M
 
 ### Inventory & Skills
 
-- **InventoryManager.cs** - Inventory system core. Manages items: `Relic` (relic, 3 slots), `RosaryBead` (rosary bead, 8 slots), `Prayer` (prayer, 1 slot), `Sword` (sword heart, 1 slot), `QuestItem` (quest item), `CollectibleItem` (collectible), Boss Key. Provides `AddBaseObject()` / `
+- **InventoryManager.cs** - Inventory system core. Manages items: `Relic` (relic, 3 slots), `RosaryBead` (rosary bead, 8 slots), `Prayer` (prayer, 1 slot), `Sword` (sword heart, 1 slot), `QuestItem` (quest item), `CollectibleItem` (collectible), Boss Key. Provides `AddBaseObject()` for adding items to the inventory.
