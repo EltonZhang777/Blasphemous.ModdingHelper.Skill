@@ -1,6 +1,6 @@
 ---
 name: blasphemous-modding-helper
-description: Blasphemous modding development helper. Use when user specifies developing a Blasphemous mod.
+description: Blasphemous modding development helper. Use when user wants to develop a Blasphemous mod, analyze Blasphemous decompiled source code, or debug mod-related logs (BepInEx / Unity).
 ---
 
 # Blasphemous modding helper
@@ -69,10 +69,12 @@ Check `preferences.md` (see Preferences section above)
 ### Step 2: Analyze User Question
 
 Analyze the user question to determine user intent and the task to perform, especially pay attention to the following:
-- Whether the user request involves analying Blasphemous Source code. 
+- Whether the user request involves analyzing Blasphemous Source code. 
   - If yes, you SHOULD create a sub-agent or sub-task to handle the source code analysis using [references/sub-skills/source-analyzer.md](references/sub-skills/source-analyzer.md)
 - Whether the user request involves debugging, log tracking, or error tracking.
   - If yes, you SHOULD create a sub-agent or sub-task to handle log analysis using [references/sub-skills/log-analyzer.md](references/sub-skills/log-analyzer.md)
+
+**Done when**: the user question is classified into one of the three branches (source code analysis, log analysis, or general modding question), and a sub-agent task has been created for every branch that applies.
 
 ### Step 3: Use Tools to Gather Information
 
@@ -84,9 +86,13 @@ Use tools to gather information required for the task, including:
 
 The tools' `.md` files should contain all the path specifications required for the task; do not ask user for path again unless you don't find the path information you need there.
 
+**Done when**: every path the task needs (source code, modding profile, logs) has been located in `preferences.md` or the navigation documents, and any missing or stale path has been handed to Step 5.
+
 ### Step 4: Solve User Question
 
 Use the gathered information to solve the user question.
+
+**Done when**: the answer is complete and every source-code class, file path, and log location cited in the answer has been verified against the actual files.
 
 ### Step 5: Path Failure Recovery
 
