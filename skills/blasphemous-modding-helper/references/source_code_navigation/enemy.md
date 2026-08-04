@@ -5,6 +5,15 @@
 > Entity Base Classes: `Gameplay/GameControllers/Entities/`  
 > EntityStatus: `Framework/FrameworkCore/EntityStatus.cs`
 
+> **Boss/Enemy ownership rule**: This document covers enemies and components under `Gameplay/GameControllers/Enemies/`. Boss main classes always live under `Gameplay/GameControllers/Bosses/` → [bosses.md](bosses.md); entities under `Enemies/` driven by the Boss system (`MasterAnguish` audio, `SingleAnguish` animation) and Boss-level enemies (`Menina`) only list their components here — see the inline Notes for the main class; same-named entities (Boss vs regular enemy, e.g. `PontiffHusk`) are cross-linked inline.
+
+## Core Design Patterns
+
+1. Inheritance: `MonoBehaviour → Entity → Enemy → <EnemyName>`; `Enemy` has `[RequireComponent(typeof(EnemyBehaviour))]`
+2. AI runs on a NodeCanvas behaviour tree; `EnemyBehaviour` is the root, driven by `PlayerHeard` / `PlayerSeen` / `SensorHitsFloor` / `GotParry`
+3. Attacks: `EnemyAttack : Attack : Trait`; damage flows through `IDamageable.Damage(Hit)`
+4. Per-enemy folder layout: `AI|IA/` (behaviour) + `Attack/` + `Animator/` + `Audio/`
+
 ---
 
 ## Enemy List
@@ -60,9 +69,9 @@
 
 | Enemy Name | Main Class | Behaviour | Attack | Weapon | Animator | Audio | Notes |
 |--------|------|-----------|--------|--------|----------|-------|------|
-| MasterAnguish | — | — | — | — | — | `MasterAnguish/Audio/MasterAnguishAudio.cs` `MasterAnguish/Audio/ElderBrotherAudio.cs` `MasterAnguish/Audio/SingleAnguishAudio.cs` | Boss audio, audio components only. Main class in Boss directory |
+| MasterAnguish | — | — | — | — | — | `MasterAnguish/Audio/MasterAnguishAudio.cs` `MasterAnguish/Audio/ElderBrotherAudio.cs` `MasterAnguish/Audio/SingleAnguishAudio.cs` | Boss audio, audio components only. Main class: `TresAngustias/TresAngustiasMaster.cs` → [bosses.md](bosses.md) |
 | MeltedLady | `MeltedLady/MeltedLady.cs` `MeltedLady/FloatingLady.cs` `MeltedLady/InkLady.cs` | `MeltedLady/IA/MeltedLadyBehaviour.cs` | `MeltedLady/Attack/MeltedLadyAttack.cs` `MeltedLady/Attack/FloatingLadyAttack.cs` | — | `MeltedLady/Animator/MeltedLadyAnimatorInyector.cs` `MeltedLady/Animator/InkLadyAnimatorInjector.cs` `MeltedLady/Animator/FloatingLadyAnimatorInjector.cs` | `MeltedLady/Audio/MeltedLadyAudio.cs` `MeltedLady/Audio/InkLadyAudio.cs` `MeltedLady/Audio/InkLadyBeamAudio.cs` | Melted lady, 3 variants, includes Attack/Death/Idle state |
-| Menina | `Menina/Menina.cs` | `Menina/AI/MeninaBehaviour.cs` | `Menina/Attack/MeninaAttack.cs` | `Menina/Attack/MeninaWeapon.cs` | `Menina/Animator/MeninaAnimatorInyector.cs` | `Menina/Audio/MeninaAudio.cs` `Menina/IsabelAudio.cs` `Menina/LionheadAudio.cs` | Menina (Boss), includes Attack/Backwards/Chase state |
+| Menina | `Menina/Menina.cs` | `Menina/AI/MeninaBehaviour.cs` | `Menina/Attack/MeninaAttack.cs` | `Menina/Attack/MeninaWeapon.cs` | `Menina/Animator/MeninaAnimatorInyector.cs` | `Menina/Audio/MeninaAudio.cs` `Menina/IsabelAudio.cs` `Menina/LionheadAudio.cs` | Menina (Boss-level enemy under `Enemies/`, not in `Bosses/`), includes Attack/Backwards/Chase state |
 | MudCrawler | — | — | — | — | — | `MudCrawler/Audio/MudCrawlerAudio.cs` | Audio component only, main class may be elsewhere |
 | NewFlagellant | `NewFlagellant/NewFlagellant.cs` | `NewFlagellant/AI/NewFlagellantBehaviour.cs` | `NewFlagellant/Attack/NewFlagellantAttack.cs` | `NewFlagellant/Attack/NewFlagellantWeapon.cs` | `NewFlagellant/Animator/NewFlagellantAnimatorInyector.cs` | `NewFlagellant/Audio/NewFlagellantAudio.cs` | New flagellant, multi-state (Attack/Chase/Death/Falling/Hurt/Idle/Patrol) |
 | Nun | `Nun/Nun.cs` | `Nun/IA/NunBehaviour.cs` | `Nun/Attack/NunAttack.cs` | `Nun/Attack/NunWeapon.cs` `Nun/Attack/OilPuddle.cs` | `Nun/Animator/NunAnimatorInyector.cs` | `Nun/Audio/NunAudio.cs` | Nun, oil puddle trap |
@@ -73,7 +82,7 @@
 |--------|------|-----------|--------|--------|----------|-------|------|
 | PatrollingFlyingEnemy | `PatrollingFlyingEnemy/PatrollingFlyingEnemy.cs` | `PatrollingFlyingEnemy/AI/PatrollingFlyingEnemyBehaviour.cs` | `PatrollingFlyingEnemy/Attack/PatrollingFlyingEnemyAttack.cs` | — | `PatrollingFlyingEnemy/Animator/PatrollingFlyingEnemyAnimatorInyector.cs` | `PatrollingFlyingEnemy/Audio/PatrollingFlyingEnemyAudio.cs` | Patrolling flying enemy |
 | Pietat | `Pietat/Pietat.cs` | — | — | — | `Pietat/PietatAnimations/PietatAnimations.cs` | — | Animation control only, non-standard enemy |
-| PontiffHusk | `PontiffHusk/PontiffHuskMelee.cs` `PontiffHusk/PontiffHuskRanged.cs` | `PontiffHusk/AI/PontiffHuskMeleeBehaviour.cs` `PontiffHusk/AI/PontiffHuskRangedBehaviour.cs` | `PontiffHusk/Attack/PontiffHuskMeleeAttack.cs` `PontiffHusk/Attack/PontiffHuskRangedAttack.cs` `PontiffHusk/Attack/PontiffHuskRangedVariantAttack.cs` | `PontiffHusk/Attack/PontiffHuskMeleeWeapon.cs` `PontiffHusk/Attack/PontiffHuskRangedWeapon.cs` | `PontiffHusk/Animator/PontiffHuskAnimatorInyector.cs` `PontiffHusk/Animator/PontiffHuskAnimatorBridge.cs` | `PontiffHusk/Audio/PontiffHuskAudio.cs` | Pontiff husk, melee/ranged dual variant, includes FloatingMotion |
+| PontiffHusk | `PontiffHusk/PontiffHuskMelee.cs` `PontiffHusk/PontiffHuskRanged.cs` | `PontiffHusk/AI/PontiffHuskMeleeBehaviour.cs` `PontiffHusk/AI/PontiffHuskRangedBehaviour.cs` | `PontiffHusk/Attack/PontiffHuskMeleeAttack.cs` `PontiffHusk/Attack/PontiffHuskRangedAttack.cs` `PontiffHusk/Attack/PontiffHuskRangedVariantAttack.cs` | `PontiffHusk/Attack/PontiffHuskMeleeWeapon.cs` `PontiffHusk/Attack/PontiffHuskRangedWeapon.cs` | `PontiffHusk/Animator/PontiffHuskAnimatorInyector.cs` `PontiffHusk/Animator/PontiffHuskAnimatorBridge.cs` | `PontiffHusk/Audio/PontiffHuskAudio.cs` | Pontiff husk, melee/ranged dual variant, includes FloatingMotion. Same-named boss → [bosses.md](bosses.md) (PontiffHuskBoss) |
 | Processioner | `Processioner/Processioner.cs` `Processioner/ShooterProcessioner.cs` | `Processioner/AI/ProcessionerBehaviour.cs` `Processioner/AI/ShooterProcessionerBehaviour.cs` | — | — | `Processioner/Animator/ProcessionerAnimator.cs` `Processioner/Animator/ShooterProcessionerAnimator.cs` | `Processioner/Audio/ProcesionerAudio.cs` | Processioner and shooter variant |
 | Projectiles | — | — | — | — | — | — | Projectile utility class directory, not an enemy. Includes `Projectile.cs`/`StraightProjectile.cs`/`HomingProjectile.cs`/`CurvedProjectile.cs`/`ParriableProjectile.cs` etc. |
 | RangedBoomerang | `RangedBoomerang/RangedBoomerang.cs` | `RangedBoomerang/IA/RangedBoomerangBehaviour.cs` | `RangedBoomerang/Attack/RangedBoomerangAttack.cs` | — | `RangedBoomerang/Animator/RangedBoomerangAnimatorInyector.cs` | `RangedBoomerang/Audio/RangedBoomerangAudio.cs` `RangedBoomerang/BookThrowerAudio.cs` | Ranged boomerang / book thrower |
@@ -86,7 +95,7 @@
 | Enemy Name | Main Class | Behaviour | Attack | Weapon | Animator | Audio | Notes |
 |--------|------|-----------|--------|--------|----------|-------|------|
 | ShieldMaiden | `ShieldMaiden/ShieldMaiden.cs` | `ShieldMaiden/IA/ShieldMaidenBehaviour.cs` | `ShieldMaiden/Attack/ShieldMaidenAttack.cs` | `ShieldMaiden/Attack/ShieldMaidenWeapon.cs` | `ShieldMaiden/Animator/ShieldMaidenAnimatorInyector.cs` | `ShieldMaiden/Audio/ShieldMaidenAudio.cs` | Shield maiden |
-| SingleAnguish | — | — | — | — | `SingleAnguish/Animator/SingleAnguishAnimatorInyector.cs` | — | Animation control only (Single Anguish variant animation) |
+| SingleAnguish | — | — | — | — | `SingleAnguish/Animator/SingleAnguishAnimatorInyector.cs` | — | Animation control only; main class: `TresAngustias/TresAngustiasMaster.cs` → [bosses.md](bosses.md) |
 | Stoners | `Stoners/Stoners.cs` | `Stoners/AI/StonerBehaviour.cs` | `Stoners/Attack/StonersAttack.cs` | `Stoners/Rock/StonersRock.cs` `Stoners/Rock/StonersGrave.cs` `Stoners/Rock/RockPool.cs` | `Stoners/Animator/StonerAnimatorInyector.cs` `Stoners/Animator/StonerAnimatorBridge.cs` | `Stoners/Audio/StonersAudio.cs` `Stoners/Audio/StonersRockAudio.cs` | Stoners, includes Rock physics system |
 | Swimmer | `Swimmer/Swimmer.cs` | `Swimmer/AI/SwimmerBehaviour.cs` | `Swimmer/Attack/SwimmerAttack.cs` | `Swimmer/Attack/SwimmerWeapon.cs` | `Swimmer/Animator/SwimmerAnimatorInyector.cs` `Swimmer/Animator/SwimmerTerrainEffect.cs` | `Swimmer/Audio/SwimmerAudio.cs` | Swimmer enemy, includes terrain effects |
 | TrinityMinion | `TrinityMinion/TrinityMinion.cs` | `TrinityMinion/AI/TrinityMinionBehaviour.cs` | `TrinityMinion/Attack/TrinityMinionAttack.cs` | — | `TrinityMinion/Animator/TrinityMinionAnimatorInyector.cs` | `TrinityMinion/Audio/TrinityMinionAudio.cs` | Trinity minion |

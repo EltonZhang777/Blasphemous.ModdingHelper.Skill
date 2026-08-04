@@ -2,6 +2,13 @@
 
 Source code navigation for the Player System (Penitent). The active instance is accessible via `Core.Logic.Penitent`.
 
+## Core Design Patterns
+
+1. Active instance `Core.Logic.Penitent`; `Penitent.cs` aggregates all subsystems (abilities, attack, movement, input, audio)
+2. One component per ability under `Abilities/`, driven by the state machine
+3. Input wrapped by `PlatformCharacterInput` around Rewired (`Rewired.Player` is the core input component)
+4. State machine: `States/Driven.cs` (cutscene-forced control) vs `States/Playing.cs` (normal gameplay)
+
 ---
 
 ## Main Class

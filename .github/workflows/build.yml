@@ -26,15 +26,11 @@ jobs:
         PROJECT_VERSION=$(jq -r '.version' .claude-plugin/plugin.json)
         echo "PROJECT_VERSION=$PROJECT_VERSION" >> $GITHUB_ENV
 
-    - name: Create Release
-      id: create_release
-      uses: actions/create-release@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        tag_name: ${{ github.ref }}
-        release_name: v${{ env.PROJECT_VERSION }}
-        draft: true
+    - name: Smoke-test Installer (dry run)
+      run: |
+        node bin/install.js --dry-run --only trae-cn
+        node bin/install.js --dry-run --only claude-code
+        node bin/install.js --help
 
     - name: Package Release
       run: |
@@ -43,32 +39,15 @@ jobs:
         cp install.sh publish/install.sh
         cp install.ps1 publish/install.ps1
 
-    - name: Upload Skill Zip
-      uses: actions/upload-release-asset@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    # Release is created only on tag pushes; main-branch pushes just run
+    # the packaging steps above as a build check.
+    - name: Create GitHub Release (tags only)
+      if: startsWith(github.ref, 'refs/tags/')
+      uses: softprops/action-gh-release@v2
       with:
-        upload_url: ${{ steps.create_release.outputs.upload_url }}
-        asset_path: publish/${{ env.PROJECT_NAME }}.zip
-        asset_name: ${{ env.PROJECT_NAME }}.zip
-        asset_content_type: application/zip
-
-    - name: Upload Install Script (Unix)
-      uses: actions/upload-release-asset@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        upload_url: ${{ steps.create_release.outputs.upload_url }}
-        asset_path: publish/install.sh
-        asset_name: install.sh
-        asset_content_type: application/x-sh
-
-    - name: Upload Install Script (Windows)
-      uses: actions/upload-release-asset@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        upload_url: ${{ steps.create_release.outputs.upload_url }}
-        asset_path: publish/install.ps1
-        asset_name: install.ps1
-        asset_content_type: application/x-powershell
+        name: v${{ env.PROJECT_VERSION }}
+        draft: true
+        files: |
+          publish/${{ env.PROJECT_NAME }}.zip
+          publish/install.sh
+          publish/install.ps1

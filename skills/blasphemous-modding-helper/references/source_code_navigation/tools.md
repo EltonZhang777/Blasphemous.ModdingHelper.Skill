@@ -2,6 +2,12 @@
 
 Source code navigation for custom tools, PlayMaker FSM Actions/Conditions/Events, data containers, NPCs, level tools, and other miscellaneous items.
 
+## Core Design Patterns
+
+1. PlayMaker triad: Action (execute) / Condition (check) / Event (signal), named by verb prefix
+2. Deprecated components centralized under "PlayMaker Deprecated" — do not use in new code
+3. Audio tools layered: Emitter (play) → Modifier (spatial / temporal / parameter)
+
 ---
 
 ## PlayMaker Actions
@@ -217,13 +223,13 @@ Source code navigation for custom tools, PlayMaker FSM Actions/Conditions/Events
 - `EnemiesBalance.cs` - Enemy balance parameters
 - `GuiltConfigData.cs` - Guilt configuration data
 - `ImageList.cs` - Image list container
-- `LocalizationSpacingData.cs` - Localization spacing data
 - `MapData.cs` - Map data
 - `RumbleData.cs` - Rumble data
 - `RummbleBlock.cs` - Rumble block
 - `SharedCommand.cs` - Shared command definition
 - `SubTitleBlock.cs` - Subtitle block
-- `TimeLocalization.cs` - Time localization (timer display)
+
+> Localization data containers (`LocalizationSpacingData.cs`, `TimeLocalization.cs`) are documented in [localization.md](localization.md).
 
 ## NPC
 
@@ -239,116 +245,11 @@ Source code navigation for custom tools, PlayMaker FSM Actions/Conditions/Events
 
 ### Items
 
-- `BloodPenitenceBeadEffect.cs` - Blood penitence bead effect
-- `ChaliceEffect.cs` - Chalice effect
-- `DirtyNailRelicEffect.cs` - Dirty nail relic effect
-- `FamiliarSpawnEffect.cs` - Familiar spawn effect
-- `GuiltPenitenceBeadEffect.cs` - Guilt penitence bead effect
-- `IncorruptHandBell.cs` - Incorrupt hand bell
-- `IncorruptHandConfig.cs` - Incorrupt hand bell config
-- `Invulnerability.cs` - Invulnerability effect
-- `ItemAudio.cs` - Item audio
-- `ItemFlag.cs` - Item flag
-- `ItemGhostTrail.cs` - Item ghost trail
-- `ItemTemporalEffect.cs` - Item temporal effect
-- `ObjectEffect_ChangeItem.cs` - Object effect - change item
-- `PR203ElmFireLoopEffect.cs` - PR203 will-o'-the-wisp loop effect
-- `PenitentAreaAttack.cs` - Penitent area attack
-- `PenitentCrawlerOrbsEffect.cs` - Penitent crawler orbs effect
-- `PenitentDivineLightEffect.cs` - Penitent divine light effect
-- `PenitentFlamePillarsEffect.cs` - Penitent flame pillars effect
-- `PenitentGuardianEffect.cs` - Penitent guardian effect
-- `PenitentLightBeamEffect.cs` - Penitent light beam effect
-- `PenitentMultishotEffect.cs` - Penitent multishot effect
-- `PenitentTeleportToPriedieu.cs` - Penitent teleport to Prie Dieu
-- `SilverLungRelicEffect.cs` - Silver lung relic effect
-- `StuntPrayerEffect.cs` - Stun prayer effect
+> Item effect scripts under `Tools/Items/` are documented in [items.md](items.md) (Special Item Effects section).
 
 ### Level
 
-#### Actionables
-
-- `ActionableForce.cs` - Force trigger interactable object
-- `ActionableLadder.cs` - Ladder interactable
-- `ActionableSwitch.cs` - Switch interactable
-- `AshPlatform.cs` - Ash platform (dissipates after stepping on)
-- `BasicTrap.cs` - Basic trap
-- `BreakableDamageArea.cs` - Breakable damage area
-- `BreakableInteractor.cs` - Breakable interactor
-- `BreakableObject.cs` - Breakable object
-- `BreakableWall.cs` - Breakable wall
-- `DestroyableBridge.cs` - Destroyable bridge
-- `ElusivePlatform.cs` - Elusive platform
-- `Fader.cs` - Fader (fading object)
-- `FaithPlatform.cs` - Faith platform
-- `GameobjectActivator.cs` - GameObject activator
-- `Gate.cs` - Gate
-- `GlobalTrapTriggerer.cs` - Global trap triggerer
-- `HiddenArea.cs` - Hidden area
-- `ImpacteableObject.cs` - Impactable object
-- `PersistentBreakableObject.cs` - Persistent breakable object (state saved in save file)
-- `ShockwaveArea.cs` - Shockwave area
-- `SimpleDamageArea.cs` - Simple damage area
-- `SlashReceiver.cs` - Slash receiver
-- `TileableGeo.cs` - Tileable geometry
-- `TriggerBasedTrap.cs` - Trigger-based trap
-- `TriggerReceiver.cs` - Trigger receiver
-- `TriggerTrapManager.cs` - Trigger trap manager
-- `TriggerTrapManagerAutogenerator.cs` - Trigger trap manager autogenerator
-
-#### Effects
-
-- `LEVEL_COLOR_CONFIGS.cs` - Level color configs
-- `LevelColorEffectData.cs` - Level color effect data
-- `ScriptableLevelEffects.cs` - Scriptable level effects
-
-#### Interactables
-
-- `ActivateIfDLCInstalled.cs` - Activate if DLC installed
-- `Altar.cs` - Altar
-- `Chest.cs` - Chest
-- `ChestMode.cs` - Chest mode
-- `DemakeAltar.cs` - Demake altar
-- `Door.cs` - Door
-- `Execution.cs` - Execution interaction
-- `ExecutionAnimationEvents.cs` - Execution animation events
-- `ExecutionAwareness.cs` - Execution awareness
-- `FakeExecution.cs` - Fake execution interaction
-- `GuiltDropCollectibleItem.cs` - Guilt drop collectible item
-- `InteractableGuiltDrop.cs` - Guilt drop interactable
-- `Lever.cs` - Lever
-- `LeverAction.cs` - Lever action
-- `LeverMode.cs` - Lever mode
-- `MiriamExit.cs` - Miriam exit
-- `MiriamPortal.cs` - Miriam portal
-- `MiriamStart.cs` - Miriam start
-- `PrieDieu.cs` - Prie Dieu
-
-#### Layout
-
-- `Category.cs` - Category definition
-- `DebugSpawn.cs` - Debug spawn point
-- `EnemySpawnPoint.cs` - Enemy spawn point
-- `LadderLayout.cs` - Ladder layout
-- `LayoutElement.cs` - Layout element
-- `LevelBuilder.cs` - Level builder
-- `LevelInitializer.cs` - Level initializer
-- `NonExecutionPlatform.cs` - Non-execution platform
-- `PopPenitentFromGeo.cs` - Pop penitent from geometry
-
-#### Utils
-
-- `CherubCaptorSpawnConfigurator.cs` - Cherub captor spawn configurator
-- `EnemySpawnConfigurator.cs` - Enemy spawn configurator
-- `FlyingPatrollingEnemySpawnConfigurator.cs` - Flying patrolling enemy spawn configurator
-
-#### Level Root Files
-
-- `IActionable.cs` - Actionable object interface
-- `Interactable.cs` - Interactable base class
-- `LevelSleepTime.cs` - Level sleep time
-- `Region.cs` - Region definition
-- `Teleport.cs` - Teleport logic
+> Level scripts under `Tools/Level/` (Actionables, Interactables, Layout, Effects, Utils) are documented in [level.md](level.md).
 
 ### UI (UI Utilities)
 

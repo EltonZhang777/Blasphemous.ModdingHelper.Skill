@@ -1,6 +1,6 @@
 ---
 name: blasphemous-modding-helper
-description: Blasphemous modding development helper. Use when user specifies developing a Blasphemous mod.
+description: Blasphemous modding development helper. Use when user wants to develop a Blasphemous mod, analyze Blasphemous decompiled source code, or debug mod-related logs (BepInEx / Unity).
 ---
 
 # Blasphemous modding helper
@@ -20,42 +20,32 @@ You are helping with Blasphemous mod development.
 
 Check `preferences.md` existence.
 
-Use the specified command line arguments below to find `preferences.md`. If those commands cannot find it, you MAY use your own commands to find it.
+Use the check-preferences scripts to find `preferences.md`:
 
 ```bash
 # macOS, Linux, WSL, Git Bash
-test -f .skills/blasphemous-modding-helper/preferences.md && echo "project"
-test -f "$HOME/.skills/blasphemous-modding-helper/preferences.md" && echo "user"
+bash scripts/check_preferences.sh
 ```
 
 ```powershell
 # PowerShell (Windows)
-if (Test-Path .skills/blasphemous-modding-helper/preferences.md) { "project" }
-if (Test-Path "$HOME/.skills/blasphemous-modding-helper/preferences.md") { "user" }
+& .\scripts\check_preferences.ps1
 ```
 
-| Path | Location Base |
-|------|----------|
-| `.skills/blasphemous-modding-helper/preferences.md` | User's Opened Project directory |
-| `$HOME/.skills/blasphemous-modding-helper/preferences.md` | User home |
+Output is one of: `"project"`, `"user"`, or nothing (not found).
+
+`preferences.md` lives at `.skills/blasphemous-modding-helper/preferences.md` (project) or `$HOME/.skills/blasphemous-modding-helper/preferences.md` (user home). Full locations table: [references/config/first-time-setup.md#save-locations](references/config/first-time-setup.md#save-locations).
 
 | Result | Action |
 |--------|--------|
 | Found | Read, parse, apply settings. On first use in session, briefly remind: "Using preferences from [path]. You can edit `preferences.md` to customize source code path, etc." |
 | Not found | **MUST** run first-time setup (see below) — do NOT silently use defaults, do NOT continue to main workflow. |
 
-**`preferences.md` Contains**: 
-- full_source_code_path
-- lightweight_source_code_path
-- modding_profile_path
-
-Schema for `preferences.md`: [references/config/preferences-schema.md](references/config/preferences-schema.md)
+**`preferences.md` Contains**: `full_source_code_path`, `lightweight_source_code_path`, `modding_profile_path` — see [references/config/preferences-schema.md](references/config/preferences-schema.md) for the full schema.
 
 ### First-Time Setup (BLOCKING)
 
-**CRITICAL**: When `preferences.md` is not found, you **MUST** run the first-time setup before ANY action. This is a **BLOCKING** operation.
-
-You **MUST** reference [references/config/first-time-setup.md](references/config/first-time-setup.md) for first-time setup.
+**CRITICAL**: When `preferences.md` is not found, you **MUST** run the first-time setup (a **BLOCKING** operation) before ANY action, following [references/config/first-time-setup.md](references/config/first-time-setup.md).
 
 
 ## Workflow
@@ -69,10 +59,12 @@ Check `preferences.md` (see Preferences section above)
 ### Step 2: Analyze User Question
 
 Analyze the user question to determine user intent and the task to perform, especially pay attention to the following:
-- Whether the user request involves analying Blasphemous Source code. 
+- Whether the user request involves analyzing Blasphemous Source code. 
   - If yes, you SHOULD create a sub-agent or sub-task to handle the source code analysis using [references/sub-skills/source-analyzer.md](references/sub-skills/source-analyzer.md)
 - Whether the user request involves debugging, log tracking, or error tracking.
   - If yes, you SHOULD create a sub-agent or sub-task to handle log analysis using [references/sub-skills/log-analyzer.md](references/sub-skills/log-analyzer.md)
+
+**Done when**: the user question is classified into one of the three branches (source code analysis, log analysis, or general modding question), and a sub-agent task has been created for every branch that applies.
 
 ### Step 3: Use Tools to Gather Information
 
@@ -84,6 +76,17 @@ Use tools to gather information required for the task, including:
 
 The tools' `.md` files should contain all the path specifications required for the task; do not ask user for path again unless you don't find the path information you need there.
 
+**Done when**: every path the task needs (source code, modding profile, logs) has been located in `preferences.md` or the navigation documents, and any missing or stale path has been handed to Step 5.
+
 ### Step 4: Solve User Question
 
 Use the gathered information to solve the user question.
+
+**Done when**: the answer is complete and every source-code class, file path, and log location cited in the answer has been verified against the actual files.
+
+### Step 5: Path Failure Recovery
+
+If any source code analysis or modding operation fails with file-not-found or path-related errors, the agent MUST ask the user: "Some operations failed using the saved paths in `preferences.md`. Would you like to re-run the first-time setup to update them?"
+
+- **If Yes**: Delete `preferences.md` and trigger first-time setup again (see Step 1). This allows the user to correct outdated or incorrect paths.
+- **If No**: Continue with current paths, report the specific failure to the user.

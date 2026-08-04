@@ -2,6 +2,13 @@
 
 Complete navigation of the Blasphemous UI System. `UIController.instance` is the global singleton entry point, managing all interface switching, fade transitions, and UI widget references. The `UIScreens` enum defines switchable UI screens.
 
+## Core Design Patterns
+
+1. Entry: `UIController.instance` singleton + `UIScreens` enum
+2. Widgets inherit `UIWidget` (CanvasGroup only); screen logic lives in `MenuLogic/`
+3. HUD components in `UIGameLogic/` (health bar, fervour bar, flasks, etc.)
+4. Console: `ConsoleCommand` base class + ~40 commands
+
 ---
 
 ## Core Entry Point

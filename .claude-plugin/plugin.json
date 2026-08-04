@@ -1,7 +1,7 @@
 {
   "name": "blasphemous-modding-helper",
   "description": "Adds a `blasphemous-modding-helper` skill for modding the game Blasphemous",
-  "version": "1.1.1",
+  "version": "1.2.0",
   "author": {
     "name": "EltonZhang777"
   },

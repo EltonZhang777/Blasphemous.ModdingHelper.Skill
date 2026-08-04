@@ -426,9 +426,20 @@ function run(cmd, desc) {
     return;
   }
   try {
-    execSync(cmd, { stdio: "ignore" });
-  } catch {
+    // stdio: "pipe" (not "ignore") so child stderr is captured for the
+    // failure path below; successful runs stay quiet.
+    execSync(cmd, { stdio: "pipe", maxBuffer: 10 * 1024 * 1024 });
+  } catch (e) {
+    const detail =
+      (e && e.stderr && e.stderr.toString().trim()) ||
+      (e && e.stdout && e.stdout.toString().trim()) ||
+      (e && e.message) ||
+      "";
     warn(`${desc} failed. Try manually.`);
+    const lines = detail.split("\n").slice(0, 10).filter((l) => l.trim());
+    if (lines.length > 0) {
+      console.log(`    ${lines.join("\n    ")}`);
+    }
   }
 }
 
