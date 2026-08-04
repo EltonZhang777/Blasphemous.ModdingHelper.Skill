@@ -6,18 +6,18 @@ Blasphemous source code full navigation. All paths are relative to `Assembly-CSh
 
 ## Source Code Structure Overview
 
-| Top-level Directory | Description | Navigation Document |
-|---------|------|---------|
-| `Framework/` | Core Framework, Managers, Attributes, Inventory, Maps, DLC |  |
-| `Gameplay/` | Gameplay: Bosses, Enemies, Player, UI, Animation |  |
-| `Tools/` | Tools/Utilities: Level, PlayMaker, Audio, NPC, Items |  |
-| `Extras/` | Epic Online Services (EOS) Integrations |  |
-| `I2/` | I2 Localization Framework |  |
-| `VisualEffects/` | Screen color palette |  |
-| `Effects/` | Blood particle fix tool |  |
-| `HutongGames/` | PlayMaker Custom Actions |  |
-| `TPO_FOLLOWER_PROTOTYPE/` | TPO Follower Prototype |  |
-| Root `.cs` files | Miscellaneous tools, traps, effects, UI components, etc. |  |
+| Top-level Directory | Description |
+|---------|------|
+| `Framework/` | Core Framework, Managers, Attributes, Inventory, Maps, DLC |
+| `Gameplay/` | Gameplay: Bosses, Enemies, Player, UI, Animation |
+| `Tools/` | Tools/Utilities: Level, PlayMaker, Audio, NPC, Items |
+| `Extras/` | Epic Online Services (EOS) Integrations |
+| `I2/` | I2 Localization Framework |
+| `VisualEffects/` | Screen color palette |
+| `Effects/` | Blood particle fix tool |
+| `HutongGames/` | PlayMaker Custom Actions |
+| `TPO_FOLLOWER_PROTOTYPE/` | TPO Follower Prototype |
+| Root `.cs` files | Miscellaneous tools, traps, effects, UI components, etc. |
 
 ---
 
@@ -75,16 +75,20 @@ Blasphemous source code full navigation. All paths are relative to `Assembly-CSh
 
 ---
 
-## Find by Feature
+## Find by Feature / Path Route
 
-- **Player Actions** → [player.md](player.md) (Penitent, Abilities, Input)
-- **Enemy AI** → [enemy.md](enemy.md) (EnemyBehaviour, EnemyAI)
-- **Boss Combat** → [bosses.md](bosses.md) (BossFightManager, BossBehaviour)
-- **Item Effects** → [items.md](items.md) (ObjectEffect, RelicEffect, RosaryBead)
-- **UI Screens** → [ui.md](ui.md) (UIController, Widgets, MenuLogic)
-- **Level Mechanics** → [level.md](level.md) (Actionables, Interactables, Teleport)
-- **Story Events** → [core.md](core.md) (EventManager, DialogManager)
-- **Save System** → [core.md](core.md) (PersistentManager)
-- **Localization / Translation** → [localization.md](localization.md)
-- **PlayMaker Scripts** → [tools.md](tools.md) (Playmaker2/Action, Condition, Events)
-- **Console Commands** → [ui.md](ui.md) (Console/)
+| Feature / Class | Path Prefix | Document |
+|------|------|------|
+| Player Actions (Penitent, Abilities, Input) | `Gameplay/GameControllers/Penitent/` | [player.md](player.md) |
+| Enemy AI (EnemyBehaviour, EnemyAI) | `Gameplay/GameControllers/Enemies/` | [enemy.md](enemy.md) |
+| Entity Base Classes (Entity, Enemy, Hit, Attack) | `Gameplay/GameControllers/Entities/` | [enemy.md](enemy.md) |
+| Boss Combat (BossFightManager, BossBehaviour) | `Gameplay/GameControllers/Bosses/` | [bosses.md](bosses.md) |
+| Item Effects (ObjectEffect, RelicEffect, RosaryBead) | `Framework/Inventory/`, `Tools/Items/` | [items.md](items.md) |
+| UI Screens (UIController, Widgets, MenuLogic) | `Gameplay/UI/` | [ui.md](ui.md) |
+| Level Mechanics (Actionables, Interactables, Teleport) | `Tools/Level/` | [level.md](level.md) |
+| Story Events (EventManager, DialogManager) | `Framework/Managers/` | [core.md](core.md) |
+| Save System (PersistentManager) | `Framework/Managers/` | [core.md](core.md) |
+| Core Framework (Attributes, Audio, Map, DLC) | `Framework/`, `Framework/FrameworkCore/` | [core.md](core.md) |
+| Localization / Translation | `I2/`, `Framework/Managers/LocalizationManager.cs` | [localization.md](localization.md) |
+| PlayMaker Scripts (Playmaker2/Action, Condition, Events) | `Tools/Playmaker2/` | [tools.md](tools.md) |
+| Console Commands (Console/) | `Gameplay/UI/Console/` | [ui.md](ui.md) |
