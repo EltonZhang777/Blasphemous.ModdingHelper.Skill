@@ -8,6 +8,13 @@ Core navigation of the Blasphemous framework — infrastructure for all Managers
 > - `Core.Events` → `EventManager`, manages the global Flag / Event system.
 > - `Core.Input` → `InputManager`, manages player input (Rewired wrapper).
 
+## Core Design Patterns
+
+1. `Core` global singleton (`Singleton<Core>`); all Managers created in `PreInit()` and exposed as static properties (`Core.XXX`)
+2. All Managers inherit `GameSystem`; lifecycle managed uniformly by `Core`
+3. Flag/Event system: `Core.Events.LaunchEvent(id, param)` / `SetFlag` / `GetFlag`, persisted via `PersistentInterface`
+4. Save system: `PersistentManager` snapshot (`commonElements` cross-scene + `sceneElements` per-scene)
+
 ---
 
 ## Managers

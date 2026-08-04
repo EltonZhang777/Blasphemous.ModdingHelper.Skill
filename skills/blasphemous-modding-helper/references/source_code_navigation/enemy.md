@@ -5,7 +5,14 @@
 > Entity Base Classes: `Gameplay/GameControllers/Entities/`  
 > EntityStatus: `Framework/FrameworkCore/EntityStatus.cs`
 
-> **Boss/Enemy 归属规则**:本文档覆盖 `Gameplay/GameControllers/Enemies/` 下的敌人与组件。Boss 主类一律在 `Gameplay/GameControllers/Bosses/` 下 → [bosses.md](bosses.md);位于 `Enemies/` 目录但由 Boss 系统驱动的实体(`MasterAnguish` 音频、`SingleAnguish` 动画)与 Boss 级敌人(`Menina`)仅在此列出组件,主类见行内 Notes;同名实体(Boss vs 小怪,如 `PontiffHusk`)以行内链接互相指认。
+> **Boss/Enemy ownership rule**: This document covers enemies and components under `Gameplay/GameControllers/Enemies/`. Boss main classes always live under `Gameplay/GameControllers/Bosses/` → [bosses.md](bosses.md); entities under `Enemies/` driven by the Boss system (`MasterAnguish` audio, `SingleAnguish` animation) and Boss-level enemies (`Menina`) only list their components here — see the inline Notes for the main class; same-named entities (Boss vs regular enemy, e.g. `PontiffHusk`) are cross-linked inline.
+
+## Core Design Patterns
+
+1. Inheritance: `MonoBehaviour → Entity → Enemy → <EnemyName>`; `Enemy` has `[RequireComponent(typeof(EnemyBehaviour))]`
+2. AI runs on a NodeCanvas behaviour tree; `EnemyBehaviour` is the root, driven by `PlayerHeard` / `PlayerSeen` / `SensorHitsFloor` / `GotParry`
+3. Attacks: `EnemyAttack : Attack : Trait`; damage flows through `IDamageable.Damage(Hit)`
+4. Per-enemy folder layout: `AI|IA/` (behaviour) + `Attack/` + `Animator/` + `Audio/`
 
 ---
 

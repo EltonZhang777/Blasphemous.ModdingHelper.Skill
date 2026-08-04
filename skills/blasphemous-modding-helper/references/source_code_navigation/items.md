@@ -1,6 +1,13 @@
 # Items / Inventory / Equipment
 
-List of important item, inventory, equipment, effect, and achievement related code in Blasphemous source code.
+Item / inventory / equipment / effect / achievement source code navigation in Blasphemous.
+
+## Core Design Patterns
+
+1. Three-layer item model: `BaseElement` (ScriptableObject data) → `BaseInventoryObject` (MonoBehaviour behaviour) → concrete type
+2. `ObjectEffect` is the core effect base class; `EffectType` / `ConditionType` enums control trigger timing and conditions
+3. Achievement progress accumulates automatically via `Add()` and other hooks (fixed percentages per type, e.g. AC16–AC20)
+4. Equippables: `EquipableInventoryObject` (Equip/UnEquip/Use → SendMessage events)
 
 ---
 

@@ -2,7 +2,14 @@
 
 Boss system source code navigation. All paths relative to `Assembly-CSharp/`.
 
-> **Boss/Enemy 归属规则**:本文档覆盖 `Gameplay/GameControllers/Bosses/` 下的 Boss 主类/行为。位于 `Enemies/` 目录但由 Boss 系统驱动的实体(`MasterAnguish` 音频、`SingleAnguish` 动画)与 Boss 级敌人(`Menina`)见 [enemy.md](enemy.md);同名实体(Boss vs 小怪,如 `PontiffHusk`)以行内链接互相指认。
+> **Boss/Enemy ownership rule**: This document covers Boss main classes/behaviour under `Gameplay/GameControllers/Bosses/`. Entities under `Enemies/` that are driven by the Boss system (`MasterAnguish` audio, `SingleAnguish` animation) and Boss-level enemies (`Menina`) are documented in [enemy.md](enemy.md); same-named entities (Boss vs regular enemy, e.g. `PontiffHusk`) are cross-linked inline.
+
+## Core Design Patterns
+
+1. One folder per boss: main class + `XXXBehaviour` + `XXX_St*` state classes + Attack/Weapon/Animator/Audio
+2. `BossFightManager` controls fight flow and phase transitions
+3. Reusable attack patterns shared via `CommonAttacks/`
+4. State definitions centralized in `BOSS_STATES.cs` (shared across bosses)
 
 ---
 

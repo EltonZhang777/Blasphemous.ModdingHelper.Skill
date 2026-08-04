@@ -1,6 +1,13 @@
 # Localization
 
-List of important localization code components in Blasphemous source code.
+Localization source code navigation in Blasphemous (I2.Loc + the game's own `LocalizationManager`).
+
+## Core Design Patterns
+
+1. Dual engine: I2.Loc (third-party, `Sources[0]` holds all translation data) + game's own `LocalizationManager` (language switching, fonts, tag parsing) — keep them distinct
+2. Term keys are `prefix/KEY`; `ScriptLocalization` is a compile-time generated type-safe wrapper
+3. Tag system: `[ICON:name]` / `[ACT:action]` parsed by `ParseMeshPro()`
+4. Text language and audio language managed independently (`CurrentAudioLanguageIndex` + `OnLocalizeAudioEvent`)
 
 ---
 

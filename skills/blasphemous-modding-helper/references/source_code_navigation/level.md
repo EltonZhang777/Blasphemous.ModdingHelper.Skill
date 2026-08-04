@@ -4,6 +4,16 @@ Level-related systems: actionables, interactables, layout building, effects, and
 
 > Base path: `Tools/Level/`
 
+## Core Design Patterns
+
+1. **IActionable Chaining** — `TriggerReceiver`, `BreakableInteractor`, `SlashReceiver`, etc. cascade activation of other objects via `IActionable[]` arrays.
+2. **PersistentObject Persistence** — Most interactive objects inherit from `PersistentObject`, saving state via `BasicPersistence` or custom `PersistenceData`.
+3. **Interactable Lifecycle** — Virtual methods `OnUse()` / `OnAwake()` / `OnStart()` / `OnUpdate()` / `PlayerReposition()` form an extensible interactive base class.
+4. **IDamageable Direction Lock** — `BreakableWall` / `PersistentBreakableObject` / `SlashReceiver` use the `DAMAGEABLE_DIRECTION_LOCK` enum to restrict hit direction.
+5. **Material Tag Audio** — `ElusivePlatform` etc. use GameObject tag (e.g., `Material:Stone`) to determine audio prefix.
+6. **DOTween Animation** — Most transitions (doors, platforms, hidden areas) use DOTween for smooth animation.
+7. **PoolManager Object Pooling** — Frequently-created objects like `ShockwaveArea` are reused via PoolManager.
+
 ---
 
 ## Actionables
@@ -260,13 +270,3 @@ Teleport destination marker. Extends `PersistentObject`. Fields: `telportName`, 
 `[Serializable]` class implementing `PersistentInterface`. Stores three float values (`Normal`, `Heavy`, `Critical`) and maps `DamageType` → sleep time via `GetHitSleepTime(Hit hit)`.
 
 ---
-
-## Key Design Patterns
-
-1. **IActionable Chaining** — `TriggerReceiver`, `BreakableInteractor`, `SlashReceiver`, etc. cascade activation of other objects via `IActionable[]` arrays.
-2. **PersistentObject Persistence** — Most interactive objects inherit from `PersistentObject`, saving state via `BasicPersistence` or custom `PersistenceData`.
-3. **Interactable Lifecycle** — Virtual methods `OnUse()` / `OnAwake()` / `OnStart()` / `OnUpdate()` / `PlayerReposition()` form an extensible interactive base class.
-4. **IDamageable Direction Lock** — `BreakableWall` / `PersistentBreakableObject` / `SlashReceiver` use the `DAMAGEABLE_DIRECTION_LOCK` enum to restrict hit direction.
-5. **Material Tag Audio** — `ElusivePlatform` etc. use GameObject tag (e.g., `Material:Stone`) to determine audio prefix.
-6. **DOTween Animation** — Most transitions (doors, platforms, hidden areas) use DOTween for smooth animation.
-7. **PoolManager Object Pooling** — Frequently-created objects like `ShockwaveArea` are reused via PoolManager.
