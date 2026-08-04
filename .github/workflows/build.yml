@@ -26,6 +26,12 @@ jobs:
         PROJECT_VERSION=$(jq -r '.version' .claude-plugin/plugin.json)
         echo "PROJECT_VERSION=$PROJECT_VERSION" >> $GITHUB_ENV
 
+    - name: Smoke-test Installer (dry run)
+      run: |
+        node bin/install.js --dry-run --only trae-cn
+        node bin/install.js --dry-run --only claude-code
+        node bin/install.js --help
+
     - name: Package Release
       run: |
         mkdir -p publish

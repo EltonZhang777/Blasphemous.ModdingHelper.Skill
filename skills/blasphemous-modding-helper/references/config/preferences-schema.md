@@ -2,7 +2,7 @@
 
 ## Format
 
-`preferences.md` uses YAML format:
+`preferences.md` uses plain `key: value` lines (a YAML subset, no top-level marker):
 
 ```yaml
 full_source_code_path: Path/to/blasphemous-source-code

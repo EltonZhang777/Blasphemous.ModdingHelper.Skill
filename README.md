@@ -88,6 +88,11 @@ The repository uses:
 - **`gemini-extension.json`** — Gemini CLI extension descriptor
 - **`skills-lock.json`** — Skill version tracking
 
+### Distribution note
+
+- **GitHub Release zip** contains only `skills/blasphemous-modding-helper/` — intended for manual installs.
+- **`npx github:EltonZhang777/Blasphemous.ModdingHelper.Skill`** (used by the curl-pipe paths of `install.sh` / `install.ps1`) runs the full repository, which also includes `bin/install.js` and the platform installers.
+
 ---
 
 ## 📄 License
