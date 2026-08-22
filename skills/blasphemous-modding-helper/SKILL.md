@@ -11,15 +11,9 @@ You are helping with Blasphemous mod development.
 
 At the start of every Skill invocation, you MUST read [Requirement levels](references/requirement-levels-definitions.md). It defines the RFC 2119 vocabulary used by every authored normative instruction in this Skill; external documentation, source code, and illustrative examples retain their original wording as described there.
 
-## Coding specifications
+## Coding standards
 
-- Game source code language and modding language: C#
-- Game Unity version: Unity 2017.4.40f1
-  - You MAY search for Unity 2017.4.40f1 API documentation in the Unity Documentation at `https://docs.unity3d.com/2017.4/Documentation/ScriptReference/30_search.html?q=<class-name-or-method-name>` for extra information. Replace `<class-name-or-method-name>` with the actual class or method name you are searching for.
-- Mods are developed under the Blasphemous ModdingAPI framework. You **MUST** follow the ModdingAPI conventions and best practices **WHENEVER YOU CODE** by browsing the links below.
-  - ModdingAPI documentation can be found at `https://github.com/BrandenEK/Blasphemous.ModdingAPI/tree/main/docs`
-  - ModdingAPI source code can be found at `https://github.com/BrandenEK/Blasphemous.ModdingAPI/tree/main`
-- Before generating or modifying Mod-owned C# in a caller's Mod repository, read [C# and Modding Standards](references/coding-standards.md). It defines the local C# baseline, the complete `BlasMod` lifecycle, Harmony patch ownership, exceptions, and examples. Do not apply it to decompiled, upstream, dependency, generated, or directly copied code that the caller cannot modify.
+Before generating, modifying, reviewing, or refactoring Mod-owned C# in a caller's Mod repository, you MUST read the [coding standards](references/sub-skills/coding-standards.md). It applies the ownership gate and routes C# and runtime Unity work to the [C# and runtime Unity standards](references/coding-standards-csharp-unity.md); later ModdingAPI and Harmony branches are loaded when their task signals are added.
 
 ## Preferences (`preferences.md`)
 
@@ -76,8 +70,8 @@ Analyze the user question to determine user intent and the task to perform, espe
 Use tools to gather information required for the task, including:
 - source-analyzer and log-analyzer
   - mentioned in `### Step 2: Analyze User Question`
-- Unity API documentation and ModdingAPI documentation
-  - mentioned in the `## Coding specifications` section above
+- The coding standards and its selected branch references
+  - mentioned in the `## Coding standards` section above
 
 The tools' `.md` files should contain all the path specifications required for the task; do not ask user for path again unless you don't find the path information you need there.
 
