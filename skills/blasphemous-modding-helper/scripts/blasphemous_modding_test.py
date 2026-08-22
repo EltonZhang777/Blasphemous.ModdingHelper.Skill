@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
 """Profile-aware entry point for the Blasphemous mod test workflow.
 
-This first slice is intentionally read-only. It validates the invocation
-environment, resolves preferences and a project, preflights a modding
-profile, builds or selects one package, validates its deployment plan, and
-exposes the dry-run and status seams used by later workflow steps.
+This workflow validates the invocation environment, resolves preferences and
+a project, preflights a modding profile, builds or selects one package, and
+deploys a validated artifact. Launch, evidence, and cleanup are later steps.
 """
 
 from __future__ import annotations
 
 import argparse
+import hashlib
+import json
 import os
 import platform
 import re
@@ -18,10 +19,12 @@ import stat
 import subprocess
 import sys
 import tempfile
+import uuid
 import zipfile
 import xml.etree.ElementTree as ET
 from contextlib import contextmanager
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from pathlib import PurePosixPath
 from typing import Dict, Iterator, List, Optional, Sequence, Tuple
@@ -81,6 +84,36 @@ class ArtifactPlan:
     artifact_kind: str
     package_root: Path
     relative_files: Tuple[Path, ...]
+
+
+@dataclass(frozen=True)
+class DeploymentOperation:
+    relative_path: Path
+    source: Path
+    destination: Path
+    existed: bool
+
+
+@dataclass(frozen=True)
+class DeploymentResult:
+    session_id: str
+    state_path: Path
+    deployed_files: Tuple[Path, ...]
+
+
+@dataclass
+class DeploymentTransaction:
+    session_id: str
+    session_directory: Path
+    state_path: Path
+    profile: Path
+    modding_root: Path
+    plan: ArtifactPlan
+    operations: Tuple[DeploymentOperation, ...]
+    planned_directories: Tuple[Path, ...]
+    records: List[Dict[str, object]]
+    created_directories: List[Path]
+    created_at: str
 
 
 def _preference_paths(cwd: Path, home: Path) -> Tuple[Tuple[str, Path], ...]:
@@ -345,23 +378,30 @@ def build_project(project: Path, configuration: str, solution_root: Path) -> Non
     )
 
 
+def _first_symlink_component(path: Path) -> Optional[Path]:
+    for component in (path, *path.parents):
+        if component.is_symlink():
+            return component
+    return None
+
+
 def _reject_symlink_path(path: Path) -> None:
     """Reject a path whose existing components could redirect artifact reads."""
 
-    for component in (path, *path.parents):
-        try:
-            if component.is_symlink():
-                raise CliError(
-                    EXIT_PACKAGE,
-                    "package artifact",
-                    f"Package paths cannot contain symlinks: {component}",
-                )
-        except OSError as error:
-            raise CliError(
-                EXIT_PACKAGE,
-                "package artifact",
-                f"Could not inspect package path {component}: {error}",
-            ) from error
+    try:
+        link = _first_symlink_component(path)
+    except OSError as error:
+        raise CliError(
+            EXIT_PACKAGE,
+            "package artifact",
+            f"Could not inspect package path {path}: {error}",
+        ) from error
+    if link is not None:
+        raise CliError(
+            EXIT_PACKAGE,
+            "package artifact",
+            f"Package paths cannot contain symlinks: {link}",
+        )
 
 
 def _safe_relative_path(relative_path: Path) -> None:
@@ -600,6 +640,432 @@ def prepare_artifact(
         )
 
 
+def _deployment_state_root() -> Path:
+    return Path(tempfile.gettempdir()) / "blasphemous-modding-test" / "sessions"
+
+
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _reject_hard_linked_destination(path: Path) -> None:
+    if path.is_symlink():
+        raise OSError(f"deployment target is a symlink: {path}")
+    try:
+        hard_linked = path.exists() and path.is_file() and path.stat().st_nlink > 1
+    except OSError as error:
+        raise OSError(f"could not inspect deployment target {path}: {error}") from error
+    if hard_linked:
+        raise OSError(f"deployment target has multiple hard links: {path}")
+
+
+def _reject_unsafe_deployment_destination(path: Path) -> None:
+    try:
+        link = _first_symlink_component(path)
+    except OSError as error:
+        raise OSError(f"could not inspect deployment path {path}: {error}") from error
+    if link is not None:
+        raise OSError(f"deployment path contains a symlink: {link}")
+    _reject_hard_linked_destination(path)
+
+
+def _plan_deployment_operations(
+    profile: ProfilePreflight,
+    plan: ArtifactPlan,
+) -> Tuple[Tuple[DeploymentOperation, ...], Tuple[Path, ...]]:
+    """Validate every destination before creating any profile directory."""
+
+    modding_root = profile.modding_root
+    if not modding_root.is_dir():
+        raise CliError(
+            EXIT_DEPLOY,
+            "deployment",
+            f"Selected Modding root is not a directory: {modding_root}",
+        )
+    try:
+        root_link = _first_symlink_component(modding_root)
+    except OSError as error:
+        raise CliError(
+            EXIT_DEPLOY,
+            "deployment",
+            f"Could not inspect Modding root: {error}",
+        ) from error
+    if root_link is not None:
+        raise CliError(
+            EXIT_DEPLOY,
+            "deployment",
+            f"Modding paths cannot contain symlinks: {root_link}",
+        )
+
+    try:
+        resolved_root = modding_root.resolve()
+    except OSError as error:
+        raise CliError(
+            EXIT_DEPLOY,
+            "deployment",
+            f"Could not resolve Modding root: {error}",
+        ) from error
+    operations: List[DeploymentOperation] = []
+    missing_directories = set()
+    for relative_path in plan.relative_files:
+        source = plan.package_root / relative_path
+        destination = modding_root / relative_path
+        if not source.is_file() or source.is_symlink():
+            raise CliError(
+                EXIT_DEPLOY,
+                "deployment",
+                f"Artifact changed after validation; source file is unavailable: {relative_path}",
+            )
+        try:
+            resolved_destination = destination.resolve(strict=False)
+        except OSError as error:
+            raise CliError(
+                EXIT_DEPLOY,
+                "deployment",
+                f"Could not resolve deployment path {destination}: {error}",
+            ) from error
+        if not _is_within(resolved_destination, resolved_root):
+            raise CliError(
+                EXIT_DEPLOY,
+                "deployment",
+                f"Package path escapes the selected Modding root: {relative_path}",
+            )
+        try:
+            _reject_unsafe_deployment_destination(destination)
+        except OSError as error:
+            raise CliError(
+                EXIT_DEPLOY,
+                "deployment",
+                str(error),
+            ) from error
+
+        parent_relative = destination.parent.relative_to(modding_root)
+        current = modding_root
+        for part in parent_relative.parts:
+            current /= part
+            if current.is_symlink():
+                raise CliError(
+                    EXIT_DEPLOY,
+                    "deployment",
+                    f"Deployment directory cannot be a symlink: {current}",
+                )
+            if current.exists() and not current.is_dir():
+                raise CliError(
+                    EXIT_DEPLOY,
+                    "deployment",
+                    f"Deployment path is not a directory: {current}",
+                )
+            if not current.exists():
+                missing_directories.add(current)
+
+        if destination.exists():
+            if not destination.is_file():
+                raise CliError(
+                    EXIT_DEPLOY,
+                    "deployment",
+                    f"Deployment target is not a regular file: {destination}",
+                )
+            existed = True
+        else:
+            existed = False
+        operations.append(
+            DeploymentOperation(relative_path, source, destination, existed)
+        )
+
+    return (
+        tuple(operations),
+        tuple(
+            sorted(
+                missing_directories,
+                key=lambda path: (len(path.parts), path.as_posix().casefold()),
+            )
+        ),
+    )
+
+
+def _manifest_payload(
+    transaction: DeploymentTransaction,
+    status: str,
+    error: Optional[str] = None,
+    rollback_error: Optional[str] = None,
+) -> Dict[str, object]:
+    payload: Dict[str, object] = {
+        "version": 1,
+        "session_id": transaction.session_id,
+        "status": status,
+        "created_at": transaction.created_at,
+        "profile": str(transaction.profile),
+        "modding_root": str(transaction.modding_root),
+        "configuration": transaction.plan.configuration,
+        "target_name": transaction.plan.target_name,
+        "artifact": str(transaction.plan.artifact),
+        "artifact_kind": transaction.plan.artifact_kind,
+        "package_root": str(transaction.plan.package_root),
+        "planned_files": [
+            relative_path.as_posix()
+            for relative_path in transaction.plan.relative_files
+        ],
+        "planned_directories": [
+            path.relative_to(transaction.modding_root).as_posix()
+            for path in transaction.planned_directories
+        ],
+        "created_directories": [
+            path.relative_to(transaction.modding_root).as_posix()
+            for path in transaction.created_directories
+        ],
+        "files": transaction.records,
+    }
+    if error is not None:
+        payload["error"] = error
+    if rollback_error is not None:
+        payload["rollback_error"] = rollback_error
+    return payload
+
+
+def _write_manifest(
+    transaction: DeploymentTransaction,
+    status: str,
+    error: Optional[str] = None,
+    rollback_error: Optional[str] = None,
+) -> None:
+    temporary = transaction.state_path.with_suffix(".tmp")
+    temporary.write_text(
+        json.dumps(
+            _manifest_payload(transaction, status, error, rollback_error),
+            ensure_ascii=False,
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    os.replace(temporary, transaction.state_path)
+
+
+def _create_deployment_transaction(
+    profile: ProfilePreflight,
+    plan: ArtifactPlan,
+    operations: Tuple[DeploymentOperation, ...],
+    planned_directories: Tuple[Path, ...],
+) -> DeploymentTransaction:
+    state_root = _deployment_state_root()
+    session_directory: Optional[Path] = None
+    try:
+        state_root.mkdir(parents=True, exist_ok=True)
+        for _ in range(5):
+            session_id = uuid.uuid4().hex
+            candidate = state_root / session_id
+            try:
+                candidate.mkdir()
+            except FileExistsError:
+                continue
+            session_directory = candidate
+            break
+        if session_directory is None:
+            raise OSError("could not allocate a unique deployment session directory")
+
+        records: List[Dict[str, object]] = []
+        for operation in operations:
+            backup_path = session_directory / "backups" / operation.relative_path
+            records.append(
+                {
+                    "relative_path": operation.relative_path.as_posix(),
+                    "destination": str(operation.destination),
+                    "existed": operation.existed,
+                    "backup_path": (
+                        backup_path.relative_to(session_directory).as_posix()
+                        if operation.existed
+                        else None
+                    ),
+                    "backup_created": False,
+                    "original_sha256": None,
+                    "deployed_sha256": None,
+                    "started": False,
+                    "completed": False,
+                }
+            )
+        transaction = DeploymentTransaction(
+            session_id,
+            session_directory,
+            session_directory / "manifest.json",
+            profile.profile,
+            profile.modding_root,
+            plan,
+            operations,
+            planned_directories,
+            records,
+            [],
+            datetime.now(timezone.utc).isoformat(),
+        )
+        _write_manifest(transaction, "planned")
+        return transaction
+    except (OSError, TypeError, ValueError) as error:
+        if session_directory is not None:
+            shutil.rmtree(session_directory, ignore_errors=True)
+        raise CliError(
+            EXIT_DEPLOY,
+            "deployment",
+            f"Could not create deployment transaction state: {error}",
+        ) from error
+
+
+def _rollback_deployment(transaction: DeploymentTransaction) -> Tuple[str, ...]:
+    """Undo an incomplete deployment so no partial package remains.
+
+    This failure-path compensation is distinct from the later safe-clean
+    operation, which preserves new files from a successful test by default.
+    """
+
+    errors: List[str] = []
+    for record in reversed(transaction.records):
+        if not record["started"]:
+            continue
+        destination = Path(str(record["destination"]))
+        try:
+            if record["existed"]:
+                backup_value = record["backup_path"]
+                if not record["backup_created"] or not backup_value:
+                    continue
+                backup = transaction.session_directory / str(backup_value)
+                if not backup.is_file():
+                    raise OSError(f"backup is missing: {backup}")
+                if destination.exists() and not destination.is_file():
+                    raise OSError(f"deployment target is no longer a regular file: {destination}")
+                _reject_unsafe_deployment_destination(destination)
+                if not destination.parent.is_dir():
+                    raise OSError(f"deployment target parent is unavailable: {destination.parent}")
+                if record["completed"] and record["deployed_sha256"]:
+                    if _sha256(destination) != str(record["deployed_sha256"]):
+                        raise OSError(f"deployed file changed before rollback: {destination}")
+                shutil.copy2(backup, destination)
+                expected = record["original_sha256"]
+                if expected and _sha256(destination) != expected:
+                    raise OSError(f"restored file hash mismatch: {destination}")
+            else:
+                if destination.exists():
+                    if not destination.is_file():
+                        raise OSError(f"new deployment target is not a regular file: {destination}")
+                    _reject_unsafe_deployment_destination(destination)
+                    expected = record["deployed_sha256"]
+                    if not expected or _sha256(destination) != str(expected):
+                        raise OSError(f"new deployment target changed before rollback: {destination}")
+                    destination.unlink()
+        except (OSError, ValueError) as error:
+            errors.append(str(error))
+
+    for directory in reversed(transaction.created_directories):
+        try:
+            if directory.is_symlink():
+                raise OSError(f"created deployment directory became a symlink: {directory}")
+            if directory.exists():
+                directory.rmdir()
+        except OSError as error:
+            errors.append(str(error))
+    return tuple(errors)
+
+
+def deploy_artifact(
+    plan: ArtifactPlan,
+    profile: ProfilePreflight,
+) -> DeploymentResult:
+    """Deploy one validated artifact with a recoverable transaction manifest."""
+
+    try:
+        operations, missing_directories = _plan_deployment_operations(profile, plan)
+    except CliError as error:
+        raise CliError(
+            EXIT_DEPLOY,
+            "deployment",
+            f"Deployment preflight failed before profile mutation; rollback not required: {error}",
+        ) from error
+    transaction = _create_deployment_transaction(
+        profile,
+        plan,
+        operations,
+        missing_directories,
+    )
+    try:
+        _write_manifest(transaction, "deploying")
+        for directory in missing_directories:
+            if directory.is_symlink():
+                raise OSError(f"deployment directory became a symlink: {directory}")
+            if directory.exists():
+                if not directory.is_dir():
+                    raise OSError(f"deployment path is not a directory: {directory}")
+                continue
+            directory.mkdir()
+            if directory.is_symlink() or not directory.is_dir():
+                raise OSError(f"created deployment path is not a directory: {directory}")
+            transaction.created_directories.append(directory)
+            _write_manifest(transaction, "deploying")
+
+        for index, operation in enumerate(operations):
+            record = transaction.records[index]
+            record["started"] = True
+            _write_manifest(transaction, "deploying")
+            _reject_unsafe_deployment_destination(operation.destination)
+            if operation.existed:
+                backup_value = record["backup_path"]
+                if not backup_value:
+                    raise OSError(f"backup path is missing: {operation.destination}")
+                backup = transaction.session_directory / str(backup_value)
+                backup.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(operation.destination, backup)
+                record["backup_created"] = True
+                record["original_sha256"] = _sha256(backup)
+                _write_manifest(transaction, "deploying")
+
+            source_hash = _sha256(operation.source)
+            record["deployed_sha256"] = source_hash
+            _reject_unsafe_deployment_destination(operation.destination)
+            shutil.copy2(operation.source, operation.destination)
+            if (
+                not operation.destination.is_file()
+                or _sha256(operation.destination) != source_hash
+            ):
+                raise OSError(f"deployed file hash mismatch: {operation.destination}")
+            record["completed"] = True
+            _write_manifest(transaction, "deploying")
+
+        _write_manifest(transaction, "deployed")
+        return DeploymentResult(
+            transaction.session_id,
+            transaction.state_path,
+            tuple(operation.relative_path for operation in operations),
+        )
+    except Exception as error:
+        rollback_errors = _rollback_deployment(transaction)
+        if rollback_errors:
+            rollback_message = "; ".join(rollback_errors)
+            try:
+                _write_manifest(
+                    transaction,
+                    "rollback_failed",
+                    str(error),
+                    rollback_message,
+                )
+            except OSError:
+                pass
+            raise CliError(
+                EXIT_DEPLOY,
+                "deployment",
+                f"Deployment failed: {error}; rollback failed: {rollback_message}. Session: {transaction.session_id}",
+            ) from error
+        try:
+            _write_manifest(transaction, "rolled_back", str(error))
+        except OSError:
+            pass
+        raise CliError(
+            EXIT_DEPLOY,
+            "deployment",
+            f"Deployment failed: {error}; rollback succeeded. Session: {transaction.session_id}",
+        ) from error
+
+
 def detect_supported_environment() -> str:
     """Return the supported host family and reject compatibility shells."""
 
@@ -814,14 +1280,14 @@ def _add_common_options(parser: argparse.ArgumentParser) -> None:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="blasphemous-modding-test",
-        description="Validate a Blasphemous modding profile without changing it.",
-        epilog="The first workflow slice is read-only: use 'run --dry-run' or 'status'.",
+        description="Build, validate, and deploy a Blasphemous mod artifact.",
+        epilog="Use 'run --dry-run' to inspect the plan without deployment, or 'status' for a read-only profile view.",
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     run_parser = subparsers.add_parser(
         "run",
-        help="Resolve project/preferences/profile and optionally perform a dry run.",
+        help="Build or select an artifact and deploy it, or print a dry-run plan.",
     )
     _add_common_options(run_parser)
     run_parser.add_argument(
@@ -879,12 +1345,6 @@ def _print_artifact_plan(plan: ArtifactPlan) -> None:
 
 
 def _run_command(args: argparse.Namespace) -> int:
-    if not args.dry_run:
-        raise CliError(
-            EXIT_USAGE,
-            "usage/configuration",
-            "The run command is read-only in this workflow slice; pass --dry-run. Deployment and launch are added by later tickets.",
-        )
     context = _resolve_context(args, require_project=True)
     with prepare_artifact(
         context.project,
@@ -894,14 +1354,20 @@ def _run_command(args: argparse.Namespace) -> int:
     ) as plan:
         _print_context(context)
         _print_artifact_plan(plan)
-        print("Dry run: no profile files copied; no process launched.")
+        if args.dry_run:
+            print("Dry run: no profile files copied; no process launched.")
+        else:
+            result = deploy_artifact(plan, context.profile)
+            print(f"Deployment session: {result.session_id}")
+            print(f"Deployment state: deployed")
+            print(f"Deployed files: {len(result.deployed_files)}")
     return EXIT_SUCCESS
 
 
 def _status_command(args: argparse.Namespace) -> int:
     context = _resolve_context(args, require_project=False)
     _print_context(context)
-    print("Test session status: not tracked in this workflow slice")
+    print("Test session listing: added by later workflow tickets")
     print("Status is read-only: no files copied; no process launched.")
     return EXIT_SUCCESS
 

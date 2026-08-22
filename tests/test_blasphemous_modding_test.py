@@ -1,3 +1,6 @@
+import hashlib
+import importlib.util
+import json
 import os
 import platform
 import shutil
@@ -8,6 +11,7 @@ import tempfile
 import unittest
 import zipfile
 from pathlib import Path
+from unittest import mock
 
 
 SCRIPT = (
@@ -43,6 +47,10 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
             self.environment.pop(variable, None)
         self.environment["HOME"] = str(self.home)
         self.environment["USERPROFILE"] = str(self.home)
+        self.temp_root = self.root / "temp"
+        self.temp_root.mkdir()
+        for variable in ("TMP", "TEMP", "TMPDIR"):
+            self.environment[variable] = str(self.temp_root)
 
     def tearDown(self):
         self.temp_dir.cleanup()
@@ -149,6 +157,18 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
         )
         return package_root
 
+    def deployment_manifests(self):
+        sessions = self.temp_root / "blasphemous-modding-test" / "sessions"
+        return sorted(sessions.glob("*/manifest.json"))
+
+    def load_cli_module(self):
+        module_name = f"blasphemous_modding_test_{id(self)}"
+        spec = importlib.util.spec_from_file_location(module_name, SCRIPT)
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[module_name] = module
+        spec.loader.exec_module(module)
+        return module
+
     def write_project_preferences(self, profile):
         preferences = self.root / ".skills" / "blasphemous-modding-helper" / "preferences.md"
         preferences.parent.mkdir(parents=True)
@@ -225,7 +245,7 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
         self.assert_success(result)
         self.assertIn(f"Modding profile: {profile}", result.stdout)
         self.assertIn(
-            "Test session status: not tracked in this workflow slice",
+            "Test session listing: added by later workflow tickets",
             result.stdout,
         )
         self.assertEqual(before, self.snapshot())
@@ -459,6 +479,29 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
         )
 
     @unittest.skipUnless(shutil.which("dotnet"), "dotnet SDK required")
+    def test_default_build_deploys_the_validated_package(self):
+        profile = self.create_profile()
+        self.create_buildable_project()
+        self.write_project_preferences(profile)
+
+        result = self.run_cli("run")
+
+        self.assert_success(result)
+        self.assertEqual(
+            (profile / "Modding" / "plugins" / "Example.dll").read_text(
+                encoding="utf-8"
+            ),
+            "plugin\n",
+        )
+        self.assertEqual(
+            (profile / "Modding" / "data" / "build-configuration.txt").read_text(
+                encoding="utf-8"
+            ),
+            "Debug\n",
+        )
+        self.assertIn("Deployment state: deployed", result.stdout)
+
+    @unittest.skipUnless(shutil.which("dotnet"), "dotnet SDK required")
     def test_release_requires_explicit_configuration(self):
         profile = self.create_profile()
         self.create_buildable_project()
@@ -562,6 +605,173 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
 
         self.assert_success(result)
         self.assertIn(f"Artifact: {artifact}", result.stdout)
+
+    def test_run_deploys_artifact_relative_to_selected_modding_root(self):
+        profile = self.create_profile()
+        self.create_project()
+        artifact = self.create_package(root=self.root, target_name="known-artifact")
+        (artifact / "localization").mkdir()
+        (artifact / "localization" / "strings.txt").write_text(
+            "test-localization\n",
+            encoding="utf-8",
+        )
+        self.write_project_preferences(profile)
+
+        result = self.run_cli(
+            "run",
+            "--artifact",
+            str(artifact),
+        )
+
+        self.assert_success(result)
+        for relative_path in (
+            Path("plugins/Example.dll"),
+            Path("data/settings.json"),
+            Path("localization/strings.txt"),
+        ):
+            self.assertEqual(
+                (artifact / relative_path).read_bytes(),
+                (profile / "Modding" / relative_path).read_bytes(),
+            )
+        self.assertFalse((profile / "plugins").exists())
+        self.assertIn("Deployment session:", result.stdout)
+        self.assertIn("Deployed files: 3", result.stdout)
+
+    def test_deployment_records_backups_and_hashes_without_logs(self):
+        profile = self.create_profile()
+        self.create_project()
+        artifact = self.create_package(root=self.root, target_name="known-artifact")
+        existing = profile / "Modding" / "plugins" / "Example.dll"
+        existing.parent.mkdir()
+        existing.write_bytes(b"pre-test-plugin")
+        self.write_project_preferences(profile)
+
+        result = self.run_cli(
+            "run",
+            "--artifact",
+            str(artifact),
+        )
+
+        self.assert_success(result)
+        manifests = self.deployment_manifests()
+        self.assertEqual(len(manifests), 1)
+        manifest = manifests[0]
+        payload = json.loads(manifest.read_text(encoding="utf-8"))
+        self.assertEqual(payload["status"], "deployed")
+        self.assertEqual(payload["planned_directories"], ["data"])
+        self.assertEqual(payload["created_directories"], ["data"])
+        records = {
+            record["relative_path"]: record
+            for record in payload["files"]
+        }
+
+        overwritten = records["plugins/Example.dll"]
+        self.assertTrue(overwritten["existed"])
+        self.assertTrue(overwritten["backup_created"])
+        self.assertEqual(
+            (manifest.parent / overwritten["backup_path"]).read_bytes(),
+            b"pre-test-plugin",
+        )
+        self.assertEqual(
+            overwritten["deployed_sha256"],
+            hashlib.sha256((artifact / "plugins/Example.dll").read_bytes()).hexdigest(),
+        )
+
+        new_file = records["data/settings.json"]
+        self.assertFalse(new_file["existed"])
+        self.assertIsNone(new_file["backup_path"])
+        self.assertTrue(new_file["deployed_sha256"])
+        self.assertNotIn("LogOutput.log", manifest.read_text(encoding="utf-8"))
+
+    def test_deployment_rejects_hard_linked_destination_without_mutation(self):
+        profile = self.create_profile()
+        self.create_project()
+        artifact = self.create_package(root=self.root, target_name="known-artifact")
+        external_file = self.root / "outside-mod-destination.dll"
+        external_file.write_bytes(b"external-content")
+        destination = profile / "Modding" / "plugins" / "Example.dll"
+        destination.parent.mkdir()
+        try:
+            os.link(external_file, destination)
+        except OSError as error:
+            self.skipTest(f"hard links unavailable: {error}")
+        self.write_project_preferences(profile)
+
+        result = self.run_cli(
+            "run",
+            "--artifact",
+            str(artifact),
+        )
+
+        self.assertEqual(result.returncode, 40)
+        self.assertIn("multiple hard links", result.stderr)
+        self.assertEqual(external_file.read_bytes(), b"external-content")
+        self.assertEqual(destination.read_bytes(), b"external-content")
+
+    def test_deployment_failure_rolls_back_partial_copy(self):
+        module = self.load_cli_module()
+        profile = self.create_profile()
+        project = self.create_project()
+        artifact = self.create_package(root=self.root, target_name="known-artifact")
+        existing = profile / "Modding" / "data" / "settings.json"
+        existing.parent.mkdir()
+        existing.write_bytes(b"pre-test-settings")
+        self.write_project_preferences(profile)
+        environment = {
+            "Windows": "Windows",
+            "Linux": "Linux",
+            "Darwin": "macOS",
+        }[platform.system()]
+        profile_preflight = module.preflight_profile(profile, environment)
+
+        real_copy2 = module.shutil.copy2
+        copy_calls = 0
+
+        def fail_on_third_copy(source, destination, *arguments, **keywords):
+            nonlocal copy_calls
+            copy_calls += 1
+            if copy_calls == 3:
+                raise OSError("injected copy failure")
+            return real_copy2(source, destination, *arguments, **keywords)
+
+        with module.prepare_artifact(
+            project,
+            "Debug",
+            explicit_artifact=str(artifact),
+            cwd=self.root,
+        ) as plan:
+            with mock.patch.object(module, "_deployment_state_root", return_value=self.temp_root / "sessions"):
+                with mock.patch.object(module.shutil, "copy2", side_effect=fail_on_third_copy):
+                    with self.assertRaises(module.CliError) as failure:
+                        module.deploy_artifact(plan, profile_preflight)
+
+        self.assertEqual(failure.exception.code, 40)
+        self.assertIn("rollback succeeded", str(failure.exception))
+        self.assertEqual(existing.read_bytes(), b"pre-test-settings")
+        self.assertFalse((profile / "Modding" / "plugins").exists())
+        manifests = sorted((self.temp_root / "sessions").glob("*/manifest.json"))
+        self.assertEqual(len(manifests), 1)
+        payload = json.loads(manifests[0].read_text(encoding="utf-8"))
+        self.assertEqual(payload["status"], "rolled_back")
+
+    def test_deployment_preflight_rejects_file_parent_without_mutation(self):
+        profile = self.create_profile()
+        self.create_project()
+        artifact = self.create_package(root=self.root, target_name="known-artifact")
+        conflicting_parent = profile / "Modding" / "plugins"
+        conflicting_parent.write_bytes(b"not-a-directory")
+        self.write_project_preferences(profile)
+
+        result = self.run_cli(
+            "run",
+            "--artifact",
+            str(artifact),
+        )
+
+        self.assertEqual(result.returncode, 40)
+        self.assertIn("rollback not required", result.stderr)
+        self.assertEqual(conflicting_parent.read_bytes(), b"not-a-directory")
+        self.assertFalse((profile / "Modding" / "data").exists())
 
     def test_explicit_zip_artifact_is_extracted_and_validated(self):
         profile = self.create_profile()
