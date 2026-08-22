@@ -107,6 +107,19 @@ A full lifecycle outline is useful as a reference, but the `OnPreInitialize` met
 
 The method accessibility in a generated Mod must match the actual referenced API. The outline uses the common cross-assembly `protected override` form; if the caller's API requires a different legal override declaration, follow that signature.
 
+## Logging
+
+### Pre-approved debug and temporary logging exception
+
+A logging-only exception for debugging logging functionality is pre-approved and MAY be used without a separate per-use user confirmation when every condition below is met:
+
+- A debug-only statement MUST be excluded from Release by `#if DEBUG` or another compile-time condition supported by the caller's project, so the Release build is unaffected; or
+- A temporary statement MUST be marked with `[DEBUG]`, `[DIAG]`, or an explicit comment that identifies its temporary use, and MUST be removed after testing.
+
+The qualifying statement MUST be for debugging logging functionality. It MUST still use a severity appropriate to the event and provide useful Mod and operation context. It MAY omit other logging guidance, such as ordinary frequency or user-facing-display rules, only for the qualifying debug or temporary statement. This exception MUST NOT waive non-logging coding, API, lifecycle, or patching rules.
+
+If a logging statement does not satisfy every condition above, the normal exception-handling process applies and the agent MUST ask the user before deviating from a local rule.
+
 ## Harmony patches
 
 ### Patch ownership and discovery
