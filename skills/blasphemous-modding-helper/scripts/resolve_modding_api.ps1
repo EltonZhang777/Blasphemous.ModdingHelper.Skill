@@ -339,3 +339,4 @@ Write-Output "MODDING_API_RESOLVED_TAG=$resolvedTag"
 Write-Output "MODDING_API_RESOLVED_COMMIT=$resolvedCommit"
 Write-Output "MODDING_API_DOCS_URL=$docsUrl"
 Write-Output "MODDING_API_SOURCE_URL=$sourceUrl"
+exit 0

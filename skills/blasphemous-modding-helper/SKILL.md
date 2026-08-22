@@ -13,11 +13,7 @@ You are helping with Blasphemous mod development.
 - Game Unity version: Unity 2017.4.40f1
   - You MAY search for Unity 2017.4.40f1 API documentation in the Unity Documentation at `https://docs.unity3d.com/2017.4/Documentation/ScriptReference/30_search.html?q=<class-name-or-method-name>` for extra information. Replace `<class-name-or-method-name>` with the actual class or method name you are searching for.
 - Mods are developed under the Blasphemous ModdingAPI framework. You **MUST** follow the ModdingAPI conventions and best practices **WHENEVER YOU CODE** using a resolved ModdingAPI reference.
-  - When no local ModdingAPI reference is configured, resolve the remote reference before browsing documentation or source:
-    - Bash: `bash scripts/resolve_modding_api.sh --selector latest`
-    - PowerShell: `& .\scripts\resolve_modding_api.ps1 -Selector latest`
-  - Pass an explicit `tag:REF`, `branch:REF`, or `commit:SHA` selector when the user has selected a reference.
-  - Use the resolver's `MODDING_API_DOCS_URL` and `MODDING_API_SOURCE_URL` values for remote fallback. `latest` uses the newest stable GitHub Release; `main` is only valid when explicitly selected as `branch:main`.
+  - Follow [Referencing ModdingAPI](references/sub-skills/referencing-modding-api.md) to select a local checkout or resolve the release-aware remote reference before browsing documentation or source.
 
 ## Preferences (`preferences.md`)
 
@@ -44,7 +40,15 @@ Output is one of: `"project"`, `"user"`, or nothing (not found).
 | Found | Read, parse, apply settings. On first use in session, briefly remind: "Using preferences from [path]. You can edit `preferences.md` to customize source code path, etc." |
 | Not found | **MUST** run first-time setup (see below) — do NOT silently use defaults, do NOT continue to main workflow. |
 
-**`preferences.md` Contains**: `full_source_code_path`, `lightweight_source_code_path`, `modding_profile_path` — see [references/config/preferences-schema.md](references/config/preferences-schema.md) for the full schema.
+**`preferences.md` Contains**: `full_source_code_path`, `lightweight_source_code_path`, and `modding_profile_path`. It may also contain `modding_api_reference_path` and `modding_api_reference_selector` for an opt-in local ModdingAPI checkout — see [references/config/preferences-schema.md](references/config/preferences-schema.md) for the full schema.
+
+When `modding_api_reference_path` is present, use the configured checkout for
+API documentation and source guidance. When it is absent, keep the existing
+preferences valid and use the release-aware remote fallback defined in
+[Referencing ModdingAPI](references/sub-skills/referencing-modding-api.md). A missing
+selector is treated as `latest` by explicit local-reference lifecycle commands.
+Do not clone or update a checkout during ordinary ModdingAPI questions; setup
+and lifecycle commands are explicit operations.
 
 ### First-Time Setup (BLOCKING)
 

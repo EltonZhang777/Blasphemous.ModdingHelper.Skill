@@ -6,7 +6,16 @@
 $ErrorActionPreference = "Stop"
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $Resolver = Join-Path $ScriptDir "resolve_modding_api.ps1"
-$Fixtures = Join-Path $ScriptDir "testdata"
+$Fixtures = Join-Path ([System.IO.Path]::GetTempPath()) ("modding-api-resolver-test-" + [guid]::NewGuid().ToString("N"))
+New-Item -ItemType Directory -Force -Path $Fixtures | Out-Null
+
+Set-Content -LiteralPath (Join-Path $Fixtures "modding-api-release-latest.json") -Value '{"tag_name":"3.0.1","draft":false,"prerelease":false,"resolved_ref":"3.0.1","resolved_commit":"0123456789012345678901234567890123456789"}'
+Set-Content -LiteralPath (Join-Path $Fixtures "modding-api-selector-tag.json") -Value '{"resolved_ref":"2.5.0","resolved_commit":"1111111111111111111111111111111111111111"}'
+Set-Content -LiteralPath (Join-Path $Fixtures "modding-api-selector-branch.json") -Value '{"resolved_ref":"main","resolved_commit":"2222222222222222222222222222222222222222"}'
+Set-Content -LiteralPath (Join-Path $Fixtures "modding-api-release-prerelease.json") -Value '{"tag_name":"3.0.2","draft":false,"prerelease":true,"resolved_commit":"3333333333333333333333333333333333333333"}'
+Set-Content -LiteralPath (Join-Path $Fixtures "modding-api-release-draft.json") -Value '{"tag_name":"3.0.3","draft":true,"prerelease":false,"resolved_commit":"4444444444444444444444444444444444444444"}'
+Set-Content -LiteralPath (Join-Path $Fixtures "modding-api-release-malformed.json") -Value '{"draft":false,"prerelease":false}'
+Set-Content -LiteralPath (Join-Path $Fixtures "modding-api-release-invalid-json.json") -Value '{not-json'
 
 function Fail-Test([string]$Message) {
     Write-Error "[FAIL] $Message"
@@ -35,10 +44,18 @@ function Invoke-Resolver([string]$Selector, [string]$MetadataFile) {
         "-MetadataFile",
         $MetadataFile
     )
-    $output = @(& $shell @arguments 2>&1)
+    $previousErrorActionPreference = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try {
+        $output = @(& $shell @arguments 2>&1)
+        $exitCode = $LASTEXITCODE
+    }
+    finally {
+        $ErrorActionPreference = $previousErrorActionPreference
+    }
     [pscustomobject]@{
         Text = ($output -join "`n")
-        ExitCode = $LASTEXITCODE
+        ExitCode = $exitCode
     }
 }
 
@@ -102,4 +119,5 @@ if ($invalidJson.ExitCode -eq 0) { Fail-Test "invalid JSON metadata should fail"
 Assert-Contains $invalidJson.Text "[ERROR REPORT]"
 Assert-Contains $invalidJson.Text "parse"
 
+Remove-Item -LiteralPath $Fixtures -Recurse -Force
 Write-Output "[OK] resolve_modding_api.ps1 public behavior"

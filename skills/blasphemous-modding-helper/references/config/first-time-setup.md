@@ -33,11 +33,16 @@ ONLY ask the questions in this setup flow, save `preferences.md`, and then conti
    │      ├─ Yes → AskUserQuestion: full source code path (see Q4b)
    │      └─ No  → skip
    │   6. AskUserQuestion: modding profile path (see Q5)
-   │   7. Validate all paths (lightweight MUST exist)
+   │   7. AskUserQuestion: configure a local ModdingAPI reference (see Q6)
+   │      ├─ Yes → use the selected preferences scope, choose a selector, and run the fresh-clone command
+   │      │        ├─ Success → record normalized path and selector
+   │      │        └─ Failure → show the terminal error report and do not add fields
+   │      └─ Skip → leave local reference fields absent; remote fallback remains available
+   │   8. Validate all paths (lightweight MUST exist)
    │      ├─ Fail → retry corresponding single question
    │      └─ OK → continue
-   │   8. Create `preferences.md`
-   │   9. Continue
+   │   9. Create or update `preferences.md`
+   │   10. Continue
    │
    └─ No (run decompiler) → run decompile script synchronously
        (Windows: `scripts/decompile_source.ps1` ; macOS/Linux: `scripts/decompile_source.sh`)
@@ -47,8 +52,12 @@ ONLY ask the questions in this setup flow, save `preferences.md`, and then conti
        │      ├─ Yes → AskUserQuestion: full source code path (see Q4b)
        │      └─ No  → skip
        │   6. AskUserQuestion: modding profile path (see Q5)
-       │   8. Create `preferences.md`
-       │   9. Continue
+       │   7. AskUserQuestion: configure a local ModdingAPI reference (see Q6)
+       │      ├─ Yes → use the selected preferences scope, choose a selector, and run the fresh-clone command
+       │      └─ Skip → leave local reference fields absent
+       │   8. Validate all paths (lightweight MUST exist)
+       │   9. Create or update `preferences.md`
+       │   10. Continue
        │
        └─ Failed (exit code != 0) →
            Report error details to user
@@ -64,8 +73,8 @@ ONLY ask the questions in this setup flow, save `preferences.md`, and then conti
 - Default to English only when user's input language is not available.
 
 Use AskUserQuestion with **ALL applicable** questions in **ONE** call:
-- If user answered "Yes" to Q2: ask Q1 + Q2 + Q3 + Q4 + Q5 + save location = 5 questions
-- If user answered "No" to Q2: ask Q1 + Q2 + Q4 + Q5 + save location = 4 questions (Q3 auto-filled)
+- If user answered "Yes" to Q2: ask Q1 + Q2 + Q3 + Q4 + Q5 + Q6 + save location = 6 questions
+- If user answered "No" to Q2: ask Q1 + Q2 + Q4 + Q5 + Q6 + save location = 5 questions (Q3 auto-filled)
 
 ### Q1: Save Location
 
@@ -74,9 +83,9 @@ header: "Save"
 question: "Where to save preferences?"
 options:
   - label: "User (Recommended)"
-    description: "$HOME/.skills/blasphemous-modding-helper/preferences.md in user home — available across projects"
+    description: "User scope; see preferences-schema.md#approved-local-reference-locations — available across projects"
   - label: "Project"
-    description: ".skills/blasphemous-modding-helper/preferences.md in project — scoped to this repository"
+    description: "Project scope; see preferences-schema.md#approved-local-reference-locations — scoped to this repository"
 ```
 
 Note: Asked first so auto-write for decompile branch knows destination.
@@ -145,6 +154,55 @@ options: a user-input path
 
 Note: This path must be entered manually in all branches. The modding profile is typically a full game copy, not part of the original game installation, so it cannot be auto-detected from the game path.
 
+### Q6: Local ModdingAPI Reference
+
+```yaml
+header: "local ModdingAPI reference"
+question: "Configure a local ModdingAPI reference checkout?"
+options:
+  - label: "Yes (Recommended)"
+    description: "Clone a shallow, reproducible checkout and save its absolute path and selector in preferences.md"
+  - label: "Skip"
+    description: "Leave local reference fields absent and use the release-aware remote fallback"
+```
+
+If the user selects **Yes**, use the same scope selected in Q1. Do not select
+an independent reference scope: the local reference and its preferences must
+stay in the same scope domain. The approved paths are authoritative in
+[preferences-schema.md#approved-local-reference-locations](preferences-schema.md#approved-local-reference-locations).
+
+```yaml
+header: "reference selector"
+question: "Which ModdingAPI reference should be cloned?"
+options:
+  - label: "latest (Recommended)"
+    description: "Newest non-draft, non-prerelease GitHub Release"
+  - label: "Exact tag"
+    description: "Reproduce a named Release tag with tag:REF"
+  - label: "Explicit branch or commit"
+    description: "Use branch:REF or commit:SHA for deliberate development or source pinning"
+```
+
+For **Exact tag**, collect the tag name and pass `tag:REF`. For an explicit
+branch or commit, collect the branch name or 40-character SHA and pass
+`branch:REF` or `commit:SHA`. `latest` needs no additional value.
+
+Run the matching fresh-clone command from the skill directory:
+
+```bash
+bash scripts/clone_modding_api.sh --scope user --selector latest
+```
+
+```powershell
+& .\scripts\clone_modding_api.ps1 -Scope user -Selector latest
+```
+
+Use `--scope project` / `-Scope project` when Q1 selected Project; use User
+when Q1 selected User. The clone command refuses an existing target, uses shallow history by default, checks out
+tags and commits detached, creates a tracking branch for explicit branches,
+and writes the normalized absolute path plus selector to the selected
+`preferences.md`. It does not replace an existing checkout.
+
 ## Validate User Input
 
 Validate if the user input paths exist and are valid using command-line tools.
@@ -154,6 +212,7 @@ Validation criteria:
   - `lightweight_source_code_path` **MUST** exist (required) — validate root path exists, should ideally contain `.sln` file
   - `full_source_code_path` (if provided) — validate root path exists, should ideally contain `.sln` file
   - `modding_profile_path` (if provided) — should contain `Blasphemous.exe` and `Modding` folder
+  - local ModdingAPI reference parent — must be writable when Q6 is enabled; the fresh-clone target itself must not already exist
 - If any check fails, revert to the **corresponding single question** (not the entire flow):
   - Lightweight fail → retry Q3 only
   - Full fail (if provided) → retry Q4b only
@@ -166,19 +225,23 @@ Validation criteria:
    - Yes → enter manual path flow at Q3 (lightweight)
    - No → abort setup, instruct user to resolve error and retry
 
+**Local reference failure handling** (Q6 = Yes, clone exit code != 0):
+1. Display the clone command's terminal error report.
+2. Do not write or update `modding_api_reference_path` or `modding_api_reference_selector`.
+3. Ask the user whether to retry with a corrected selector or path; selecting Skip leaves the release-aware remote fallback enabled.
+
 ## Save Locations
 
-| Choice | Path | Scope |
-|--------|------|-------|
-| Project | `.skills/blasphemous-modding-helper/preferences.md` | Project directory |
-| User | `$HOME/.skills/blasphemous-modding-helper/preferences.md` | User home |
+Use the approved preferences and local-reference paths in
+[preferences-schema.md#approved-local-reference-locations](preferences-schema.md#approved-local-reference-locations).
 
 ## Setup Workflow After User-questions
 
 1. Create directory if needed
-2. Write preferences.md with selected values
-3. Confirm: "Preferences saved to [path], you can edit it by yourself at any time."
-4. Continue main agent workflow using saved preferences
+2. Write or update `preferences.md` with selected values. Preserve unknown and legacy fields. Add `modding_api_reference_path` and `modding_api_reference_selector` only when Q6 is enabled and the clone succeeds.
+3. If Q6 was skipped, leave both local reference fields absent.
+4. Confirm: "Preferences saved to [path], you can edit it by yourself at any time."
+5. Continue main agent workflow using saved preferences
 
 ## `preferences.md` Template
 

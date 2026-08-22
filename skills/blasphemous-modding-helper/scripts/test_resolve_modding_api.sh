@@ -7,7 +7,30 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 RESOLVER="$SCRIPT_DIR/resolve_modding_api.sh"
-FIXTURES="$SCRIPT_DIR/testdata"
+FIXTURES="$(mktemp -d)"
+trap 'rm -rf "$FIXTURES"' EXIT
+
+cat > "$FIXTURES/modding-api-release-latest.json" <<'EOF'
+{"tag_name":"3.0.1","draft":false,"prerelease":false,"resolved_ref":"3.0.1","resolved_commit":"0123456789012345678901234567890123456789"}
+EOF
+cat > "$FIXTURES/modding-api-selector-tag.json" <<'EOF'
+{"resolved_ref":"2.5.0","resolved_commit":"1111111111111111111111111111111111111111"}
+EOF
+cat > "$FIXTURES/modding-api-selector-branch.json" <<'EOF'
+{"resolved_ref":"main","resolved_commit":"2222222222222222222222222222222222222222"}
+EOF
+cat > "$FIXTURES/modding-api-release-prerelease.json" <<'EOF'
+{"tag_name":"3.0.2","draft":false,"prerelease":true,"resolved_commit":"3333333333333333333333333333333333333333"}
+EOF
+cat > "$FIXTURES/modding-api-release-draft.json" <<'EOF'
+{"tag_name":"3.0.3","draft":true,"prerelease":false,"resolved_commit":"4444444444444444444444444444444444444444"}
+EOF
+cat > "$FIXTURES/modding-api-release-malformed.json" <<'EOF'
+{"draft":false,"prerelease":false}
+EOF
+cat > "$FIXTURES/modding-api-release-invalid-json.json" <<'EOF'
+{not-json
+EOF
 
 fail() {
     echo "[FAIL] $*" >&2
