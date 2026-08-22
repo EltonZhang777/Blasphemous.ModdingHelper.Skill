@@ -1,0 +1,320 @@
+import os
+import platform
+import subprocess
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+
+
+SCRIPT = (
+    Path(__file__).resolve().parents[1]
+    / "skills"
+    / "blasphemous-modding-helper"
+    / "scripts"
+    / "blasphemous_modding_test.py"
+)
+
+
+class BlasphemousModdingTestCliTests(unittest.TestCase):
+    def setUp(self):
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.root = Path(self.temp_dir.name)
+        self.home = self.root / "home"
+        self.home.mkdir()
+        self.environment = os.environ.copy()
+        for variable in (
+            "HOME",
+            "USERPROFILE",
+            "HOMEDRIVE",
+            "HOMEPATH",
+            "MSYSTEM",
+            "WSL_DISTRO_NAME",
+            "WSL_INTEROP",
+            "STEAM_COMPAT_DATA_PATH",
+            "STEAM_COMPAT_CLIENT_INSTALL_PATH",
+            "PROTON",
+            "WINEPREFIX",
+            "WINEDLLOVERRIDES",
+        ):
+            self.environment.pop(variable, None)
+        self.environment["HOME"] = str(self.home)
+        self.environment["USERPROFILE"] = str(self.home)
+
+    def tearDown(self):
+        self.temp_dir.cleanup()
+
+    def run_cli(self, *arguments, cwd=None, environment=None):
+        return subprocess.run(
+            [sys.executable, str(SCRIPT), *arguments],
+            cwd=str(cwd or self.root),
+            env=environment or self.environment,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+    def create_profile(self, name="profile"):
+        profile = self.root / name
+        (profile / "Modding").mkdir(parents=True)
+        (profile / "BepInEx" / "core").mkdir(parents=True)
+        (profile / "BepInEx" / "core" / "BepInEx.dll").write_bytes(b"BepInEx")
+        launcher = self.launcher_path(profile)
+        launcher.parent.mkdir(parents=True, exist_ok=True)
+        launcher.write_bytes(b"launcher")
+        if platform.system() != "Windows":
+            launcher.chmod(0o755)
+        return profile
+
+    def launcher_path(self, profile):
+        if platform.system() == "Windows":
+            return profile / "Blasphemous.exe"
+        if platform.system() == "Linux":
+            return profile / "Blasphemous.x86_64"
+        return profile / "Blasphemous.app" / "Contents" / "MacOS" / "Blasphemous"
+
+    def create_project(self, name="Example.csproj"):
+        project = self.root / name
+        project.write_text("<Project />\n", encoding="utf-8")
+        return project
+
+    def write_project_preferences(self, profile):
+        preferences = self.root / ".skills" / "blasphemous-modding-helper" / "preferences.md"
+        preferences.parent.mkdir(parents=True)
+        preferences.write_text(
+            f"modding_profile_path: {profile}\n",
+            encoding="utf-8",
+        )
+        return preferences
+
+    def write_user_preferences(self, profile):
+        preferences = self.home / ".skills" / "blasphemous-modding-helper" / "preferences.md"
+        preferences.parent.mkdir(parents=True)
+        preferences.write_text(
+            f"modding_profile_path: {profile}\n",
+            encoding="utf-8",
+        )
+        return preferences
+
+    def snapshot(self):
+        return sorted(
+            path.relative_to(self.root).as_posix()
+            for path in self.root.rglob("*")
+        )
+
+    def assert_success(self, result):
+        self.assertEqual(
+            result.returncode,
+            0,
+            msg=f"stdout={result.stdout}\nstderr={result.stderr}",
+        )
+
+    def test_help_exposes_run_status_and_dry_run(self):
+        result = self.run_cli("--help")
+
+        self.assert_success(result)
+        self.assertIn("run", result.stdout)
+        self.assertIn("status", result.stdout)
+        self.assertIn("--dry-run", result.stdout)
+
+    def test_dry_run_resolves_project_and_profile_without_mutation(self):
+        profile = self.create_profile()
+        project = self.create_project()
+        self.write_project_preferences(profile)
+        before = self.snapshot()
+
+        result = self.run_cli("run", "--dry-run")
+
+        self.assert_success(result)
+        self.assertIn(f"Project: {project}", result.stdout)
+        self.assertIn(f"Modding profile: {profile}", result.stdout)
+        self.assertIn(f"Launcher: {self.launcher_path(profile)}", result.stdout)
+        self.assertIn("Dry run: no files copied; no process launched.", result.stdout)
+        self.assertEqual(before, self.snapshot())
+
+    def test_status_is_read_only_and_reports_profile_state(self):
+        profile = self.create_profile()
+        self.create_project()
+        self.write_project_preferences(profile)
+        before = self.snapshot()
+
+        result = self.run_cli("status")
+
+        self.assert_success(result)
+        self.assertIn(f"Modding profile: {profile}", result.stdout)
+        self.assertIn(
+            "Test session status: not tracked in this workflow slice",
+            result.stdout,
+        )
+        self.assertEqual(before, self.snapshot())
+
+    def test_project_scope_overrides_user_scope(self):
+        project_profile = self.create_profile("project-profile")
+        user_profile = self.create_profile("user-profile")
+        self.create_project()
+        self.write_user_preferences(user_profile)
+        project_preferences = self.write_project_preferences(project_profile)
+
+        result = self.run_cli("run", "--dry-run")
+
+        self.assert_success(result)
+        self.assertIn(f"Preferences: project ({project_preferences})", result.stdout)
+        self.assertIn(f"Modding profile: {project_profile}", result.stdout)
+        self.assertNotIn(f"Modding profile: {user_profile}", result.stdout)
+
+    def test_explicit_profile_overrides_project_preference(self):
+        preferred_profile = self.root / "missing-profile"
+        explicit_profile = self.create_profile("explicit-profile")
+        self.create_project()
+        self.write_project_preferences(preferred_profile)
+
+        result = self.run_cli("run", "--dry-run", "--profile", str(explicit_profile))
+
+        self.assert_success(result)
+        self.assertIn(f"Modding profile: {explicit_profile}", result.stdout)
+
+    def test_missing_preferences_returns_profile_preference_error(self):
+        self.create_project()
+
+        result = self.run_cli("run", "--dry-run")
+
+        self.assertEqual(result.returncode, 10)
+        self.assertIn("preferences.md", result.stderr)
+
+    def test_no_project_returns_usage_configuration_error(self):
+        profile = self.create_profile()
+        self.write_project_preferences(profile)
+
+        result = self.run_cli("run", "--dry-run")
+
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("No .csproj project was found", result.stderr)
+
+    def test_multiple_projects_require_explicit_selection(self):
+        profile = self.create_profile()
+        self.write_project_preferences(profile)
+        first = self.create_project("First.csproj")
+        second = self.create_project("Second.csproj")
+
+        ambiguous = self.run_cli("run", "--dry-run")
+        selected = self.run_cli(
+            "run",
+            "--dry-run",
+            "--project",
+            str(second),
+        )
+
+        self.assertEqual(ambiguous.returncode, 2)
+        self.assertIn(first.name, ambiguous.stderr)
+        self.assertIn(second.name, ambiguous.stderr)
+        self.assert_success(selected)
+        self.assertIn(f"Project: {second}", selected.stdout)
+
+    def test_missing_profile_children_are_rejected_without_creation(self):
+        profile = self.root / "incomplete-profile"
+        profile.mkdir()
+        self.create_project()
+        self.write_project_preferences(profile)
+
+        result = self.run_cli("run", "--dry-run")
+
+        self.assertEqual(result.returncode, 10)
+        self.assertIn("Modding", result.stderr)
+        self.assertFalse((profile / "Modding").exists())
+        self.assertFalse((profile / "BepInEx").exists())
+
+    def test_missing_launcher_is_rejected_without_mutation(self):
+        profile = self.root / "profile-without-launcher"
+        (profile / "Modding").mkdir(parents=True)
+        (profile / "BepInEx" / "core").mkdir(parents=True)
+        (profile / "BepInEx" / "core" / "BepInEx.dll").write_bytes(b"BepInEx")
+        self.create_project()
+        self.write_project_preferences(profile)
+        before = self.snapshot()
+
+        result = self.run_cli("run", "--dry-run")
+
+        self.assertEqual(result.returncode, 10)
+        self.assertIn("launcher", result.stderr.lower())
+        self.assertEqual(before, self.snapshot())
+
+    def test_empty_bepinex_directory_is_not_an_installation(self):
+        profile = self.root / "profile-without-bepinex-core"
+        (profile / "Modding").mkdir(parents=True)
+        (profile / "BepInEx").mkdir()
+        launcher = self.launcher_path(profile)
+        launcher.write_bytes(b"launcher")
+        if platform.system() != "Windows":
+            launcher.chmod(0o755)
+        self.create_project()
+        self.write_project_preferences(profile)
+
+        result = self.run_cli("run", "--dry-run")
+
+        self.assertEqual(result.returncode, 10)
+        self.assertIn("BepInEx core assembly", result.stderr)
+
+    def test_explicit_launcher_can_be_relative_to_the_profile(self):
+        profile = self.create_profile()
+        custom_launcher = profile / "custom-launcher"
+        custom_launcher.write_bytes(b"launcher")
+        if os.name != "nt":
+            custom_launcher.chmod(0o755)
+        self.create_project()
+        self.write_project_preferences(profile)
+
+        result = self.run_cli(
+            "run",
+            "--dry-run",
+            "--launcher",
+            custom_launcher.name,
+        )
+
+        self.assert_success(result)
+        self.assertIn(f"Launcher: {custom_launcher}", result.stdout)
+
+    def test_invalid_preferences_encoding_returns_profile_preference_error(self):
+        preferences = self.root / ".skills" / "blasphemous-modding-helper" / "preferences.md"
+        preferences.parent.mkdir(parents=True)
+        preferences.write_bytes(b"modding_profile_path: \xff\n")
+
+        result = self.run_cli("status")
+
+        self.assertEqual(result.returncode, 10)
+        self.assertIn("Could not read preferences.md", result.stderr)
+
+    def test_compatibility_shell_is_rejected(self):
+        profile = self.create_profile()
+        self.create_project()
+        self.write_project_preferences(profile)
+        environment = self.environment.copy()
+        environment["MSYSTEM"] = "MINGW64"
+
+        result = self.run_cli(
+            "run",
+            "--dry-run",
+            environment=environment,
+        )
+
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("unsupported", result.stderr.lower())
+
+    def test_proton_environment_is_rejected(self):
+        profile = self.create_profile()
+        self.create_project()
+        self.write_project_preferences(profile)
+        environment = self.environment.copy()
+        environment["STEAM_COMPAT_DATA_PATH"] = str(self.root / "compatdata")
+
+        result = self.run_cli(
+            "run",
+            "--dry-run",
+            environment=environment,
+        )
+
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("Proton", result.stderr)
+
+
+if __name__ == "__main__":
+    unittest.main()
