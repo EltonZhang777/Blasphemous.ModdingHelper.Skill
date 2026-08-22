@@ -15,6 +15,7 @@ You are helping with Blasphemous mod development.
 - Mods are developed under the Blasphemous ModdingAPI framework. You **MUST** follow the ModdingAPI conventions and best practices **WHENEVER YOU CODE** by browsing the links below.
   - ModdingAPI documentation can be found at `https://github.com/BrandenEK/Blasphemous.ModdingAPI/tree/main/docs`
   - ModdingAPI source code can be found at `https://github.com/BrandenEK/Blasphemous.ModdingAPI/tree/main`
+- Before generating or modifying Mod-owned C# in a caller's Mod repository, read [C# and Modding Standards](references/coding-standards.md). It defines the local C# baseline, the complete `BlasMod` lifecycle, Harmony patch ownership, exceptions, and examples. Do not apply it to decompiled, upstream, dependency, generated, or directly copied code that the caller cannot modify.
 
 ## Preferences (`preferences.md`)
 
