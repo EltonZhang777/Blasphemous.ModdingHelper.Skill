@@ -7,6 +7,10 @@ description: Blasphemous modding development helper. Use when user wants to deve
 
 You are helping with Blasphemous mod development.
 
+## Requirement levels
+
+At the start of every Skill invocation, you MUST read [Requirement levels](references/requirement-levels-definitions.md). It defines the RFC 2119 vocabulary used by every authored normative instruction in this Skill; external documentation, source code, and illustrative examples retain their original wording as described there.
+
 ## Coding specifications
 
 - Game source code language and modding language: C#

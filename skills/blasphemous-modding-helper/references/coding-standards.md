@@ -12,13 +12,7 @@ These rules apply only to code that the Mod author can maintain in the root of t
 
 When a request directly copies code from an excluded source, preserve the copied code as-is. Mechanical namespace or path changes needed to compile it still count as a direct copy. If the code receives substantive new behavior or a structural rewrite, the new or changed code follows this standard.
 
-Use the following rule levels:
-
-- **MUST** — required for runtime correctness, API compatibility, patch ownership, or this repository's explicit boundaries.
-- **SHOULD** — the default style when no compatibility requirement says otherwise.
-- **MAY** — an optional preference that does not change behavior.
-
-An exception must state what rule it bypasses and why. Do not reformat unrelated legacy code merely to make it comply; apply the standard when the code is touched.
+Use [Requirement levels](requirement-levels-definitions.md) as the single source of truth for RFC 2119 keywords and exception handling. Do not reformat unrelated legacy code merely to make it comply; apply the standard when the code is touched.
 
 ## Authority and versioning
 
@@ -109,39 +103,7 @@ The documented startup order is `OnPreInitialize` (when exposed) → manager ini
 
 Do not generate empty overrides for callbacks the Mod does not use. Do not move one-time initialization into `OnUpdate`, access scene objects before the relevant level callback, or use `OnInitialize` for work that requires every other Mod to be ready. Only call `base.X()` when the actual referenced API implementation or documentation requires it; the style standard does not add unconditional base calls.
 
-A full lifecycle outline is useful as a reference, but the `OnPreInitialize` method must be removed from the generated code when the caller's API version does not expose it:
-
-```csharp
-public sealed class ExampleMod : BlasMod
-{
-    // Include only when the referenced BlasMod version exposes this method.
-    protected override void OnPreInitialize() { }
-
-    protected override void OnInitialize() { }
-
-    protected override void OnRegisterServices(ModServiceProvider provider) { }
-
-    protected override void OnAllInitialized() { }
-
-    protected override void OnUpdate() { }
-
-    protected override void OnLateUpdate() { }
-
-    protected override void OnLevelPreloaded(string oldLevel, string newLevel) { }
-
-    protected override void OnLevelLoaded(string oldLevel, string newLevel) { }
-
-    protected override void OnLevelUnloaded(string oldLevel, string newLevel) { }
-
-    protected override void OnNewGame() { }
-
-    protected override void OnLoadGame() { }
-
-    protected override void OnExitGame() { }
-
-    protected override void OnDispose() { }
-}
-```
+A full lifecycle outline is useful as a reference, but the `OnPreInitialize` method must be removed from the generated code when the caller's API version does not expose it.
 
 The method accessibility in a generated Mod must match the actual referenced API. The outline uses the common cross-assembly `protected override` form; if the caller's API requires a different legal override declaration, follow that signature.
 
