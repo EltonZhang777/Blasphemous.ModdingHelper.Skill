@@ -1,9 +1,12 @@
 import os
 import platform
+import shutil
+import stat
 import subprocess
 import sys
 import tempfile
 import unittest
+import zipfile
 from pathlib import Path
 
 
@@ -73,10 +76,78 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
             return profile / "Blasphemous.x86_64"
         return profile / "Blasphemous.app" / "Contents" / "MacOS" / "Blasphemous"
 
-    def create_project(self, name="Example.csproj"):
+    def create_project(self, name="Example.csproj", target_name="ExampleMod"):
         project = self.root / name
-        project.write_text("<Project />\n", encoding="utf-8")
+        project.write_text(
+            "<Project><PropertyGroup>"
+            f"<TargetName>{target_name}</TargetName>"
+            "</PropertyGroup></Project>\n",
+            encoding="utf-8",
+        )
         return project
+
+    def create_buildable_project(
+        self,
+        name="Example.csproj",
+        target_name="ExampleMod",
+        project_directory=None,
+    ):
+        project = (project_directory or self.root) / name
+        project.parent.mkdir(parents=True, exist_ok=True)
+        project.write_text(
+            "<Project DefaultTargets=\"Build\">\n"
+            "  <PropertyGroup>\n"
+            f"    <TargetName>{target_name}</TargetName>\n"
+            "  </PropertyGroup>\n"
+            "  <Target Name=\"Build\">\n"
+            f"    <MakeDir Directories=\"$(SolutionDir)publish/{target_name}/plugins\" />\n"
+            f"    <MakeDir Directories=\"$(SolutionDir)publish/{target_name}/data\" />\n"
+            f"    <WriteLinesToFile File=\"$(SolutionDir)publish/{target_name}/plugins/Example.dll\" Lines=\"plugin\" Overwrite=\"true\" />\n"
+            f"    <WriteLinesToFile File=\"$(SolutionDir)publish/{target_name}/data/build-configuration.txt\" Lines=\"$(Configuration)\" Overwrite=\"true\" />\n"
+            "  </Target>\n"
+            "</Project>\n",
+            encoding="utf-8",
+        )
+        return project
+
+    def create_failing_project(self, name="Example.csproj", target_name="ExampleMod"):
+        project = self.root / name
+        project.write_text(
+            "<Project DefaultTargets=\"Build\">\n"
+            "  <PropertyGroup>\n"
+            f"    <TargetName>{target_name}</TargetName>\n"
+            "  </PropertyGroup>\n"
+            "  <Target Name=\"Build\">\n"
+            "    <Error Text=\"intentional build failure\" />\n"
+            "  </Target>\n"
+            "</Project>\n",
+            encoding="utf-8",
+        )
+        return project
+
+    def create_empty_build_project(self, name="Example.csproj", target_name="ExampleMod"):
+        project = self.root / name
+        project.write_text(
+            "<Project DefaultTargets=\"Build\">\n"
+            "  <PropertyGroup>\n"
+            f"    <TargetName>{target_name}</TargetName>\n"
+            "  </PropertyGroup>\n"
+            "  <Target Name=\"Build\" />\n"
+            "</Project>\n",
+            encoding="utf-8",
+        )
+        return project
+
+    def create_package(self, target_name="ExampleMod", root=None):
+        package_root = (root or self.root / "publish") / target_name
+        (package_root / "plugins").mkdir(parents=True, exist_ok=True)
+        (package_root / "data").mkdir(exist_ok=True)
+        (package_root / "plugins" / "Example.dll").write_bytes(b"plugin")
+        (package_root / "data" / "settings.json").write_text(
+            "{}\n",
+            encoding="utf-8",
+        )
+        return package_root
 
     def write_project_preferences(self, profile):
         preferences = self.root / ".skills" / "blasphemous-modding-helper" / "preferences.md"
@@ -120,16 +191,27 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
     def test_dry_run_resolves_project_and_profile_without_mutation(self):
         profile = self.create_profile()
         project = self.create_project()
+        package_root = self.create_package()
         self.write_project_preferences(profile)
         before = self.snapshot()
 
-        result = self.run_cli("run", "--dry-run")
+        result = self.run_cli(
+            "run",
+            "--dry-run",
+            "--artifact",
+            str(package_root),
+        )
 
         self.assert_success(result)
         self.assertIn(f"Project: {project}", result.stdout)
         self.assertIn(f"Modding profile: {profile}", result.stdout)
         self.assertIn(f"Launcher: {self.launcher_path(profile)}", result.stdout)
-        self.assertIn("Dry run: no files copied; no process launched.", result.stdout)
+        self.assertIn(f"Package root: {package_root}", result.stdout)
+        self.assertIn("Configuration: Debug", result.stdout)
+        self.assertIn(
+            "Dry run: no profile files copied; no process launched.",
+            result.stdout,
+        )
         self.assertEqual(before, self.snapshot())
 
     def test_status_is_read_only_and_reports_profile_state(self):
@@ -152,10 +234,16 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
         project_profile = self.create_profile("project-profile")
         user_profile = self.create_profile("user-profile")
         self.create_project()
+        package_root = self.create_package()
         self.write_user_preferences(user_profile)
         project_preferences = self.write_project_preferences(project_profile)
 
-        result = self.run_cli("run", "--dry-run")
+        result = self.run_cli(
+            "run",
+            "--dry-run",
+            "--artifact",
+            str(package_root),
+        )
 
         self.assert_success(result)
         self.assertIn(f"Preferences: project ({project_preferences})", result.stdout)
@@ -166,9 +254,17 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
         preferred_profile = self.root / "missing-profile"
         explicit_profile = self.create_profile("explicit-profile")
         self.create_project()
+        package_root = self.create_package()
         self.write_project_preferences(preferred_profile)
 
-        result = self.run_cli("run", "--dry-run", "--profile", str(explicit_profile))
+        result = self.run_cli(
+            "run",
+            "--dry-run",
+            "--artifact",
+            str(package_root),
+            "--profile",
+            str(explicit_profile),
+        )
 
         self.assert_success(result)
         self.assertIn(f"Modding profile: {explicit_profile}", result.stdout)
@@ -195,11 +291,19 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
         self.write_project_preferences(profile)
         first = self.create_project("First.csproj")
         second = self.create_project("Second.csproj")
+        package_root = self.create_package()
 
-        ambiguous = self.run_cli("run", "--dry-run")
+        ambiguous = self.run_cli(
+            "run",
+            "--dry-run",
+            "--artifact",
+            str(package_root),
+        )
         selected = self.run_cli(
             "run",
             "--dry-run",
+            "--artifact",
+            str(package_root),
             "--project",
             str(second),
         )
@@ -214,9 +318,15 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
         profile = self.root / "incomplete-profile"
         profile.mkdir()
         self.create_project()
+        package_root = self.create_package()
         self.write_project_preferences(profile)
 
-        result = self.run_cli("run", "--dry-run")
+        result = self.run_cli(
+            "run",
+            "--dry-run",
+            "--artifact",
+            str(package_root),
+        )
 
         self.assertEqual(result.returncode, 10)
         self.assertIn("Modding", result.stderr)
@@ -229,10 +339,16 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
         (profile / "BepInEx" / "core").mkdir(parents=True)
         (profile / "BepInEx" / "core" / "BepInEx.dll").write_bytes(b"BepInEx")
         self.create_project()
+        package_root = self.create_package()
         self.write_project_preferences(profile)
         before = self.snapshot()
 
-        result = self.run_cli("run", "--dry-run")
+        result = self.run_cli(
+            "run",
+            "--dry-run",
+            "--artifact",
+            str(package_root),
+        )
 
         self.assertEqual(result.returncode, 10)
         self.assertIn("launcher", result.stderr.lower())
@@ -261,11 +377,14 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
         if os.name != "nt":
             custom_launcher.chmod(0o755)
         self.create_project()
+        package_root = self.create_package()
         self.write_project_preferences(profile)
 
         result = self.run_cli(
             "run",
             "--dry-run",
+            "--artifact",
+            str(package_root),
             "--launcher",
             custom_launcher.name,
         )
@@ -314,6 +433,270 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
 
         self.assertEqual(result.returncode, 2)
         self.assertIn("Proton", result.stderr)
+
+    @unittest.skipUnless(shutil.which("dotnet"), "dotnet SDK required")
+    def test_default_build_uses_debug_and_reports_the_package_plan(self):
+        profile = self.create_profile()
+        self.create_buildable_project()
+        self.write_project_preferences(profile)
+
+        result = self.run_cli(
+            "run",
+            "--dry-run",
+        )
+
+        self.assert_success(result)
+        self.assertIn("Configuration: Debug", result.stdout)
+        self.assertIn(
+            f"Package root: {self.root / 'publish' / 'ExampleMod'}",
+            result.stdout,
+        )
+        self.assertEqual(
+            (self.root / "publish" / "ExampleMod" / "data" / "build-configuration.txt").read_text(
+                encoding="utf-8"
+            ),
+            "Debug\n",
+        )
+
+    @unittest.skipUnless(shutil.which("dotnet"), "dotnet SDK required")
+    def test_release_requires_explicit_configuration(self):
+        profile = self.create_profile()
+        self.create_buildable_project()
+        self.write_project_preferences(profile)
+
+        result = self.run_cli(
+            "run",
+            "--dry-run",
+            "--configuration",
+            "Release",
+        )
+
+        self.assert_success(result)
+        self.assertIn("Configuration: Release", result.stdout)
+        self.assertEqual(
+            (self.root / "publish" / "ExampleMod" / "data" / "build-configuration.txt").read_text(
+                encoding="utf-8"
+            ),
+            "Release\n",
+        )
+
+    @unittest.skipUnless(shutil.which("dotnet"), "dotnet SDK required")
+    def test_build_uses_nearest_solution_root_for_publish(self):
+        profile = self.create_profile()
+        solution_root = self.root / "solution"
+        project = self.create_buildable_project(
+            project_directory=solution_root / "mod"
+        )
+        (solution_root / "BlasphemousMods.sln").write_text(
+            "Microsoft Visual Studio Solution File, Format Version 12.00\n",
+            encoding="utf-8",
+        )
+        self.write_project_preferences(profile)
+
+        result = self.run_cli(
+            "run",
+            "--dry-run",
+            "--project",
+            str(project),
+        )
+
+        self.assert_success(result)
+        package_root = solution_root / "publish" / "ExampleMod"
+        self.assertIn(f"Publish directory: {solution_root / 'publish'}", result.stdout)
+        self.assertIn(f"Package root: {package_root}", result.stdout)
+        self.assertEqual(
+            (package_root / "data" / "build-configuration.txt").read_text(
+                encoding="utf-8"
+            ),
+            "Debug\n",
+        )
+
+    @unittest.skipUnless(shutil.which("dotnet"), "dotnet SDK required")
+    def test_build_failure_returns_build_error_before_artifact_validation(self):
+        profile = self.create_profile()
+        self.create_failing_project()
+        self.write_project_preferences(profile)
+
+        result = self.run_cli("run", "--dry-run")
+
+        self.assertEqual(result.returncode, 20)
+        self.assertIn("Build failed", result.stderr)
+        self.assertFalse((self.root / "publish").exists())
+
+    @unittest.skipUnless(shutil.which("dotnet"), "dotnet SDK required")
+    def test_missing_package_root_returns_artifact_error(self):
+        profile = self.create_profile()
+        self.create_empty_build_project()
+        self.write_project_preferences(profile)
+
+        result = self.run_cli("run", "--dry-run")
+
+        self.assertEqual(result.returncode, 30)
+        self.assertIn("Package root does not exist", result.stderr)
+
+    @unittest.skipUnless(shutil.which("dotnet"), "dotnet SDK required")
+    def test_empty_package_returns_artifact_error(self):
+        profile = self.create_profile()
+        self.create_empty_build_project()
+        (self.root / "publish" / "ExampleMod").mkdir(parents=True)
+        self.write_project_preferences(profile)
+
+        result = self.run_cli("run", "--dry-run")
+
+        self.assertEqual(result.returncode, 30)
+        self.assertIn("package contains no files", result.stderr.lower())
+
+    def test_explicit_directory_artifact_skips_build(self):
+        profile = self.create_profile()
+        self.create_project()
+        self.write_project_preferences(profile)
+        artifact = self.root / "known-artifact"
+        self.create_package(root=self.root, target_name="known-artifact")
+
+        result = self.run_cli(
+            "run",
+            "--dry-run",
+            "--artifact",
+            str(artifact),
+        )
+
+        self.assert_success(result)
+        self.assertIn(f"Artifact: {artifact}", result.stdout)
+
+    def test_explicit_zip_artifact_is_extracted_and_validated(self):
+        profile = self.create_profile()
+        self.create_project()
+        self.write_project_preferences(profile)
+        archive = self.root / "known-artifact.zip"
+        with zipfile.ZipFile(archive, "w") as package:
+            package.writestr("plugins/Example.dll", b"plugin")
+            package.writestr("data/settings.json", b"{}")
+
+        result = self.run_cli(
+            "run",
+            "--dry-run",
+            "--artifact",
+            str(archive),
+        )
+
+        self.assert_success(result)
+        self.assertIn(f"Artifact: {archive}", result.stdout)
+        self.assertIn("Planned files: 2", result.stdout)
+
+    def test_zip_parent_traversal_is_rejected_before_profile_mutation(self):
+        profile = self.create_profile()
+        self.create_project()
+        self.write_project_preferences(profile)
+        archive = self.root / "unsafe.zip"
+        with zipfile.ZipFile(archive, "w") as package:
+            package.writestr("../escape.txt", b"bad")
+
+        result = self.run_cli(
+            "run",
+            "--dry-run",
+            "--artifact",
+            str(archive),
+        )
+
+        self.assertEqual(result.returncode, 30)
+        self.assertIn("unsafe", result.stderr.lower())
+        self.assertFalse((self.root / "escape.txt").exists())
+
+    def test_zip_absolute_path_is_rejected_before_profile_mutation(self):
+        profile = self.create_profile()
+        self.create_project()
+        self.write_project_preferences(profile)
+        archive = self.root / "absolute.zip"
+        with zipfile.ZipFile(archive, "w") as package:
+            package.writestr("/escape.txt", b"bad")
+
+        result = self.run_cli(
+            "run",
+            "--dry-run",
+            "--artifact",
+            str(archive),
+        )
+
+        self.assertEqual(result.returncode, 30)
+        self.assertIn("unsafe", result.stderr.lower())
+
+    def test_zip_case_collision_is_rejected_as_ambiguous(self):
+        profile = self.create_profile()
+        self.create_project()
+        self.write_project_preferences(profile)
+        archive = self.root / "case-collision.zip"
+        with zipfile.ZipFile(archive, "w") as package:
+            package.writestr("plugins/Example.dll", b"first")
+            package.writestr("plugins/example.dll", b"second")
+
+        result = self.run_cli(
+            "run",
+            "--dry-run",
+            "--artifact",
+            str(archive),
+        )
+
+        self.assertEqual(result.returncode, 30)
+        self.assertIn("ambiguous", result.stderr.lower())
+
+    def test_explicit_directory_symlink_is_rejected(self):
+        profile = self.create_profile()
+        self.create_project()
+        self.write_project_preferences(profile)
+        package_root = self.create_package(root=self.root, target_name="real-artifact")
+        symlink = self.root / "linked-artifact"
+        try:
+            symlink.symlink_to(package_root, target_is_directory=True)
+        except OSError as error:
+            self.skipTest(f"directory symlinks unavailable: {error}")
+
+        result = self.run_cli(
+            "run",
+            "--dry-run",
+            "--artifact",
+            str(symlink),
+        )
+
+        self.assertEqual(result.returncode, 30)
+        self.assertIn("symlink", result.stderr.lower())
+
+    def test_zip_symlink_entries_are_rejected(self):
+        profile = self.create_profile()
+        self.create_project()
+        self.write_project_preferences(profile)
+        archive = self.root / "symlink.zip"
+        symlink = zipfile.ZipInfo("plugins/link")
+        symlink.create_system = 3
+        symlink.external_attr = (stat.S_IFLNK | 0o777) << 16
+        with zipfile.ZipFile(archive, "w") as package:
+            package.writestr(symlink, "../../outside")
+
+        result = self.run_cli(
+            "run",
+            "--dry-run",
+            "--artifact",
+            str(archive),
+        )
+
+        self.assertEqual(result.returncode, 30)
+        self.assertIn("link", result.stderr.lower())
+
+    def test_explicit_missing_artifact_does_not_fallback_to_publish(self):
+        profile = self.create_profile()
+        self.create_project()
+        self.create_package()
+        self.write_project_preferences(profile)
+        missing = self.root / "missing.zip"
+
+        result = self.run_cli(
+            "run",
+            "--dry-run",
+            "--artifact",
+            str(missing),
+        )
+
+        self.assertEqual(result.returncode, 30)
+        self.assertIn("artifact", result.stderr.lower())
 
 
 if __name__ == "__main__":
