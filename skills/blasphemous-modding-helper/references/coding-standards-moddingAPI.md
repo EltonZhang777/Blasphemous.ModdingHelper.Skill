@@ -69,7 +69,7 @@ The agent MUST override only callbacks exposed by the caller's actual BlasMod ve
 
 A Mod MUST NOT generate empty overrides for callbacks it does not use. One-time initialization MUST NOT be placed in OnUpdate or OnLateUpdate, and cross-Mod setup MUST NOT run repeatedly from a per-frame callback. The agent MUST NOT add unconditional base calls; a base call is appropriate only when the referenced API contract or an existing non-empty base implementation requires it.
 
-OnDispose occurs as part of final game shutdown, whose normal result is process termination. This standard MUST NOT require boilerplate subscription or resource cleanup solely because OnDispose exists. State that must be released between game sessions MUST be handled in OnExitGame or the owning lifecycle, and resources with an independent lifetime MUST be managed by their owner.
+OnDispose occurs as part of final game shutdown, whose normal result is process termination. This standard MUST NOT require boilerplate subscription or resource cleanup solely because OnDispose exists. State requiring release between game sessions MUST be handled in OnExitGame or the owning lifecycle, and resources with an independent lifetime MUST be managed by their owner.
 
 ## Services and cross-Mod integration
 
@@ -79,7 +79,7 @@ Service registration MUST occur in OnRegisterServices. Work that consumes anothe
 
 ConfigHandler, FileHandler, InputHandler, and LocalizationHandler are BlasMod-owned handlers. Their task-specific documents MUST be read before use, and their actual referenced members MUST be checked before code generation. Persistence interfaces MUST be routed through persistence.md and their load, save, and reset contracts MUST be verified against the caller's referenced version.
 
-The current BlasMod constructor registers the Mod, applies Harmony patches to the Mod assembly, and registers ModLog. Mod code MUST NOT call PatchAll or CreateAndPatchAll for its own assembly. Target declaration and the approved manual-patch exception are owned by the Harmony branch; until that branch is available, use the legacy aggregate reference linked by the router.
+The current BlasMod constructor registers the Mod, applies Harmony patches to the Mod assembly, and registers ModLog. Mod code MUST NOT call PatchAll or CreateAndPatchAll for its own assembly. Target declaration and the approved manual-patch exception are owned by the Harmony branch, which Mod code MUST read for Patch declarations and exceptions.
 
 ## ModLog
 
@@ -92,7 +92,7 @@ The authoritative current source is [ModLog.cs](https://github.com/BrandenEK/Bla
 | Error | object message; object message, BlasMod mod | BepInEx Error level | Failed operation or actionable fault |
 | Fatal | object message; object message, BlasMod mod | BepInEx Fatal level; the source does not itself terminate the process | Critical failure after which the affected operation or Mod cannot safely continue |
 | Debug | object message; object message, BlasMod mod | BepInEx Info level in the current source; it is not automatically compiled out | Diagnostic information during development or troubleshooting |
-| Display | object message; object message, BlasMod mod | Logs at Message level and attempts to show an in-game popup; an uninitialized UI logs an Error | Information the player must see, not ordinary diagnostics |
+| Display | object message; object message, BlasMod mod | Logs at Message level and attempts to show an in-game popup; an uninitialized UI logs an Error | Information intended for the player, not ordinary diagnostics |
 
 The one-argument overloads attribute the log to the calling assembly. A wrapper or shared helper SHOULD use the explicit BlasMod overload when calling-assembly attribution could identify the wrong Mod.
 

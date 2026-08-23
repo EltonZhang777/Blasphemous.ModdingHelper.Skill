@@ -5,7 +5,7 @@ Source code navigation for custom tools, PlayMaker FSM Actions/Conditions/Events
 ## Core Design Patterns
 
 1. PlayMaker triad: Action (execute) / Condition (check) / Event (signal), named by verb prefix
-2. Deprecated components centralized under "PlayMaker Deprecated" — do not use in new code
+2. Deprecated components centralized under "PlayMaker Deprecated" — Mod code MUST NOT use these components in new code
 3. Audio tools layered: Emitter (play) → Modifier (spatial / temporal / parameter)
 
 ---

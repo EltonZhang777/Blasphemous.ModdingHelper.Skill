@@ -26,6 +26,7 @@ Capitalization and the exact keyword or phrase determine the requirement level. 
 - Descriptive facts, headings, non-normative explanations, and illustrative example prose MAY omit an RFC 2119 keyword. Examples MUST NOT be rewritten solely to add a requirement-level word when the example is not itself prescribing behavior.
 - External documentation, source code, and verbatim quotations MUST retain their original wording. Their wording is not silently normalized to this contract; the surrounding Skill text MAY identify the material as external or quoted.
 - Future changes that add or change normative requirement wording MUST scan the complete installed Skill documentation for consistent RFC 2119 usage, including all Markdown under this Skill directory.
+- The repository provides a repeatable candidate scan in [audit_rfc2119.py](../scripts/audit_rfc2119.py). Maintainers SHOULD run it when changing requirement wording and MUST manually classify any reported factual or illustrative prose before release.
 
 ## Exception handling
 

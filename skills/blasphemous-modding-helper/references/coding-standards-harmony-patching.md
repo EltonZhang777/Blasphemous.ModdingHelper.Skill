@@ -260,12 +260,12 @@ Before finishing a Harmony-related task, the reviewer MUST verify:
 
 - The router's Mod-owned scope gate and the C# branch were applied.
 - The ModdingAPI branch remains the single authority for framework-managed Patch discovery.
-- Patch files use `Patches/<TypeName>Patches.cs` or `Patches/<Functionality>Patches.cs` and may group only related Patch classes.
-- Patch classes use `<ClassName>_<FunctionalityDescription>_Patch`.
-- Direct-string targets are used, and overloads, constructors, property accessors, and argument variations are disambiguated from the actual referenced API.
-- Resolver methods bind to exact targets and do not scan assemblies or silently choose ambiguous methods.
-- Patch methods are static, use appropriate Harmony kinds and injections, and keep advanced operations justified.
-- The framework-managed discovery contract was preserved and no manual assembly scan was added.
-- Any manual `Harmony.Patch` operation has explicit user approval and an explicitly selected target.
-- Positive and negative examples remain consistent with discovery ownership, naming, target declarations, and lifecycle placement.
-- Normative wording follows [Requirement levels](requirement-levels-definitions.md).
+- Patch files MUST use `Patches/<TypeName>Patches.cs` or `Patches/<Functionality>Patches.cs` and MAY group only related Patch classes.
+- Patch classes MUST use `<ClassName>_<FunctionalityDescription>_Patch`.
+- The agent MUST use direct-string targets and MUST disambiguate overloads, constructors, property accessors, and argument variations from the actual referenced API.
+- Resolver methods MUST bind to exact targets and MUST NOT scan assemblies or silently choose ambiguous methods.
+- Patch methods MUST be static, MUST use appropriate Harmony kinds and injections, and MUST keep advanced operations justified.
+- The agent MUST preserve the framework-managed discovery contract and MUST NOT add a manual assembly scan.
+- Any manual `Harmony.Patch` operation MUST have explicit user approval and an explicitly selected target.
+- Positive and negative examples MUST remain consistent with discovery ownership, naming, target declarations, and lifecycle placement.
+- Normative wording MUST follow [Requirement levels](requirement-levels-definitions.md).
