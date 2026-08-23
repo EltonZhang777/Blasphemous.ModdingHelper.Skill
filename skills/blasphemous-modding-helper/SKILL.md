@@ -15,6 +15,13 @@ At the start of every Skill invocation, you MUST read [Requirement levels](refer
 
 Before generating, modifying, reviewing, or refactoring Mod-owned C# in a caller's Mod repository, you MUST read the [coding standards](references/sub-skills/coding-standards.md). It applies the ownership gate, routes C# and runtime Unity work to the [C# and runtime Unity standards](references/coding-standards-csharp-unity.md), ModdingAPI tasks to the [ModdingAPI standards](references/coding-standards-moddingAPI.md), and Harmony or Patch tasks to the [Harmony patching standards](references/coding-standards-harmony-patching.md).
 
+- Game source code language and Mod language: C#.
+- Game Unity baseline: Unity `2017.4.40f1`.
+  - The agent MAY search the Unity 2017.4.40f1 API documentation at `https://docs.unity3d.com/2017.4/Documentation/ScriptReference/30_search.html?q=<class-name-or-method-name>` for extra information. The agent SHOULD replace `<class-name-or-method-name>` with the actual class or method name.
+- ModdingAPI documentation, source guidance, conventions, lifecycle, logging, and examples MUST pass through [Referencing ModdingAPI](references/sub-skills/referencing-modding-api.md) before the agent browses the selected reference.
+  - The route selects a configured local checkout or resolves the release-aware remote reference, then loads only the topic needed for the task.
+- Mods are developed under the Blasphemous ModdingAPI framework. The agent MUST follow the ModdingAPI conventions and best practices whenever it codes against the selected reference.
+
 ## Preferences (`preferences.md`)
 
 The agent MUST check whether `preferences.md` exists.
@@ -40,7 +47,7 @@ Output is one of: `"project"`, `"user"`, or nothing (not found).
 | Found | The agent MUST read, parse, and apply the settings. On first use in the session, it SHOULD briefly remind the user: "Using preferences from [path]. You can edit `preferences.md` to customize source code path, etc." |
 | Not found | The agent MUST run first-time setup (see below) and MUST NOT silently use defaults or continue to the main workflow. |
 
-**`preferences.md` Contains**: `full_source_code_path`, `lightweight_source_code_path`, `modding_profile_path` — see [references/config/preferences-schema.md](references/config/preferences-schema.md) for the full schema.
+**`preferences.md` Contains**: `full_source_code_path`, `lightweight_source_code_path`, and `modding_profile_path`. It may also contain optional ModdingAPI reference fields — see [references/config/preferences-schema.md](references/config/preferences-schema.md) for the full schema. Use [Referencing ModdingAPI](references/sub-skills/referencing-modding-api.md) for reference selection, remote fallback, lock state, offline checks, and explicit lifecycle operations.
 
 ### First-Time Setup (BLOCKING)
 

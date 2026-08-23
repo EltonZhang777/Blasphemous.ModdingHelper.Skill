@@ -9,7 +9,8 @@ description: First-time setup flow for blasphemous-modding-helper preferences
 
 When no `preferences.md` is found, this reference describes the preference-setup flow.
 
-**BLOCKING OPERATION**: This setup MUST complete before ANY action. The agent MUST NOT:
+**BLOCKING OPERATION**: This setup MUST complete before ANY action.
+The agent MUST NOT:
 - The agent MUST NOT analyze the user's question.
 - The agent MUST NOT proceed to any workflow steps.
 
@@ -33,11 +34,16 @@ The agent MUST ask only the questions in this setup flow, MUST save `preferences
    │      ├─ Yes → the agent MUST ask for the full source code path (see Q4b)
    │      └─ No  → the agent MAY skip Q4b
    │   6. The agent MUST ask for the modding profile path (see Q5).
-   │   7. The agent MUST validate all paths (lightweight MUST exist).
-   │      ├─ Fail → the agent MUST retry the corresponding single question
-   │      └─ OK → the agent MAY continue
-   │   8. The agent MUST create `preferences.md`.
-   │   9. The agent MUST continue.
+    │   7. The agent MUST ask whether to configure a local ModdingAPI reference (see Q6).
+    │      ├─ Yes → the agent MUST use the selected preferences scope, choose a selector, and run the fresh-clone command.
+    │      │        ├─ Success → the agent MUST record the normalized path and selector.
+    │      │        └─ Failure → the agent MUST show the terminal error report and MUST NOT add the fields.
+    │      └─ Skip → the agent MUST leave local reference fields absent; remote fallback remains available.
+    │   8. The agent MUST validate all paths (lightweight MUST exist).
+    │      ├─ Fail → the agent MUST retry the corresponding single question.
+    │      └─ OK → the agent MAY continue.
+    │   9. The agent MUST create or update `preferences.md`.
+    │   10. The agent MUST continue.
    │
    └─ No (run decompiler) → the agent MUST run the decompile script synchronously
        (Windows: `scripts/decompile_source.ps1` ; macOS/Linux: `scripts/decompile_source.sh`)
@@ -47,8 +53,12 @@ The agent MUST ask only the questions in this setup flow, MUST save `preferences
        │      ├─ Yes → the agent MUST ask for the full source code path (see Q4b)
        │      └─ No  → the agent MUST skip Q4b
        │   6. The agent MUST ask for the modding profile path (see Q5).
-       │   8. The agent MUST create `preferences.md`.
-       │   9. The agent MUST continue.
+       │   7. The agent MUST ask whether to configure a local ModdingAPI reference (see Q6).
+       │      ├─ Yes → the agent MUST use the selected preferences scope, choose a selector, and run the fresh-clone command.
+       │      └─ Skip → the agent MUST leave local reference fields absent; remote fallback remains available.
+       │   8. The agent MUST validate all paths (lightweight MUST exist).
+       │   9. The agent MUST create or update `preferences.md`.
+       │   10. The agent MUST continue.
        │
        └─ Failed (exit code != 0) →
            The agent MUST report error details to the user.
@@ -64,8 +74,8 @@ The agent MUST ask only the questions in this setup flow, MUST save `preferences
 - The agent SHOULD default to English only when the user's input language is not available.
 
 The agent MUST use AskUserQuestion with **ALL applicable** questions in **ONE** call:
-- If the user answered "Yes" to Q2, the agent MUST ask Q1 + Q2 + Q3 + Q4 + Q5 + save location = 5 questions.
-- If the user answered "No" to Q2, the agent MUST ask Q1 + Q2 + Q4 + Q5 + save location = 4 questions (Q3 is auto-filled).
+- If Q2 is "Yes", the agent MUST ask Q1 + Q2 + Q3 + Q4 + Q5 + Q6 in one call; Q4b and selector details are conditional inputs.
+- If Q2 is "No", the agent MUST ask Q1 + Q2 + Q4 + Q5 + Q6 in one call; Q3 is auto-filled, and Q4b and selector details are conditional inputs.
 
 ### Q1: Save Location
 
@@ -74,9 +84,9 @@ header: "Save"
 question: "Where to save preferences?"
 options:
   - label: "User (Recommended)"
-    description: "$HOME/.skills/blasphemous-modding-helper/preferences.md in user home — available across projects"
+    description: "User scope; see preferences-schema.md#approved-local-reference-locations — available across projects"
   - label: "Project"
-    description: ".skills/blasphemous-modding-helper/preferences.md in project — scoped to this repository"
+    description: "Project scope; see preferences-schema.md#approved-local-reference-locations — scoped to this repository"
 ```
 
 Note: The agent MUST ask this first so auto-write for the decompile branch knows the destination.
@@ -145,6 +155,58 @@ options: a user-input path
 
 Note: This path MUST be entered manually in all branches. The modding profile is typically a full game copy, not part of the original game installation, so it cannot be auto-detected from the game path.
 
+### Q6: Local ModdingAPI Reference
+
+```yaml
+header: "local ModdingAPI reference"
+question: "Configure a local ModdingAPI reference checkout?"
+options:
+  - label: "Yes (Recommended)"
+    description: "Clone a shallow, reproducible checkout and save its absolute path and selector in preferences.md"
+  - label: "Skip"
+    description: "Leave local reference fields absent and use the release-aware remote fallback"
+```
+
+If the user selects **Yes**, the agent MUST use the same scope selected in Q1.
+The agent MUST NOT select an independent reference scope: the agent MUST keep
+the local reference and its preferences in the same scope domain. The approved paths are authoritative in
+[preferences-schema.md#approved-local-reference-locations](preferences-schema.md#approved-local-reference-locations).
+
+```yaml
+header: "reference selector"
+question: "Which ModdingAPI reference should be cloned?"
+options:
+  - label: "latest (Recommended)"
+    description: "Newest non-draft, non-prerelease GitHub Release"
+  - label: "Exact tag"
+    description: "Reproduce a named Release tag with tag:REF"
+  - label: "Explicit branch or commit"
+    description: "Use branch:REF or commit:SHA for deliberate development or source pinning"
+```
+
+For **Exact tag**, the agent MUST collect the tag name and pass `tag:REF`.
+For an explicit branch or commit, the agent MUST collect the branch name or
+40-character SHA and pass `branch:REF` or `commit:SHA`. `latest` needs no
+additional value.
+
+The agent MUST run the matching fresh-clone command from the skill directory:
+
+```bash
+bash scripts/clone_modding_api.sh --scope user --selector latest
+```
+
+```powershell
+& .\scripts\clone_modding_api.ps1 -Scope user -Selector latest
+```
+
+The agent MUST use `--scope project` / `-Scope project` when Q1 selected
+Project and MUST use User when Q1 selected User. The clone command refuses an existing target, uses shallow history by default, checks out
+tags and commits detached, creates a tracking branch for explicit branches,
+writes the normalized absolute path plus selector to the selected
+`preferences.md`, and writes the sibling lock state described in
+[preferences-schema.md#sibling-lock-state](preferences-schema.md#sibling-lock-state).
+It does not replace an existing checkout.
+
 ## Validate User Input
 
 The agent MUST validate whether the user-input paths exist and are valid using command-line tools.
@@ -154,6 +216,7 @@ Validation criteria:
   - `lightweight_source_code_path` **MUST** exist — validate that the root path exists; it SHOULD ideally contain an `.sln` file
   - `full_source_code_path` (if provided) — validate that the root path exists; it SHOULD ideally contain an `.sln` file
   - `modding_profile_path` (if provided) — it SHOULD contain `Blasphemous.exe` and a `Modding` folder
+  - When Q6 is enabled, the local ModdingAPI reference parent MUST be writable, and the fresh-clone target MUST NOT already exist.
 - If any check fails, the agent MUST return to the **corresponding single question** (not the entire flow):
   - Lightweight fail → retry Q3 only
   - Full fail (if provided) → retry Q4b only
@@ -166,19 +229,23 @@ Validation criteria:
    - Yes → the agent MUST enter manual path flow at Q3 (lightweight).
    - No → the agent MUST abort setup and instruct the user to resolve the error and retry.
 
+**Local reference failure handling** (Q6 = Yes, clone exit code != 0):
+1. The agent MUST display the clone command's terminal error report.
+2. The agent MUST NOT write or update `modding_api_reference_path` or `modding_api_reference_selector`.
+3. The agent MUST ask the user whether to retry with a corrected selector or path; selecting Skip leaves the release-aware remote fallback enabled.
+
 ## Save Locations
 
-| Choice | Path | Scope |
-|--------|------|-------|
-| Project | `.skills/blasphemous-modding-helper/preferences.md` | Project directory |
-| User | `$HOME/.skills/blasphemous-modding-helper/preferences.md` | User home |
+The agent MUST use the approved preferences and local-reference paths in
+[preferences-schema.md#approved-local-reference-locations](preferences-schema.md#approved-local-reference-locations).
 
 ## Setup Workflow After User-questions
 
 1. The agent MUST create the directory if needed.
-2. The agent MUST write `preferences.md` with the selected values.
-3. The agent MUST confirm: "Preferences saved to [path], you can edit it by yourself at any time."
-4. The agent MUST continue the main agent workflow using the saved preferences.
+2. The agent MUST write or update `preferences.md` with the selected values, preserve unknown and legacy fields, and add `modding_api_reference_path` and `modding_api_reference_selector` only when Q6 is enabled and the clone succeeds.
+3. If Q6 was skipped, the agent MUST leave both local reference fields absent.
+4. The agent MUST confirm: "Preferences saved to [path], you can edit it by yourself at any time."
+5. The agent MUST continue the main agent workflow using the saved preferences.
 
 ## `preferences.md` Template
 
