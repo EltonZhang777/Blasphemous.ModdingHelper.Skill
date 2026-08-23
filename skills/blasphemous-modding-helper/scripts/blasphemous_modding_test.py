@@ -130,6 +130,16 @@ class StopResult:
 
 
 @dataclass(frozen=True)
+class CleanResult:
+    session_id: str
+    state: str
+    restored_files: Tuple[Path, ...]
+    removed_files: Tuple[Path, ...]
+    retained_files: Tuple[Path, ...]
+    warnings: Tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class LogEvidenceSource:
     label: str
     path: Optional[Path]
@@ -923,6 +933,8 @@ def _manifest_payload(
         "version": 1,
         "session_id": transaction.session_id,
         "status": status,
+        "session_state": "active",
+        "cleanup_state": "pending",
         "created_at": transaction.created_at,
         "profile": str(transaction.profile),
         "modding_root": str(transaction.modding_root),
@@ -989,6 +1001,139 @@ def _read_session_manifest(state_path: Path) -> Dict[str, object]:
             f"Session state is not an object: {state_path}",
         )
     return payload
+
+
+def _profile_paths_match(first: Path, second: Path) -> bool:
+    first_value = first.resolve(strict=False).as_posix().casefold()
+    second_value = second.resolve(strict=False).as_posix().casefold()
+    return first_value == second_value
+
+
+def _session_cleanup_state(payload: Dict[str, object]) -> str:
+    value = str(payload.get("cleanup_state", "pending"))
+    return value if value in {"pending", "cleaned"} else "pending"
+
+
+def _session_is_cleanable(payload: Dict[str, object]) -> bool:
+    return (
+        _session_cleanup_state(payload) != "cleaned"
+        and str(payload.get("status", ""))
+        not in {"rolled_back", "rollback_failed"}
+    )
+
+
+def _session_sort_key(entry: Tuple[Path, Dict[str, object]]) -> Tuple[str, int, str]:
+    state_path, payload = entry
+    try:
+        modified = state_path.stat().st_mtime_ns
+    except OSError:
+        modified = 0
+    return (
+        str(payload.get("created_at", "")),
+        modified,
+        state_path.parent.name,
+    )
+
+
+def _session_entries(
+    profile: Optional[Path] = None,
+) -> Tuple[Tuple[Path, Dict[str, object]], ...]:
+    state_root = _deployment_state_root()
+    if not state_root.is_dir():
+        return ()
+    entries: List[Tuple[Path, Dict[str, object]]] = []
+    try:
+        state_paths = tuple(state_root.glob("*/manifest.json"))
+    except OSError as error:
+        raise CliError(
+            EXIT_CLEAN,
+            "stop/clean",
+            f"Could not list test sessions under {state_root}: {error}",
+        ) from error
+    for state_path in state_paths:
+        payload = _read_session_manifest(state_path)
+        if profile is not None:
+            recorded_profile = payload.get("profile")
+            if not recorded_profile or not _profile_paths_match(
+                Path(str(recorded_profile)),
+                profile,
+            ):
+                continue
+        entries.append((state_path, payload))
+    entries.sort(key=_session_sort_key, reverse=True)
+    return tuple(entries)
+
+
+def _session_role(
+    payload: Dict[str, object],
+    newest: bool,
+) -> str:
+    if _session_cleanup_state(payload) == "cleaned":
+        return "cleaned"
+    role = str(payload.get("session_state", ""))
+    if role in {"active", "archived"}:
+        return role
+    return "active" if newest else "archived"
+
+
+def _archive_previous_sessions(profile: Path, current_session_id: str) -> Tuple[str, ...]:
+    changes: List[Tuple[Path, str, Dict[str, object], str]] = []
+    for state_path, payload in _session_entries(profile):
+        session_id = str(payload.get("session_id", state_path.parent.name))
+        if session_id == current_session_id or not _session_is_cleanable(payload):
+            continue
+
+        process_value = payload.get("process")
+        if isinstance(process_value, dict) and str(process_value.get("state", "")) == "launched":
+            try:
+                identity = ProcessIdentity(
+                    int(process_value["pid"]),
+                    str(process_value["start_token"]),
+                    Path(str(process_value["launcher"])),
+                )
+            except (KeyError, TypeError, ValueError) as error:
+                raise CliError(
+                    EXIT_LAUNCH,
+                    "launch",
+                    f"Could not archive session {session_id}; its tracked process state is incomplete: {error}",
+                ) from error
+            if _tracked_process_is_alive(identity):
+                raise CliError(
+                    EXIT_LAUNCH,
+                    "launch",
+                    f"Session {session_id} still tracks a running game process; stop it before starting another run.",
+                )
+            process_value["state"] = "exited"
+            process_value["recorded_at"] = datetime.now(timezone.utc).isoformat()
+
+        payload["session_state"] = "archived"
+        payload["archived_at"] = datetime.now(timezone.utc).isoformat()
+        try:
+            original = state_path.read_text(encoding="utf-8")
+        except (OSError, UnicodeError) as error:
+            raise CliError(
+                EXIT_DEPLOY,
+                "deployment",
+                f"Could not prepare archive state for previous session {session_id}: {error}",
+            ) from error
+        changes.append((state_path, original, payload, session_id))
+
+    try:
+        for state_path, _, payload, _ in changes:
+            _atomic_write_json(state_path, payload)
+    except OSError as error:
+        for state_path, original, _, _ in changes:
+            try:
+                state_path.write_text(original, encoding="utf-8")
+            except OSError:
+                pass
+        session_text = ", ".join(item[3] for item in changes)
+        raise CliError(
+            EXIT_DEPLOY,
+            "deployment",
+            f"Could not archive previous session state ({session_text}): {error}",
+        ) from error
+    return tuple(item[3] for item in changes)
 
 
 def _log_is_current(
@@ -1269,6 +1414,7 @@ def _session_manifest_path(
     session_id: str,
     code: int = EXIT_CLEAN,
     category: str = "stop/clean",
+    allow_missing: bool = False,
 ) -> Path:
     if re.fullmatch(r"[0-9a-f]{32}", session_id) is None:
         raise CliError(
@@ -1278,6 +1424,8 @@ def _session_manifest_path(
         )
     state_path = _deployment_state_root() / session_id / "manifest.json"
     if not state_path.is_file():
+        if allow_missing:
+            return state_path
         raise CliError(
             code,
             category,
@@ -1957,7 +2105,9 @@ def launch_session(
 def stop_session(session_id: str, force: bool = False) -> StopResult:
     """Stop only the process identity recorded for one test session."""
 
-    state_path = _session_manifest_path(session_id)
+    state_path = _session_manifest_path(session_id, allow_missing=True)
+    if not state_path.is_file():
+        return StopResult(session_id, "gone")
     manifest = _read_session_manifest(state_path)
     process_value = manifest.get("process")
     if not isinstance(process_value, dict):
@@ -2024,6 +2174,357 @@ def stop_session(session_id: str, force: bool = False) -> StopResult:
     process_state["stopped_at"] = datetime.now(timezone.utc).isoformat()
     _update_process_state(state_path, process_state)
     return StopResult(session_id, "stopped")
+
+
+def _ensure_session_process_stopped(
+    session_id: str,
+    manifest: Dict[str, object],
+) -> bool:
+    process_value = manifest.get("process")
+    if not isinstance(process_value, dict):
+        return False
+    state = str(process_value.get("state", ""))
+    if state in {"stopped", "exited", "failed", "blocked"}:
+        return False
+    if state != "launched":
+        raise CliError(
+            EXIT_CLEAN,
+            "stop/clean",
+            f"Session {session_id} has an unknown tracked process state '{state}'; refusing to clean it.",
+        )
+    try:
+        identity = ProcessIdentity(
+            int(process_value["pid"]),
+            str(process_value["start_token"]),
+            Path(str(process_value["launcher"])),
+        )
+    except (KeyError, TypeError, ValueError) as error:
+        raise CliError(
+            EXIT_CLEAN,
+            "stop/clean",
+            f"Session {session_id} has incomplete tracked process state: {error}",
+        ) from error
+    if _tracked_process_is_alive(identity):
+        raise CliError(
+            EXIT_CLEAN,
+            "stop/clean",
+            f"Session {session_id} tracks a game process that is still running; stop it before cleaning.",
+        )
+    process_value["state"] = "exited"
+    process_value["recorded_at"] = datetime.now(timezone.utc).isoformat()
+    return True
+
+
+def _clean_manifest_path(
+    value: object,
+    root: Path,
+    label: str,
+) -> Path:
+    if value is None or not str(value).strip():
+        raise OSError(f"{label} is missing from session state")
+    candidate = Path(str(value))
+    if not candidate.is_absolute():
+        candidate = root / candidate
+    resolved_root = root.resolve(strict=False)
+    resolved_candidate = candidate.resolve(strict=False)
+    if not _is_within(resolved_candidate, resolved_root):
+        raise OSError(f"{label} escapes the recorded Modding root: {candidate}")
+    return candidate
+
+
+def _clean_backup_path(
+    session_directory: Path,
+    value: object,
+) -> Path:
+    if value is None or not str(value).strip():
+        raise OSError("overwritten file backup is missing from session state")
+    candidate = session_directory / str(value)
+    resolved_root = session_directory.resolve(strict=False)
+    resolved_candidate = candidate.resolve(strict=False)
+    if not _is_within(resolved_candidate, resolved_root):
+        raise OSError(f"backup path escapes the session state directory: {candidate}")
+    if _first_symlink_component(candidate) is not None or candidate.is_symlink():
+        raise OSError(f"backup path contains a symlink: {candidate}")
+    if not candidate.is_file():
+        raise OSError(f"backup is missing: {candidate}")
+    return candidate
+
+
+def clean_session(
+    session_id: str,
+    remove_new_files: bool = False,
+    expected_profile: Optional[Path] = None,
+) -> CleanResult:
+    """Safely roll back one stopped deployment session.
+
+    The manifest remains in temporary state after cleaning so status and
+    repeated recovery commands stay idempotent. Overwritten files are only
+    restored when their current hash still matches this session's deployed
+    hash. New files are retained unless the caller explicitly opts in to
+    removing them.
+    """
+
+    state_path = _session_manifest_path(session_id, allow_missing=True)
+    if not state_path.is_file():
+        return CleanResult(
+            session_id,
+            "already-gone",
+            (),
+            (),
+            (),
+            ("Session state is already gone; no profile files were changed.",),
+        )
+    manifest = _read_session_manifest(state_path)
+    recorded_profile = manifest.get("profile")
+    if not recorded_profile:
+        raise CliError(
+            EXIT_CLEAN,
+            "stop/clean",
+            f"Session {session_id} has no recorded modding profile.",
+        )
+    profile = Path(str(recorded_profile)).resolve(strict=False)
+    if expected_profile is not None and not _profile_paths_match(
+        profile,
+        expected_profile,
+    ):
+        raise CliError(
+            EXIT_CLEAN,
+            "stop/clean",
+            f"Session {session_id} belongs to profile {profile}, but the selected profile is {expected_profile.resolve(strict=False)}.",
+        )
+
+    process_changed = _ensure_session_process_stopped(session_id, manifest)
+    cleanup_state = _session_cleanup_state(manifest)
+    if cleanup_state == "cleaned" and not remove_new_files:
+        if process_changed:
+            _atomic_write_json(state_path, manifest)
+        return CleanResult(session_id, "already-cleaned", (), (), (), ())
+
+    entries = _session_entries(profile)
+    current_entry: Optional[Tuple[Path, Dict[str, object]]] = None
+    for entry in entries:
+        if entry[0] == state_path:
+            current_entry = entry
+            break
+    if current_entry is None:
+        raise CliError(
+            EXIT_CLEAN,
+            "stop/clean",
+            f"Session {session_id} is not present in the session listing.",
+        )
+    current_key = _session_sort_key(current_entry)
+    newer_sessions = [
+        str(payload.get("session_id", path.parent.name))
+        for path, payload in entries
+        if path != state_path
+        and _session_is_cleanable(payload)
+        and _session_sort_key((path, payload)) > current_key
+    ]
+    if newer_sessions:
+        newer_text = ", ".join(newer_sessions)
+        raise CliError(
+            EXIT_CLEAN,
+            "stop/clean",
+            f"Cannot clean older session {session_id} while newer session(s) remain active: {newer_text}. Clean newest-first.",
+        )
+
+    root_value = manifest.get("modding_root")
+    if not root_value:
+        raise CliError(
+            EXIT_CLEAN,
+            "stop/clean",
+            f"Session {session_id} has no recorded Modding root.",
+        )
+    modding_root = Path(str(root_value)).resolve(strict=False)
+    files_value = manifest.get("files")
+    if not isinstance(files_value, list):
+        raise CliError(
+            EXIT_CLEAN,
+            "stop/clean",
+            f"Session {session_id} has no valid deployment file records.",
+        )
+
+    operations: List[Tuple[str, Dict[str, object], Path, Optional[Path]]] = []
+    retained_files: List[Path] = []
+    warnings: List[str] = []
+    conflicts: List[str] = []
+    for index, value in enumerate(files_value):
+        if not isinstance(value, dict):
+            conflicts.append(f"file record {index} is not an object")
+            continue
+        if not bool(value.get("completed", True)):
+            continue
+        try:
+            destination = _clean_manifest_path(
+                value.get("destination"),
+                modding_root,
+                f"file record {index} destination",
+            )
+        except OSError as error:
+            conflicts.append(str(error))
+            continue
+
+        existed = bool(value.get("existed", False))
+        if existed:
+            if bool(value.get("restored", False)):
+                continue
+            try:
+                backup = _clean_backup_path(
+                    state_path.parent,
+                    value.get("backup_path"),
+                )
+                if not destination.is_file() or destination.is_symlink():
+                    raise OSError(f"overwritten deployment target is unavailable: {destination}")
+                _reject_unsafe_deployment_destination(destination)
+                deployed_hash = str(value.get("deployed_sha256", ""))
+                if not deployed_hash or _sha256(destination) != deployed_hash:
+                    raise OSError(
+                        f"overwritten deployment target changed during testing; protected from restoration: {destination}"
+                    )
+                original_hash = str(value.get("original_sha256", ""))
+                if not original_hash or _sha256(backup) != original_hash:
+                    raise OSError(f"recorded backup hash is invalid: {backup}")
+                operations.append(("restore", value, destination, backup))
+            except (OSError, ValueError) as error:
+                conflicts.append(str(error))
+            continue
+
+        if bool(value.get("removed", False)):
+            continue
+        if not remove_new_files:
+            if destination.exists() or destination.is_symlink():
+                retained_files.append(destination)
+                if destination.is_symlink() or not destination.is_file():
+                    warnings.append(
+                        f"Retaining new deployment path without inspection: {destination}"
+                    )
+                else:
+                    deployed_hash = str(value.get("deployed_sha256", ""))
+                    if deployed_hash and _sha256(destination) != deployed_hash:
+                        warnings.append(
+                            f"Retaining new file changed during testing: {destination}"
+                        )
+            continue
+
+        if not destination.exists() and not destination.is_symlink():
+            value["removed"] = True
+            continue
+        try:
+            if destination.is_symlink() or not destination.is_file():
+                raise OSError(f"new deployment target is not a regular file: {destination}")
+            _reject_unsafe_deployment_destination(destination)
+            deployed_hash = str(value.get("deployed_sha256", ""))
+            if not deployed_hash or _sha256(destination) != deployed_hash:
+                raise OSError(
+                    f"new deployment target changed during testing; protected from removal: {destination}"
+                )
+            operations.append(("remove", value, destination, None))
+        except (OSError, ValueError) as error:
+            conflicts.append(str(error))
+
+    if conflicts:
+        if process_changed:
+            _atomic_write_json(state_path, manifest)
+        raise CliError(
+            EXIT_CLEAN,
+            "stop/clean",
+            "Safe clean refused; protected files were not changed: "
+            + "; ".join(conflicts),
+        )
+
+    restored_files: List[Path] = []
+    removed_files: List[Path] = []
+    try:
+        for operation, record, destination, backup in operations:
+            _reject_unsafe_deployment_destination(destination)
+            if operation == "restore":
+                if backup is None or not destination.is_file():
+                    raise OSError(f"restoration target is unavailable: {destination}")
+                expected = str(record.get("deployed_sha256", ""))
+                if not expected or _sha256(destination) != expected:
+                    raise OSError(
+                        f"overwritten deployment target changed during testing; protected from restoration: {destination}"
+                    )
+                shutil.copy2(backup, destination)
+                original_hash = str(record.get("original_sha256", ""))
+                if not original_hash or _sha256(destination) != original_hash:
+                    raise OSError(f"restored file hash mismatch: {destination}")
+                record["restored"] = True
+                restored_files.append(destination)
+            else:
+                expected = str(record.get("deployed_sha256", ""))
+                if not destination.is_file() or not expected or _sha256(destination) != expected:
+                    raise OSError(
+                        f"new deployment target changed during testing; protected from removal: {destination}"
+                    )
+                destination.unlink()
+                record["removed"] = True
+                removed_files.append(destination)
+            _atomic_write_json(state_path, manifest)
+    except (OSError, ValueError) as error:
+        try:
+            _atomic_write_json(state_path, manifest)
+        except OSError:
+            pass
+        raise CliError(
+            EXIT_CLEAN,
+            "stop/clean",
+            f"Safe clean stopped without completing all records: {error}",
+        ) from error
+
+    directory_values = manifest.get("created_directories", [])
+    if isinstance(directory_values, list):
+        directories: List[Path] = []
+        for value in directory_values:
+            try:
+                directories.append(
+                    _clean_manifest_path(
+                        value,
+                        modding_root,
+                        "created deployment directory",
+                    )
+                )
+            except OSError as error:
+                warnings.append(str(error))
+        for directory in sorted(
+            directories,
+            key=lambda path: (len(path.parts), path.as_posix().casefold()),
+            reverse=True,
+        ):
+            if directory.is_symlink():
+                warnings.append(f"Left deployment directory symlink untouched: {directory}")
+                continue
+            if not directory.exists():
+                continue
+            try:
+                directory.rmdir()
+            except OSError:
+                warnings.append(f"Left non-empty deployment directory untouched: {directory}")
+
+    manifest["cleanup_state"] = "cleaned"
+    manifest["cleaned_at"] = datetime.now(timezone.utc).isoformat()
+    manifest["cleaned_with_remove_new_files"] = remove_new_files
+    manifest["restored_files"] = [path.as_posix() for path in restored_files]
+    manifest["removed_files"] = [path.as_posix() for path in removed_files]
+    manifest["retained_files"] = [path.as_posix() for path in retained_files]
+    try:
+        _atomic_write_json(state_path, manifest)
+    except OSError as error:
+        raise CliError(
+            EXIT_CLEAN,
+            "stop/clean",
+            f"Safe clean changed files but could not persist session state: {error}",
+        ) from error
+    return CleanResult(
+        session_id,
+        "cleaned",
+        tuple(restored_files),
+        tuple(removed_files),
+        tuple(retained_files),
+        tuple(warnings),
+    )
+
+
 def _create_deployment_transaction(
     profile: ProfilePreflight,
     plan: ArtifactPlan,
@@ -2473,7 +2974,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="blasphemous-modding-test",
         description="Build, validate, and deploy a Blasphemous mod artifact.",
-        epilog="Use 'run --dry-run' to inspect the plan without deployment or launch, 'logs SESSION_ID' to inspect current startup evidence, 'stop SESSION_ID' to stop one tracked process tree, or 'status' for a read-only profile view.",
+        epilog="Use 'run --dry-run' to inspect the plan without deployment or launch, 'logs SESSION_ID' to inspect current startup evidence, 'stop SESSION_ID' to stop one tracked process tree, 'clean SESSION_ID' for newest-first safe cleanup, or 'status' for a read-only profile view.",
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
@@ -2518,6 +3019,22 @@ def build_parser() -> argparse.ArgumentParser:
         "--force",
         action="store_true",
         help="Force-stop only the tracked process tree when graceful stop fails.",
+    )
+
+    clean_parser = subparsers.add_parser(
+        "clean",
+        help="Safely clean one stopped session in newest-first order.",
+    )
+    clean_parser.add_argument(
+        "session_id",
+        metavar="SESSION_ID",
+        help="The session identifier printed by a successful run.",
+    )
+    _add_common_options(clean_parser)
+    clean_parser.add_argument(
+        "--remove-new-files",
+        action="store_true",
+        help="Explicitly approve removal of unchanged files first created by this session; changed files remain protected.",
     )
 
     logs_parser = subparsers.add_parser(
@@ -2629,6 +3146,34 @@ def _run_command(args: argparse.Namespace) -> int:
                     f"A matching game instance is already running with process ID {conflict.pid}; refusing to deploy or attach.",
                 )
             result = deploy_artifact(plan, context.profile)
+            try:
+                archived_sessions = _archive_previous_sessions(
+                    context.profile.profile,
+                    result.session_id,
+                )
+            except CliError as archive_error:
+                try:
+                    clean_session(
+                        result.session_id,
+                        remove_new_files=True,
+                        expected_profile=context.profile.profile,
+                    )
+                except (CliError, OSError, UnicodeError) as rollback_error:
+                    raise CliError(
+                        EXIT_DEPLOY,
+                        "deployment",
+                        f"Could not archive previous sessions: {archive_error}; automatic rollback of the new deployment also failed: {rollback_error}. Session: {result.session_id}",
+                    ) from rollback_error
+                raise CliError(
+                    archive_error.code,
+                    archive_error.category,
+                    f"{archive_error}; the new deployment was rolled back safely. Session: {result.session_id}",
+                ) from archive_error
+            for archived_session in archived_sessions:
+                print(
+                    f"Warning: archived previous session {archived_session}; clean sessions newest-first.",
+                    file=sys.stderr,
+                )
             print(f"Deployment session: {result.session_id}")
             print(f"Deployment state: deployed")
             print(f"Deployed files: {len(result.deployed_files)}")
@@ -2669,7 +3214,32 @@ def _run_command(args: argparse.Namespace) -> int:
 def _status_command(args: argparse.Namespace) -> int:
     context = _resolve_context(args, require_project=False)
     _print_context(context)
-    print("Test session listing: added by later workflow tickets")
+    entries = _session_entries(context.profile.profile)
+    print("Test sessions (newest first):")
+    if not entries:
+        print("  none")
+    else:
+        for index, (state_path, payload) in enumerate(entries):
+            session_id = str(payload.get("session_id", state_path.parent.name))
+            role = _session_role(payload, newest=index == 0)
+            deployment_state = str(payload.get("status", "unknown"))
+            cleanup_state = _session_cleanup_state(payload)
+            process_value = payload.get("process")
+            process_state = (
+                str(process_value.get("state", "unknown"))
+                if isinstance(process_value, dict)
+                else "not-launched"
+            )
+            evidence_value = payload.get("evidence")
+            evidence_state = (
+                str(evidence_value.get("state", "unknown"))
+                if isinstance(evidence_value, dict)
+                else "unknown"
+            )
+            print(
+                f"  {session_id}: {role} (deployment={deployment_state}, "
+                f"cleanup={cleanup_state}, process={process_state}, evidence={evidence_state})"
+            )
     print("Status is read-only: no files copied; no process launched.")
     return EXIT_SUCCESS
 
@@ -2716,12 +3286,31 @@ def _stop_command(args: argparse.Namespace) -> int:
     result = stop_session(args.session_id, force=args.force)
     print(f"Stop session: {result.session_id}")
     print(f"Stop state: {result.state}")
-    if result.state == "exited":
+    if result.state == "gone":
+        print("Tracked session state already gone; no process was terminated.")
+    elif result.state == "exited":
         print("Tracked process already exited; no process was terminated.")
     elif args.force:
         print("Stopped tracked process tree with force.")
     else:
         print("Stopped tracked process tree.")
+    return EXIT_SUCCESS
+
+
+def _clean_command(args: argparse.Namespace) -> int:
+    context = _resolve_context(args, require_project=False)
+    result = clean_session(
+        args.session_id,
+        remove_new_files=args.remove_new_files,
+        expected_profile=context.profile.profile,
+    )
+    print(f"Clean session: {result.session_id}")
+    print(f"Clean state: {result.state}")
+    print(f"Restored files: {len(result.restored_files)}")
+    print(f"Removed new files: {len(result.removed_files)}")
+    print(f"Retained new files: {len(result.retained_files)}")
+    for warning in result.warnings:
+        print(f"Warning: {warning}", file=sys.stderr)
     return EXIT_SUCCESS
 
 
@@ -2735,6 +3324,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             return _logs_command(args)
         if args.command == "stop":
             return _stop_command(args)
+        if args.command == "clean":
+            return _clean_command(args)
         if args.command == "status":
             return _status_command(args)
         raise CliError(EXIT_USAGE, "usage/configuration", f"Unknown command: {args.command}")

@@ -292,6 +292,7 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
         self.assertIn("run", result.stdout)
         self.assertIn("logs", result.stdout)
         self.assertIn("stop", result.stdout)
+        self.assertIn("clean", result.stdout)
         self.assertIn("status", result.stdout)
         self.assertIn("--dry-run", result.stdout)
 
@@ -712,6 +713,26 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
         self.assertEqual(repeated.state, "stopped")
         terminate_again.assert_not_called()
 
+    def test_stop_and_clean_are_idempotent_when_session_state_is_gone(self):
+        module = self.load_cli_module()
+        profile = self.create_profile()
+        self.write_project_preferences(profile)
+        missing_session = "a" * 32
+
+        with mock.patch.object(
+            module,
+            "_deployment_state_root",
+            return_value=self.temp_root / "sessions",
+        ):
+            stopped = self.run_module_cli(module, "stop", missing_session)
+            cleaned = self.run_module_cli(module, "clean", missing_session)
+
+        self.assert_success(stopped)
+        self.assertIn("Stop state: gone", stopped.stdout)
+        self.assert_success(cleaned)
+        self.assertIn("Clean state: already-gone", cleaned.stdout)
+        self.assertIn("already gone", cleaned.stderr)
+
     def test_stop_marks_an_already_exited_process_without_termination(self):
         module, deployment, profile_preflight, process, identity = self.create_launched_session()
 
@@ -794,7 +815,7 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
         self.assert_success(result)
         self.assertIn(f"Modding profile: {profile}", result.stdout)
         self.assertIn(
-            "Test session listing: added by later workflow tickets",
+            "Test sessions (newest first):",
             result.stdout,
         )
         self.assertEqual(before, self.snapshot())
@@ -1334,6 +1355,307 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
         self.assertIsNone(new_file["backup_path"])
         self.assertTrue(new_file["deployed_sha256"])
         self.assertNotIn("LogOutput.log", manifest.read_text(encoding="utf-8"))
+
+    def test_repeated_runs_archive_previous_session_and_status_is_newest_first(self):
+        module = self.load_cli_module()
+        profile = self.create_profile()
+        self.create_project()
+        artifact = self.create_package(root=self.root, target_name="known-artifact")
+        self.write_project_preferences(profile)
+        process, identity = self.live_process_double(
+            module,
+            self.launcher_path(profile),
+        )
+
+        with mock.patch.object(
+            module,
+            "_deployment_state_root",
+            return_value=self.temp_root / "sessions",
+        ):
+            with mock.patch.object(module, "_find_conflicting_process", return_value=None):
+                with mock.patch.object(module, "_tracked_process_is_alive", return_value=False):
+                    with mock.patch.object(module, "_process_identity", return_value=identity):
+                        with mock.patch.object(module.subprocess, "Popen", return_value=process):
+                            first = self.run_module_cli(
+                                module,
+                                "run",
+                                "--artifact",
+                                str(artifact),
+                            )
+                            second = self.run_module_cli(
+                                module,
+                                "run",
+                                "--artifact",
+                                str(artifact),
+                            )
+                    status = self.run_module_cli(module, "status")
+
+        self.assert_success(first)
+        self.assert_success(second)
+        first_id = first.stdout.split("Deployment session: ", 1)[1].splitlines()[0]
+        second_id = second.stdout.split("Deployment session: ", 1)[1].splitlines()[0]
+        self.assertNotEqual(first_id, second_id)
+        self.assertIn("archived", second.stderr.casefold())
+        self.assertIn(first_id, second.stderr)
+        self.assert_success(status)
+        self.assertLess(status.stdout.index(second_id), status.stdout.index(first_id))
+        self.assertIn(f"{second_id}: active", status.stdout)
+        self.assertIn(f"{first_id}: archived", status.stdout)
+
+    def test_archive_failure_rolls_back_the_new_deployment(self):
+        module = self.load_cli_module()
+        profile = self.create_profile()
+        self.create_project()
+        artifact = self.create_package(root=self.root, target_name="known-artifact")
+        existing = profile / "Modding" / "plugins" / "Example.dll"
+        existing.parent.mkdir()
+        existing.write_bytes(b"pre-test-plugin")
+        self.write_project_preferences(profile)
+        failure = module.CliError(40, "deployment", "archive state failed")
+
+        with mock.patch.object(
+            module,
+            "_deployment_state_root",
+            return_value=self.temp_root / "sessions",
+        ):
+            with mock.patch.object(module, "_find_conflicting_process", return_value=None):
+                with mock.patch.object(
+                    module,
+                    "_archive_previous_sessions",
+                    side_effect=failure,
+                ):
+                    result = self.run_module_cli(
+                        module,
+                        "run",
+                        "--artifact",
+                        str(artifact),
+                    )
+
+        self.assertEqual(result.returncode, 40)
+        self.assertIn("rolled back safely", result.stderr)
+        self.assertEqual(existing.read_bytes(), b"pre-test-plugin")
+        self.assertFalse(profile.joinpath("Modding", "data").exists())
+
+    def test_clean_restores_overwritten_files_and_keeps_new_files(self):
+        module = self.load_cli_module()
+        profile = self.create_profile()
+        project = self.create_project()
+        artifact = self.create_package(root=self.root, target_name="known-artifact")
+        existing = profile / "Modding" / "plugins" / "Example.dll"
+        existing.parent.mkdir()
+        existing.write_bytes(b"pre-test-plugin")
+        self.write_project_preferences(profile)
+        environment = {
+            "Windows": "Windows",
+            "Linux": "Linux",
+            "Darwin": "macOS",
+        }[platform.system()]
+        profile_preflight = module.preflight_profile(profile, environment)
+
+        with mock.patch.object(
+            module,
+            "_deployment_state_root",
+            return_value=self.temp_root / "sessions",
+        ):
+            with module.prepare_artifact(
+                project,
+                "Debug",
+                explicit_artifact=str(artifact),
+                cwd=self.root,
+            ) as plan:
+                deployment = module.deploy_artifact(plan, profile_preflight)
+            result = self.run_module_cli(module, "clean", deployment.session_id)
+            repeated = self.run_module_cli(module, "clean", deployment.session_id)
+
+        self.assert_success(result)
+        self.assertIn("Clean state: cleaned", result.stdout)
+        self.assert_success(repeated)
+        self.assertIn("Clean state: already-cleaned", repeated.stdout)
+        self.assertEqual(existing.read_bytes(), b"pre-test-plugin")
+        self.assertEqual(
+            (profile / "Modding" / "data" / "settings.json").read_text(
+                encoding="utf-8"
+            ),
+            "{}\n",
+        )
+        payload = json.loads(deployment.state_path.read_text(encoding="utf-8"))
+        self.assertEqual(payload["cleanup_state"], "cleaned")
+
+    def test_clean_protects_an_overwritten_file_changed_during_testing(self):
+        module = self.load_cli_module()
+        profile = self.create_profile()
+        project = self.create_project()
+        artifact = self.create_package(root=self.root, target_name="known-artifact")
+        existing = profile / "Modding" / "plugins" / "Example.dll"
+        existing.parent.mkdir()
+        existing.write_bytes(b"pre-test-plugin")
+        self.write_project_preferences(profile)
+        environment = {
+            "Windows": "Windows",
+            "Linux": "Linux",
+            "Darwin": "macOS",
+        }[platform.system()]
+        profile_preflight = module.preflight_profile(profile, environment)
+
+        with mock.patch.object(
+            module,
+            "_deployment_state_root",
+            return_value=self.temp_root / "sessions",
+        ):
+            with module.prepare_artifact(
+                project,
+                "Debug",
+                explicit_artifact=str(artifact),
+                cwd=self.root,
+            ) as plan:
+                deployment = module.deploy_artifact(plan, profile_preflight)
+            existing.write_bytes(b"user-change-during-test")
+            result = self.run_module_cli(module, "clean", deployment.session_id)
+
+        self.assertEqual(result.returncode, 70)
+        self.assertIn("changed", result.stderr.casefold())
+        self.assertIn("protected", result.stderr.casefold())
+        self.assertEqual(existing.read_bytes(), b"user-change-during-test")
+        payload = json.loads(deployment.state_path.read_text(encoding="utf-8"))
+        self.assertEqual(payload.get("cleanup_state", "pending"), "pending")
+
+    def test_clean_removes_new_files_only_after_explicit_approval(self):
+        module = self.load_cli_module()
+        profile = self.create_profile()
+        project = self.create_project()
+        artifact = self.create_package(root=self.root, target_name="known-artifact")
+        self.write_project_preferences(profile)
+        environment = {
+            "Windows": "Windows",
+            "Linux": "Linux",
+            "Darwin": "macOS",
+        }[platform.system()]
+        profile_preflight = module.preflight_profile(profile, environment)
+
+        with mock.patch.object(
+            module,
+            "_deployment_state_root",
+            return_value=self.temp_root / "sessions",
+        ):
+            with module.prepare_artifact(
+                project,
+                "Debug",
+                explicit_artifact=str(artifact),
+                cwd=self.root,
+            ) as plan:
+                deployment = module.deploy_artifact(plan, profile_preflight)
+            default_clean = self.run_module_cli(module, "clean", deployment.session_id)
+            self.assert_success(default_clean)
+            self.assertTrue(profile.joinpath("Modding", "data", "settings.json").is_file())
+            approved_clean = self.run_module_cli(
+                module,
+                "clean",
+                deployment.session_id,
+                "--remove-new-files",
+            )
+
+        self.assert_success(approved_clean)
+        self.assertIn("Removed new files", approved_clean.stdout)
+        self.assertFalse(profile.joinpath("Modding", "data", "settings.json").exists())
+
+    def test_clean_protects_a_new_file_changed_during_testing_when_removal_is_approved(self):
+        module = self.load_cli_module()
+        profile = self.create_profile()
+        project = self.create_project()
+        artifact = self.create_package(root=self.root, target_name="known-artifact")
+        self.write_project_preferences(profile)
+        environment = {
+            "Windows": "Windows",
+            "Linux": "Linux",
+            "Darwin": "macOS",
+        }[platform.system()]
+        profile_preflight = module.preflight_profile(profile, environment)
+
+        with mock.patch.object(
+            module,
+            "_deployment_state_root",
+            return_value=self.temp_root / "sessions",
+        ):
+            with module.prepare_artifact(
+                project,
+                "Debug",
+                explicit_artifact=str(artifact),
+                cwd=self.root,
+            ) as plan:
+                deployment = module.deploy_artifact(plan, profile_preflight)
+            new_file = profile / "Modding" / "data" / "settings.json"
+            new_file.write_text("user-settings\n", encoding="utf-8")
+            result = self.run_module_cli(
+                module,
+                "clean",
+                deployment.session_id,
+                "--remove-new-files",
+            )
+
+        self.assertEqual(result.returncode, 70)
+        self.assertIn("protected", result.stderr.casefold())
+        self.assertEqual(new_file.read_text(encoding="utf-8"), "user-settings\n")
+
+    def test_clean_rejects_an_older_session_until_the_newer_session_is_cleaned(self):
+        module = self.load_cli_module()
+        profile = self.create_profile()
+        project = self.create_project()
+        artifact = self.create_package(root=self.root, target_name="known-artifact")
+        existing = profile / "Modding" / "plugins" / "Example.dll"
+        existing.parent.mkdir()
+        existing.write_bytes(b"pre-test-plugin")
+        self.write_project_preferences(profile)
+        environment = {
+            "Windows": "Windows",
+            "Linux": "Linux",
+            "Darwin": "macOS",
+        }[platform.system()]
+        profile_preflight = module.preflight_profile(profile, environment)
+
+        with mock.patch.object(
+            module,
+            "_deployment_state_root",
+            return_value=self.temp_root / "sessions",
+        ):
+            with module.prepare_artifact(
+                project,
+                "Debug",
+                explicit_artifact=str(artifact),
+                cwd=self.root,
+            ) as plan:
+                first = module.deploy_artifact(plan, profile_preflight)
+            (artifact / "plugins" / "Example.dll").write_bytes(b"second-build")
+            with module.prepare_artifact(
+                project,
+                "Debug",
+                explicit_artifact=str(artifact),
+                cwd=self.root,
+            ) as plan:
+                second = module.deploy_artifact(plan, profile_preflight)
+
+            blocked = self.run_module_cli(module, "clean", first.session_id)
+            newest = self.run_module_cli(module, "clean", second.session_id)
+            older = self.run_module_cli(module, "clean", first.session_id)
+
+        self.assertEqual(blocked.returncode, 70)
+        self.assertIn("newer", blocked.stderr.casefold())
+        self.assert_success(newest)
+        self.assert_success(older)
+        self.assertEqual(existing.read_bytes(), b"pre-test-plugin")
+
+    def test_clean_refuses_while_the_tracked_game_process_is_running(self):
+        module, deployment, profile_preflight, process, identity = self.create_launched_session()
+
+        with mock.patch.object(
+            module,
+            "_deployment_state_root",
+            return_value=self.temp_root / "sessions",
+        ):
+            with mock.patch.object(module, "_tracked_process_is_alive", return_value=True):
+                result = self.run_module_cli(module, "clean", deployment.session_id)
+
+        self.assertEqual(result.returncode, 70)
+        self.assertIn("still running", result.stderr.casefold())
 
     def test_deployment_rejects_hard_linked_destination_without_mutation(self):
         profile = self.create_profile()
