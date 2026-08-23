@@ -1,6 +1,6 @@
 ---
 name: blasphemous-modding-helper
-description: Blasphemous modding development helper. Use when user wants to develop a Blasphemous mod, analyze Blasphemous decompiled source code, or debug mod-related logs (BepInEx / Unity).
+description: Blasphemous modding development helper. Use when user wants to build, deploy, launch, inspect startup evidence, stop, clean, or perform Manual verification for a Blasphemous mod; develop a mod, analyze Blasphemous decompiled source code, or debug mod-related logs (BepInEx / Unity).
 ---
 
 # Blasphemous modding helper
@@ -45,7 +45,7 @@ Output is one of: `"project"`, `"user"`, or nothing (not found).
 
 ### First-Time Setup (BLOCKING)
 
-**CRITICAL**: When `preferences.md` is not found, you **MUST** run the first-time setup (a **BLOCKING** operation) before ANY action, following [references/config/first-time-setup.md](references/config/first-time-setup.md).
+**CRITICAL**: When `preferences.md` is not found, you **MUST** run the first-time setup (a **BLOCKING** operation) before source analysis, modding operations, or any test command, following [references/config/first-time-setup.md](references/config/first-time-setup.md). The only narrow recovery exception is `/blasphemous-modding-test stop SESSION_ID`: it uses the recorded session identity, does not load or edit preferences, and may stop only that tracked process tree when normal context preflight is unavailable. All other test commands remain blocked until setup completes.
 
 
 ## Workflow
@@ -63,8 +63,10 @@ Analyze the user question to determine user intent and the task to perform, espe
   - If yes, you SHOULD create a sub-agent or sub-task to handle the source code analysis using [references/sub-skills/source-analyzer.md](references/sub-skills/source-analyzer.md)
 - Whether the user request involves debugging, log tracking, or error tracking.
   - If yes, you SHOULD create a sub-agent or sub-task to handle log analysis using [references/sub-skills/log-analyzer.md](references/sub-skills/log-analyzer.md)
+- Whether the user request involves building, deploying, launching, stopping, cleaning, or collecting startup evidence for a mod test.
+  - If yes, use the authoritative [`/blasphemous-modding-test`](references/sub-skills/blasphemous-modding-test.md) sub-skill.
 
-**Done when**: the user question is classified into one of the three branches (source code analysis, log analysis, or general modding question), and a sub-agent task has been created for every branch that applies.
+**Done when**: the user question is classified into one or more of the four branches (source code analysis, log analysis, mod testing, or general modding question), and every applicable branch has been routed to its authoritative sub-skill or analysis task.
 
 ### Step 3: Use Tools to Gather Information
 
