@@ -3,8 +3,8 @@
 
 This workflow validates the invocation environment, resolves preferences and
 a project, preflights a modding profile, builds or selects one package,
-deploys a validated artifact, and tracks the profile-local game process.
-Evidence and cleanup are later steps.
+deploys a validated artifact, tracks the profile-local game process, and
+collects current startup evidence from the existing game logs.
 """
 
 from __future__ import annotations
@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import os
 import platform
 import re
@@ -44,6 +45,8 @@ EXIT_LOGS = 60
 EXIT_CLEAN = 70
 LAUNCH_GRACE_PERIOD_SECONDS = 0.5
 PROCESS_POLL_INTERVAL_SECONDS = 0.05
+DEFAULT_LOG_LINES = 200
+STARTUP_POLL_INTERVAL_SECONDS = 0.25
 
 
 class CliError(Exception):
@@ -124,6 +127,28 @@ class LaunchResult:
 class StopResult:
     session_id: str
     state: str
+
+
+@dataclass(frozen=True)
+class LogEvidenceSource:
+    label: str
+    path: Optional[Path]
+    exists: bool
+    current: bool
+    total_lines: int
+    output_lines: Tuple[str, ...]
+    evidence_lines: Tuple[str, ...]
+    warning: Optional[str]
+
+
+@dataclass(frozen=True)
+class EvidenceReport:
+    state: str
+    ready: bool
+    mod_loaded: bool
+    timed_out: bool
+    sources: Tuple[LogEvidenceSource, ...]
+    warnings: Tuple[str, ...]
 
 
 @dataclass
@@ -217,6 +242,82 @@ def load_preferences(cwd: Optional[Path] = None, home: Optional[Path] = None) ->
         "profile/preferences",
         f"No preferences.md found. Complete first-time setup before running the test CLI. Checked: {locations}",
     )
+
+
+def _unity_log_filenames(environment: str) -> Tuple[str, ...]:
+    if environment == "Windows":
+        return ("output_log.txt",)
+    return ("Player.log", "output_log.txt")
+
+
+def resolve_unity_log_path(
+    preferences: Preferences,
+    environment: str,
+    explicit_directory: Optional[str] = None,
+    cwd: Optional[Path] = None,
+) -> Tuple[Optional[Path], Optional[str]]:
+    """Resolve the configured Unity log file and return a handoff warning."""
+
+    configured = explicit_directory or preferences.values.get("unity_log_dir")
+    if not configured:
+        return None, (
+            "Unity log directory is not configured. Ask the user for the Unity "
+            "log directory, then add 'unity_log_dir: PATH' to the active "
+            f"preferences.md: {preferences.path}"
+        )
+
+    directory = _expand_path(configured, cwd or Path.cwd())
+    if directory.exists() and not directory.is_dir():
+        return None, (
+            f"Configured unity_log_dir is not a directory: {directory}. Ask the "
+            "user for the directory containing the Unity log and update "
+            f"{preferences.path}."
+        )
+
+    filenames = _unity_log_filenames(environment)
+    for filename in filenames:
+        candidate = directory / filename
+        if candidate.is_file():
+            return candidate, None
+
+    expected = ", ".join(str(directory / filename) for filename in filenames)
+    if not directory.exists():
+        reason = f"Configured Unity log directory does not exist: {directory}."
+    else:
+        reason = f"Unity log was not found under configured directory: {directory}."
+    return directory / filenames[0], (
+        f"{reason} Expected {expected}. Ask the user for the correct directory, "
+        "then add or update 'unity_log_dir: PATH' in the active "
+        f"preferences.md: {preferences.path}."
+    )
+
+
+def _log_signature(path: Path) -> Optional[Dict[str, object]]:
+    try:
+        if not path.is_file():
+            return None
+        stat_result = path.stat()
+    except OSError:
+        return None
+    return {
+        "exists": True,
+        "mtime_ns": int(stat_result.st_mtime_ns),
+        "size": int(stat_result.st_size),
+    }
+
+
+def _capture_log_baselines(paths: Sequence[Path]) -> Dict[str, Dict[str, object]]:
+    baselines: Dict[str, Dict[str, object]] = {}
+    for index, path in enumerate(paths):
+        key = "bepinex" if index == 0 else "unity" if index == 1 else f"log_{index}"
+        normalized = path.resolve(strict=False)
+        signature = _log_signature(normalized)
+        baselines[key] = signature or {
+            "exists": False,
+            "mtime_ns": None,
+            "size": None,
+        }
+    return baselines
 
 
 def _expand_path(value: str, base: Path, *, resolve: bool = True) -> Path:
@@ -890,18 +991,296 @@ def _read_session_manifest(state_path: Path) -> Dict[str, object]:
     return payload
 
 
-def _session_manifest_path(session_id: str) -> Path:
+def _log_is_current(
+    path: Path,
+    process_state: Dict[str, object],
+    baseline_key: str,
+) -> bool:
+    signature = _log_signature(path)
+    if signature is None:
+        return False
+
+    baseline_value = process_state.get("log_baseline")
+    baseline: Optional[Dict[str, object]] = None
+    if isinstance(baseline_value, dict):
+        raw_baseline = baseline_value.get(baseline_key)
+        if raw_baseline is None:
+            raw_baseline = baseline_value.get(str(path.resolve(strict=False)))
+        if isinstance(raw_baseline, dict):
+            baseline = raw_baseline
+    if baseline is not None:
+        if not bool(baseline.get("exists")):
+            return True
+        return any(
+            signature.get(key) != baseline.get(key)
+            for key in ("mtime_ns", "size")
+        )
+
+    started_at = process_state.get("started_at_epoch_ns")
+    try:
+        return int(signature["mtime_ns"]) >= int(started_at)
+    except (KeyError, TypeError, ValueError):
+        return False
+
+
+def _read_log_source(
+    label: str,
+    path: Optional[Path],
+    process_state: Dict[str, object],
+    full: bool,
+    configured_warning: Optional[str] = None,
+    baseline_key: str = "log",
+) -> LogEvidenceSource:
+    if path is None:
+        return LogEvidenceSource(
+            label,
+            None,
+            False,
+            False,
+            0,
+            (),
+            (),
+            configured_warning or f"{label} log path is not configured.",
+        )
+
+    normalized = path.resolve(strict=False)
+    if not normalized.is_file():
+        return LogEvidenceSource(
+            label,
+            normalized,
+            False,
+            False,
+            0,
+            (),
+            (),
+            configured_warning or f"{label} log was not found: {normalized}",
+        )
+
+    try:
+        lines = normalized.read_text(
+            encoding="utf-8",
+            errors="replace",
+        ).splitlines()
+    except OSError as error:
+        return LogEvidenceSource(
+            label,
+            normalized,
+            False,
+            False,
+            0,
+            (),
+            (),
+            f"Could not read {label} log {normalized}: {error}",
+        )
+
+    current = _log_is_current(normalized, process_state, baseline_key)
+    warning = configured_warning
+    if not current:
+        warning = (
+            warning
+            or f"{label} log is not current for session {process_state.get('session_id', 'unknown')}; "
+            "startup evidence from it is ignored."
+        )
+    selected_lines = tuple(lines if full else lines[-DEFAULT_LOG_LINES:])
+    return LogEvidenceSource(
+        label,
+        normalized,
+        True,
+        current,
+        len(lines),
+        selected_lines,
+        tuple(lines),
+        warning,
+    )
+
+
+def _chainloader_ready(lines: Sequence[str]) -> bool:
+    readiness_words = (
+        "initialized",
+        "initialised",
+        "ready",
+        "completed",
+        "finished",
+        "loaded",
+    )
+    for line in lines:
+        lowered = line.casefold()
+        if "chainloader" in lowered and any(
+            word in lowered for word in readiness_words
+        ):
+            return True
+    return False
+
+
+def _target_mod_loaded(lines: Sequence[str], target_name: str) -> bool:
+    target = target_name.strip().casefold()
+    if not target:
+        return False
+    load_words = (
+        "loading",
+        "loaded",
+        "initialized",
+        "initialised",
+        "plugin",
+        "ready",
+    )
+    for line in lines:
+        lowered = line.casefold()
+        if target in lowered and any(word in lowered for word in load_words):
+            return True
+    return False
+
+
+def collect_log_evidence(
+    state_path: Path,
+    profile: ProfilePreflight,
+    preferences: Preferences,
+    environment: str,
+    *,
+    full: bool = False,
+    explicit_unity_log_dir: Optional[str] = None,
+) -> EvidenceReport:
+    """Read current logs once without persisting their contents."""
+
+    manifest = _read_session_manifest(state_path)
+    process_value = manifest.get("process")
+    if not isinstance(process_value, dict):
+        raise CliError(
+            EXIT_LOGS,
+            "logs/readiness",
+            f"Session state has no tracked launch process: {state_path}",
+        )
+    target_name = str(manifest.get("target_name", "")).strip()
+    if not target_name:
+        raise CliError(
+            EXIT_LOGS,
+            "logs/readiness",
+            f"Session state has no target mod name: {state_path}",
+        )
+
+    unity_path, unity_warning = resolve_unity_log_path(
+        preferences,
+        environment,
+        explicit_directory=explicit_unity_log_dir,
+    )
+    bepinex_path = profile.bepinex_root / "LogOutput.log"
+    sources = (
+        _read_log_source(
+            "BepInEx",
+            bepinex_path,
+            process_value,
+            full,
+            baseline_key="bepinex",
+        ),
+        _read_log_source(
+            "Unity",
+            unity_path,
+            process_value,
+            full,
+            configured_warning=unity_warning,
+            baseline_key="unity",
+        ),
+    )
+    warnings = tuple(
+        source.warning for source in sources if source.warning is not None
+    )
+    bepinex_source = sources[0]
+    current_lines = tuple(
+        line
+        for source in sources
+        if source.exists and source.current
+        for line in source.evidence_lines
+    )
+    ready = (
+        bepinex_source.exists
+        and bepinex_source.current
+        and _chainloader_ready(bepinex_source.evidence_lines)
+    )
+    mod_loaded = ready and _target_mod_loaded(current_lines, target_name)
+    state = "mod_loaded" if mod_loaded else "ready" if ready else "launched"
+    return EvidenceReport(
+        state,
+        ready,
+        mod_loaded,
+        False,
+        sources,
+        warnings,
+    )
+
+
+def _update_evidence_state(state_path: Path, report: EvidenceReport) -> None:
+    payload = _read_session_manifest(state_path)
+    payload["evidence"] = {
+        "state": report.state,
+        "ready": report.ready,
+        "mod_loaded": report.mod_loaded,
+        "timed_out": report.timed_out,
+        "recorded_at": datetime.now(timezone.utc).isoformat(),
+        "sources": {
+            source.label: {
+                "exists": source.exists,
+                "current": source.current,
+                "line_count": source.total_lines,
+            }
+            for source in report.sources
+        },
+    }
+    _atomic_write_json(state_path, payload)
+
+
+def wait_for_startup_evidence(
+    state_path: Path,
+    profile: ProfilePreflight,
+    preferences: Preferences,
+    environment: str,
+    timeout: float,
+    *,
+    explicit_unity_log_dir: Optional[str] = None,
+) -> EvidenceReport:
+    """Poll current logs until the target mod loads or the session times out."""
+
+    deadline = time.monotonic() + timeout
+    while True:
+        report = collect_log_evidence(
+            state_path,
+            profile,
+            preferences,
+            environment,
+            explicit_unity_log_dir=explicit_unity_log_dir,
+        )
+        if report.mod_loaded:
+            _update_evidence_state(state_path, report)
+            return report
+        if time.monotonic() >= deadline:
+            timed_out = EvidenceReport(
+                "timeout",
+                report.ready,
+                report.mod_loaded,
+                True,
+                report.sources,
+                report.warnings,
+            )
+            _update_evidence_state(state_path, timed_out)
+            return timed_out
+        time.sleep(min(STARTUP_POLL_INTERVAL_SECONDS, max(0.0, deadline - time.monotonic())))
+
+
+def _session_manifest_path(
+    session_id: str,
+    code: int = EXIT_CLEAN,
+    category: str = "stop/clean",
+) -> Path:
     if re.fullmatch(r"[0-9a-f]{32}", session_id) is None:
         raise CliError(
-            EXIT_CLEAN,
-            "stop/clean",
+            code,
+            category,
             "Session ID must be a 32-character hexadecimal identifier.",
         )
     state_path = _deployment_state_root() / session_id / "manifest.json"
     if not state_path.is_file():
         raise CliError(
-            EXIT_CLEAN,
-            "stop/clean",
+            code,
+            category,
             f"Tracked session state does not exist: {session_id}",
         )
     return state_path
@@ -1415,6 +1794,7 @@ def _launch_failure_state(
 def launch_session(
     deployment: DeploymentResult,
     profile: ProfilePreflight,
+    log_paths: Optional[Sequence[Path]] = None,
 ) -> LaunchResult:
     """Launch the selected profile and persist identity for a later stop."""
 
@@ -1439,6 +1819,12 @@ def launch_session(
             f"A matching game instance is already running with process ID {conflict.pid}; refusing to attach.",
         )
 
+    tracked_log_paths = tuple(
+        log_paths
+        or (profile.bepinex_root / "LogOutput.log",)
+    )
+    started_at_epoch_ns = time.time_ns()
+    log_baseline = _capture_log_baselines(tracked_log_paths)
     options: Dict[str, object] = {
         "cwd": str(profile.profile),
         "shell": False,
@@ -1540,14 +1926,21 @@ def launch_session(
 
     process_state = {
         "state": "launched",
+        "session_id": deployment.session_id,
         "pid": identity.pid,
         "start_token": identity.start_token,
         "launcher": str(profile.launcher),
         "working_directory": str(profile.profile),
         "started_at": datetime.now(timezone.utc).isoformat(),
+        "started_at_epoch_ns": started_at_epoch_ns,
+        "log_baseline": log_baseline,
     }
     try:
         _update_process_state(deployment.state_path, process_state)
+        _update_evidence_state(
+            deployment.state_path,
+            EvidenceReport("launched", False, False, False, (), ()),
+        )
     except (CliError, OSError) as error:
         try:
             _terminate_process_tree(identity, force=True)
@@ -2069,13 +2462,18 @@ def _add_common_options(parser: argparse.ArgumentParser) -> None:
         metavar="PATH",
         help="Use an explicit game launcher path for this invocation.",
     )
+    parser.add_argument(
+        "--unity-log-dir",
+        metavar="PATH",
+        help="Override unity_log_dir for this invocation without editing preferences.md.",
+    )
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="blasphemous-modding-test",
         description="Build, validate, and deploy a Blasphemous mod artifact.",
-        epilog="Use 'run --dry-run' to inspect the plan without deployment or launch, 'stop SESSION_ID' to stop one tracked process tree, or 'status' for a read-only profile view.",
+        epilog="Use 'run --dry-run' to inspect the plan without deployment or launch, 'logs SESSION_ID' to inspect current startup evidence, 'stop SESSION_ID' to stop one tracked process tree, or 'status' for a read-only profile view.",
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
@@ -2100,6 +2498,12 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Validate and print the plan without copying files or launching a process.",
     )
+    run_parser.add_argument(
+        "--startup-timeout",
+        metavar="SECONDS",
+        type=float,
+        help="Wait for current BepInEx and target-mod evidence; omitted means report launched only.",
+    )
 
     stop_parser = subparsers.add_parser(
         "stop",
@@ -2114,6 +2518,22 @@ def build_parser() -> argparse.ArgumentParser:
         "--force",
         action="store_true",
         help="Force-stop only the tracked process tree when graceful stop fails.",
+    )
+
+    logs_parser = subparsers.add_parser(
+        "logs",
+        help="Read current BepInEx and Unity startup logs for one session.",
+    )
+    logs_parser.add_argument(
+        "session_id",
+        metavar="SESSION_ID",
+        help="The session identifier printed by run.",
+    )
+    _add_common_options(logs_parser)
+    logs_parser.add_argument(
+        "--full",
+        action="store_true",
+        help="Print complete log contents instead of the bounded tail.",
     )
 
     status_parser = subparsers.add_parser(
@@ -2153,7 +2573,42 @@ def _print_artifact_plan(plan: ArtifactPlan) -> None:
         print(f"  - {relative_file.as_posix()}")
 
 
+def _print_evidence_report(
+    report: EvidenceReport,
+    include_logs: bool = False,
+    full_logs: bool = False,
+) -> None:
+    print(f"Startup state: {report.state}")
+    print(f"Ready state: {'ready' if report.ready else 'not-ready'}")
+    print(f"Mod-loaded state: {'loaded' if report.mod_loaded else 'not-loaded'}")
+    for source in report.sources:
+        path = str(source.path) if source.path is not None else "not configured"
+        if not source.exists:
+            status = "missing"
+        elif source.current:
+            status = "current"
+        else:
+            status = "stale"
+        print(f"{source.label} log: {path}")
+        print(f"{source.label} log status: {status}; lines: {source.total_lines}")
+        if include_logs and source.output_lines:
+            output_kind = "full" if full_logs else f"last {DEFAULT_LOG_LINES}"
+            print(f"{source.label} log output ({output_kind} lines):")
+            for line in source.output_lines:
+                print(line)
+    for warning in report.warnings:
+        print(f"Warning: {warning}", file=sys.stderr)
+
+
 def _run_command(args: argparse.Namespace) -> int:
+    if args.startup_timeout is not None and (
+        not math.isfinite(args.startup_timeout) or args.startup_timeout < 0
+    ):
+        raise CliError(
+            EXIT_USAGE,
+            "usage/configuration",
+            "--startup-timeout must be zero or greater.",
+        )
     context = _resolve_context(args, require_project=True)
     with prepare_artifact(
         context.project,
@@ -2177,10 +2632,37 @@ def _run_command(args: argparse.Namespace) -> int:
             print(f"Deployment session: {result.session_id}")
             print(f"Deployment state: deployed")
             print(f"Deployed files: {len(result.deployed_files)}")
-            launch = launch_session(result, context.profile)
+            unity_log_path, _ = resolve_unity_log_path(
+                context.preferences,
+                context.environment,
+                explicit_directory=args.unity_log_dir,
+            )
+            log_paths = [context.profile.bepinex_root / "LogOutput.log"]
+            if unity_log_path is not None:
+                log_paths.append(unity_log_path)
+            launch = launch_session(result, context.profile, log_paths=log_paths)
             print(f"Launch session: {launch.session_id}")
             print("Launch state: launched")
             print(f"Process ID: {launch.pid}")
+            if args.startup_timeout is not None:
+                report = wait_for_startup_evidence(
+                    result.state_path,
+                    context.profile,
+                    context.preferences,
+                    context.environment,
+                    args.startup_timeout,
+                    explicit_unity_log_dir=args.unity_log_dir,
+                )
+                _print_evidence_report(report)
+                if report.timed_out:
+                    raise CliError(
+                        EXIT_LOGS,
+                        "logs/readiness",
+                        "Startup evidence timed out; the launched process and session "
+                        f"remain available for diagnosis: {result.session_id}",
+                    )
+            else:
+                print("Startup state: launched")
     return EXIT_SUCCESS
 
 
@@ -2189,6 +2671,43 @@ def _status_command(args: argparse.Namespace) -> int:
     _print_context(context)
     print("Test session listing: added by later workflow tickets")
     print("Status is read-only: no files copied; no process launched.")
+    return EXIT_SUCCESS
+
+
+def _logs_command(args: argparse.Namespace) -> int:
+    context = _resolve_context(args, require_project=False)
+    state_path = _session_manifest_path(
+        args.session_id,
+        code=EXIT_LOGS,
+        category="logs/readiness",
+    )
+    manifest = _read_session_manifest(state_path)
+    recorded_profile = manifest.get("profile")
+    if recorded_profile:
+        recorded_path = Path(str(recorded_profile)).resolve(strict=False)
+        if recorded_path != context.profile.profile:
+            raise CliError(
+                EXIT_LOGS,
+                "logs/readiness",
+                f"Session {args.session_id} belongs to profile {recorded_path}, "
+                f"but the selected profile is {context.profile.profile}. Pass --profile for the session profile.",
+            )
+    report = collect_log_evidence(
+        state_path,
+        context.profile,
+        context.preferences,
+        context.environment,
+        full=args.full,
+        explicit_unity_log_dir=args.unity_log_dir,
+    )
+    _print_evidence_report(report, include_logs=True, full_logs=args.full)
+    if not report.sources[0].exists:
+        raise CliError(
+            EXIT_LOGS,
+            "logs/readiness",
+            "The current BepInEx log is unavailable; readiness cannot be confirmed.",
+        )
+    _update_evidence_state(state_path, report)
     return EXIT_SUCCESS
 
 
@@ -2212,6 +2731,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     try:
         if args.command == "run":
             return _run_command(args)
+        if args.command == "logs":
+            return _logs_command(args)
         if args.command == "stop":
             return _stop_command(args)
         if args.command == "status":

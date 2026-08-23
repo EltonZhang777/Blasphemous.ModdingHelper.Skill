@@ -41,7 +41,7 @@ Output is one of: `"project"`, `"user"`, or nothing (not found).
 | Found | Read, parse, apply settings. On first use in session, briefly remind: "Using preferences from [path]. You can edit `preferences.md` to customize source code path, etc." |
 | Not found | **MUST** run first-time setup (see below) — do NOT silently use defaults, do NOT continue to main workflow. |
 
-**`preferences.md` Contains**: `full_source_code_path`, `lightweight_source_code_path`, `modding_profile_path` — see [references/config/preferences-schema.md](references/config/preferences-schema.md) for the full schema.
+**`preferences.md` Contains**: `full_source_code_path`, `lightweight_source_code_path`, `modding_profile_path`, and optional `unity_log_dir` — see [references/config/preferences-schema.md](references/config/preferences-schema.md) for the full schema.
 
 ### First-Time Setup (BLOCKING)
 

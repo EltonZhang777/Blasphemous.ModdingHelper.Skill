@@ -191,7 +191,7 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
         spec.loader.exec_module(module)
         return module
 
-    def create_launched_session(self):
+    def create_launched_session(self, prelaunch_bepinex_log=None):
         module = self.load_cli_module()
         profile = self.create_profile()
         launcher = profile / "custom-launcher"
@@ -201,6 +201,11 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
         project = self.create_project()
         artifact = self.create_package(root=self.root, target_name="known-artifact")
         self.write_project_preferences(profile)
+        if prelaunch_bepinex_log is not None:
+            (profile / "BepInEx" / "LogOutput.log").write_text(
+                prelaunch_bepinex_log,
+                encoding="utf-8",
+            )
         environment = {
             "Windows": "Windows",
             "Linux": "Linux",
@@ -249,13 +254,13 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
         )
         return process, identity
 
-    def write_project_preferences(self, profile):
+    def write_project_preferences(self, profile, unity_log_dir=None):
         preferences = self.root / ".skills" / "blasphemous-modding-helper" / "preferences.md"
-        preferences.parent.mkdir(parents=True)
-        preferences.write_text(
-            f"modding_profile_path: {profile}\n",
-            encoding="utf-8",
-        )
+        preferences.parent.mkdir(parents=True, exist_ok=True)
+        values = [f"modding_profile_path: {profile}"]
+        if unity_log_dir is not None:
+            values.append(f"unity_log_dir: {unity_log_dir}")
+        preferences.write_text("\n".join(values) + "\n", encoding="utf-8")
         return preferences
 
     def write_user_preferences(self, profile):
@@ -285,9 +290,235 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
 
         self.assert_success(result)
         self.assertIn("run", result.stdout)
+        self.assertIn("logs", result.stdout)
         self.assertIn("stop", result.stdout)
         self.assertIn("status", result.stdout)
         self.assertIn("--dry-run", result.stdout)
+
+    def test_logs_help_exposes_full_output(self):
+        result = self.run_cli("logs", "--help")
+
+        self.assert_success(result)
+        self.assertIn("SESSION_ID", result.stdout)
+        self.assertIn("--full", result.stdout)
+
+    def test_logs_reports_bounded_current_evidence_without_persisting_logs(self):
+        module, deployment, profile_preflight, process, identity = self.create_launched_session()
+        unity_log_dir = self.root / "unity-logs"
+        unity_log_dir.mkdir()
+        self.write_project_preferences(profile_preflight.profile, unity_log_dir)
+        bepinex_log = profile_preflight.bepinex_root / "LogOutput.log"
+        bepinex_log.write_text(
+            "".join(f"old-{index}\n" for index in range(205))
+            + "[Info : BepInEx] Chainloader initialized\n"
+            + "[Info : BepInEx] Loading [ExampleMod 1.0.0]\n"
+            + "tail-bepinex\n",
+            encoding="utf-8",
+        )
+        unity_log = unity_log_dir / "output_log.txt"
+        unity_log.write_text("unity-start\nunity-tail\n", encoding="utf-8")
+        before = self.snapshot()
+
+        with mock.patch.object(
+            module,
+            "_deployment_state_root",
+            return_value=self.temp_root / "sessions",
+        ):
+            result = self.run_module_cli(module, "logs", deployment.session_id)
+
+        self.assert_success(result)
+        self.assertIn("Startup state: mod_loaded", result.stdout)
+        self.assertIn("Ready state: ready", result.stdout)
+        self.assertIn("Mod-loaded state: loaded", result.stdout)
+        self.assertIn("tail-bepinex", result.stdout)
+        self.assertIn("unity-tail", result.stdout)
+        self.assertNotIn("old-0", result.stdout)
+        self.assertEqual(before, self.snapshot())
+        self.assertFalse(any(path.suffix.lower() == ".log" for path in deployment.state_path.parent.rglob("*")))
+
+    def test_logs_full_output_includes_the_complete_current_log(self):
+        module, deployment, profile_preflight, process, identity = self.create_launched_session()
+        unity_log_dir = self.root / "unity-logs"
+        unity_log_dir.mkdir()
+        self.write_project_preferences(profile_preflight.profile, unity_log_dir)
+        (profile_preflight.bepinex_root / "LogOutput.log").write_text(
+            "first-bepinex\n[Info : BepInEx] Chainloader initialized\n"
+            "[Info : BepInEx] Loading [ExampleMod 1.0.0]\n",
+            encoding="utf-8",
+        )
+        (unity_log_dir / "output_log.txt").write_text(
+            "first-unity\nunity-tail\n",
+            encoding="utf-8",
+        )
+
+        with mock.patch.object(
+            module,
+            "_deployment_state_root",
+            return_value=self.temp_root / "sessions",
+        ):
+            result = self.run_module_cli(module, "logs", deployment.session_id, "--full")
+
+        self.assert_success(result)
+        self.assertIn("first-bepinex", result.stdout)
+        self.assertIn("first-unity", result.stdout)
+
+    def test_logs_requires_current_chainloader_evidence_for_ready_and_mod_loaded(self):
+        module, deployment, profile_preflight, process, identity = self.create_launched_session()
+        unity_log_dir = self.root / "unity-logs"
+        unity_log_dir.mkdir()
+        self.write_project_preferences(profile_preflight.profile, unity_log_dir)
+        (profile_preflight.bepinex_root / "LogOutput.log").write_text(
+            "[Info : BepInEx] Chainloader initialized\n",
+            encoding="utf-8",
+        )
+        (unity_log_dir / "output_log.txt").write_text(
+            "unity-start\n",
+            encoding="utf-8",
+        )
+
+        with mock.patch.object(
+            module,
+            "_deployment_state_root",
+            return_value=self.temp_root / "sessions",
+        ):
+            result = self.run_module_cli(module, "logs", deployment.session_id)
+
+        self.assert_success(result)
+        self.assertIn("Startup state: ready", result.stdout)
+        self.assertIn("Ready state: ready", result.stdout)
+        self.assertIn("Mod-loaded state: not-loaded", result.stdout)
+
+    def test_logs_ignores_prelaunch_bepinex_evidence_as_stale(self):
+        module, deployment, profile_preflight, process, identity = self.create_launched_session(
+            "[Info : BepInEx] Chainloader initialized\n"
+            "[Info : BepInEx] Loading [ExampleMod 1.0.0]\n"
+        )
+
+        with mock.patch.object(
+            module,
+            "_deployment_state_root",
+            return_value=self.temp_root / "sessions",
+        ):
+            result = self.run_module_cli(module, "logs", deployment.session_id)
+
+        self.assert_success(result)
+        self.assertIn("Startup state: launched", result.stdout)
+        self.assertIn("Ready state: not-ready", result.stdout)
+        self.assertIn("not current", result.stderr)
+
+    def test_missing_unity_log_warns_with_preference_update_handoff(self):
+        module, deployment, profile_preflight, process, identity = self.create_launched_session()
+        missing_unity_dir = self.root / "missing-unity-logs"
+        preferences = self.write_project_preferences(profile_preflight.profile, missing_unity_dir)
+        (profile_preflight.bepinex_root / "LogOutput.log").write_text(
+            "[Info : BepInEx] Chainloader initialized\n"
+            "[Info : BepInEx] Loading [ExampleMod 1.0.0]\n",
+            encoding="utf-8",
+        )
+
+        with mock.patch.object(
+            module,
+            "_deployment_state_root",
+            return_value=self.temp_root / "sessions",
+        ):
+            result = self.run_module_cli(module, "logs", deployment.session_id)
+
+        self.assert_success(result)
+        self.assertIn("Warning", result.stderr)
+        self.assertIn("unity_log_dir", result.stderr)
+        self.assertIn(str(preferences), result.stderr)
+        self.assertIn("Startup state: mod_loaded", result.stdout)
+
+    def test_run_reports_launched_ready_and_mod_loaded_as_distinct_states(self):
+        module = self.load_cli_module()
+        profile = self.create_profile()
+        self.create_project()
+        artifact = self.create_package(root=self.root, target_name="known-artifact")
+        unity_log_dir = self.root / "unity-logs"
+        unity_log_dir.mkdir()
+        self.write_project_preferences(profile, unity_log_dir)
+        process, identity = self.live_process_double(module, self.launcher_path(profile))
+
+        def start_process(*arguments, **keywords):
+            (profile / "BepInEx" / "LogOutput.log").write_text(
+                "[Info : BepInEx] Chainloader initialized\n"
+                "[Info : BepInEx] Loading [ExampleMod 1.0.0]\n",
+                encoding="utf-8",
+            )
+            (unity_log_dir / "output_log.txt").write_text(
+                "unity-start\n",
+                encoding="utf-8",
+            )
+            return process
+
+        with mock.patch.object(
+            module,
+            "_deployment_state_root",
+            return_value=self.temp_root / "sessions",
+        ):
+            with mock.patch.object(module, "_find_conflicting_process", return_value=None):
+                with mock.patch.object(module, "_process_identity", return_value=identity):
+                    with mock.patch.object(
+                        module,
+                        "_wait_for_process_alive",
+                        return_value=(True, identity),
+                    ):
+                        with mock.patch.object(module.subprocess, "Popen", side_effect=start_process):
+                            result = self.run_module_cli(
+                                module,
+                                "run",
+                                "--artifact",
+                                str(artifact),
+                                "--startup-timeout",
+                                "0.1",
+                            )
+
+        self.assert_success(result)
+        self.assertIn("Launch state: launched", result.stdout)
+        self.assertIn("Ready state: ready", result.stdout)
+        self.assertIn("Mod-loaded state: loaded", result.stdout)
+        self.assertIn("Startup state: mod_loaded", result.stdout)
+
+    def test_startup_timeout_preserves_process_and_session_for_diagnosis(self):
+        module = self.load_cli_module()
+        profile = self.create_profile()
+        self.create_project()
+        artifact = self.create_package(root=self.root, target_name="known-artifact")
+        self.write_project_preferences(profile)
+        process, identity = self.live_process_double(module, self.launcher_path(profile))
+
+        with mock.patch.object(
+            module,
+            "_deployment_state_root",
+            return_value=self.temp_root / "sessions",
+        ):
+            with mock.patch.object(module, "_find_conflicting_process", return_value=None):
+                with mock.patch.object(module, "_process_identity", return_value=identity):
+                    with mock.patch.object(
+                        module,
+                        "_wait_for_process_alive",
+                        return_value=(True, identity),
+                    ):
+                        with mock.patch.object(module.subprocess, "Popen", return_value=process):
+                            with mock.patch.object(module, "_terminate_process_tree") as terminate:
+                                result = self.run_module_cli(
+                                    module,
+                                    "run",
+                                    "--artifact",
+                                    str(artifact),
+                                    "--startup-timeout",
+                                    "0",
+                                )
+
+        self.assertEqual(result.returncode, 60)
+        self.assertIn("Startup state: timeout", result.stdout)
+        self.assertIn("remain available", result.stderr)
+        terminate.assert_not_called()
+        manifests = self.deployment_manifests()
+        self.assertEqual(len(manifests), 1)
+        payload = json.loads(manifests[0].read_text(encoding="utf-8"))
+        self.assertEqual(payload["process"]["state"], "launched")
+        self.assertEqual(payload["evidence"]["state"], "timeout")
 
     def test_stop_help_exposes_session_and_force(self):
         result = self.run_cli("stop", "--help")
