@@ -1,6 +1,6 @@
 ---
 name: blasphemous-modding-helper
-description: Blasphemous modding development helper. Use when user wants to develop a Blasphemous mod, analyze Blasphemous decompiled source code, or debug mod-related logs (BepInEx / Unity).
+description: Blasphemous modding development helper. Use when the user wants to build, deploy, launch, inspect startup evidence, stop, clean, or perform Manual verification for a Blasphemous mod; develop a mod, analyze Blasphemous decompiled source code, or debug mod-related logs (BepInEx / Unity).
 ---
 
 # Blasphemous modding helper
@@ -47,16 +47,15 @@ Output is one of: `"project"`, `"user"`, or nothing (not found).
 | Found | The agent MUST read, parse, and apply the settings. On first use in the session, it SHOULD briefly remind the user: "Using preferences from [path]. You can edit `preferences.md` to customize source code path, etc." |
 | Not found | The agent MUST run first-time setup (see below) and MUST NOT silently use defaults or continue to the main workflow. |
 
-**`preferences.md` Contains**: `full_source_code_path`, `lightweight_source_code_path`, and `modding_profile_path`. It may also contain optional ModdingAPI reference fields — see [references/config/preferences-schema.md](references/config/preferences-schema.md) for the full schema. Use [Referencing ModdingAPI](references/sub-skills/referencing-modding-api.md) for reference selection, remote fallback, lock state, offline checks, and explicit lifecycle operations.
+**`preferences.md` Contains**: `full_source_code_path`, `lightweight_source_code_path`, `modding_profile_path`, optional `unity_log_dir`, and optional ModdingAPI reference fields — see [references/config/preferences-schema.md](references/config/preferences-schema.md) for the full schema. Use [Referencing ModdingAPI](references/sub-skills/referencing-modding-api.md) for reference selection, remote fallback, lock state, offline checks, and explicit lifecycle operations.
 
 ### First-Time Setup (BLOCKING)
 
-**CRITICAL**: When `preferences.md` is not found, you **MUST** run the first-time setup (a **BLOCKING** operation) before ANY action, following [references/config/first-time-setup.md](references/config/first-time-setup.md).
-
+**CRITICAL**: When `preferences.md` is not found, you MUST run the first-time setup (a BLOCKING operation) before source analysis, modding operations, or any test command, following [references/config/first-time-setup.md](references/config/first-time-setup.md). The only narrow recovery exception is `/blasphemous-modding-test stop SESSION_ID`: it uses the recorded session identity, does not load or edit preferences, and may stop only that tracked process tree when normal context preflight is unavailable. All other test commands remain blocked until setup completes.
 
 ## Workflow
 
-You **MUST** follow the workflow steps in order, unless otherwise explicitly specified by the user.
+You MUST follow the workflow steps in order, unless otherwise explicitly specified by the user.
 
 ### Step 1: Load Preferences
 
@@ -65,20 +64,23 @@ The agent MUST check `preferences.md` (see Preferences section above).
 ### Step 2: Analyze User Question
 
 The agent MUST analyze the user question to determine user intent and the task to perform, especially paying attention to the following:
-- Whether the user request involves analyzing Blasphemous Source code. 
+
+- Whether the user request involves analyzing Blasphemous Source code.
   - If yes, the agent SHOULD create a sub-agent or sub-task to handle the source code analysis using [references/sub-skills/source-analyzer.md](references/sub-skills/source-analyzer.md).
 - Whether the user request involves debugging, log tracking, or error tracking.
   - If yes, the agent SHOULD create a sub-agent or sub-task to handle log analysis using [references/sub-skills/log-analyzer.md](references/sub-skills/log-analyzer.md).
+- Whether the user request involves building, deploying, launching, stopping, cleaning, or collecting startup evidence for a mod test.
+  - If yes, use the authoritative [`/blasphemous-modding-test`](references/sub-skills/blasphemous-modding-test.md) sub-skill.
 
-**Done when**: the agent has classified the user question into one of the three branches (source code analysis, log analysis, or general modding question) and has created a sub-agent task for every branch that applies.
+**Done when**: the user question is classified into one or more of the four branches (source code analysis, log analysis, mod testing, or general modding question), and every applicable branch has been routed to its authoritative sub-skill or analysis task.
 
 ### Step 3: Use Tools to Gather Information
 
-The agent MUST use tools to gather information required for the task, including:
-- source-analyzer and log-analyzer
-  - mentioned in `### Step 2: Analyze User Question`
-- The coding standards and its selected branch references
-  - mentioned in the `## Coding standards` section above
+The agent MUST use tools to gather information required by the task, including:
+
+- source-analyzer and log-analyzer when they are applicable;
+- the coding standards and its selected branch references;
+- the Unity API and ModdingAPI references routed by the relevant sub-skills.
 
 The tools' `.md` files SHOULD contain all path specifications required for the task. The agent MUST NOT ask the user for a path again unless the needed path information is absent there.
 
