@@ -28,11 +28,19 @@ function Assert-Contains([string]$Haystack, [string]$Needle) {
     }
 }
 
-function Invoke-Resolver([string]$Selector, [string]$MetadataFile) {
-    $shell = (Get-Command pwsh -ErrorAction SilentlyContinue).Source
-    if ([string]::IsNullOrWhiteSpace($shell)) {
-        $shell = (Get-Command powershell.exe -ErrorAction Stop).Source
+$PowerShell = $env:MODDING_API_POWERSHELL
+if ([string]::IsNullOrWhiteSpace($PowerShell)) {
+    $powerShellCommand = Get-Command powershell.exe -ErrorAction SilentlyContinue
+    if ($null -eq $powerShellCommand) {
+        $powerShellCommand = Get-Command pwsh -ErrorAction SilentlyContinue
     }
+    if ($null -eq $powerShellCommand) {
+        Fail-Test "PowerShell is required for resolver tests"
+    }
+    $PowerShell = $powerShellCommand.Source
+}
+
+function Invoke-Resolver([string]$Selector, [string]$MetadataFile) {
     $arguments = @(
         "-NoProfile",
         "-ExecutionPolicy",
@@ -47,7 +55,7 @@ function Invoke-Resolver([string]$Selector, [string]$MetadataFile) {
     $previousErrorActionPreference = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
     try {
-        $output = @(& $shell @arguments 2>&1)
+        $output = @(& $PowerShell @arguments 2>&1)
         $exitCode = $LASTEXITCODE
     }
     finally {

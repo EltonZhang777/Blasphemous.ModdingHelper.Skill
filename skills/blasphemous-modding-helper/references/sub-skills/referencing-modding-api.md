@@ -205,3 +205,51 @@ It verifies the top-level pointer, the stable and archived route tables, the
 game-source boundary, and both preferences outcomes: a configured local path
 selects the local route, while skipped local setup selects the release-aware
 remote route.
+
+## Cross-platform acceptance gate
+
+Run the deterministic acceptance gate before publishing changes to the
+reference workflow:
+
+```bash
+bash scripts/test_modding_api_acceptance.sh
+```
+
+```powershell
+& .\scripts\test_modding_api_acceptance.ps1
+```
+
+The gate runs the resolver, clone, lifecycle, and documentation suites through
+both Bash and PowerShell. Their fixture scenarios cover annotated tags,
+branches, exact commits, clean updates, dirty worktrees, wrong origins,
+missing references, network failure, offline locks, output fields, and exit
+codes. It also checks resolver parity, installer dry-runs, local Markdown links,
+and `git diff --check`. It never contacts GitHub and never uses a user's
+reference checkout.
+
+The final verification invocation may require a clean worktree:
+
+```bash
+bash scripts/test_modding_api_acceptance.sh --require-clean
+```
+
+```powershell
+& .\scripts\test_modding_api_acceptance.ps1 -RequireClean
+```
+
+The live network check is separate and manual. It resolves the actual latest
+non-draft, non-prerelease Release through both script surfaces, compares the
+resolved tag and commit, and verifies tag-specific documentation and source
+URLs:
+
+```bash
+bash scripts/test_modding_api_live.sh
+```
+
+```powershell
+& .\scripts\test_modding_api_live.ps1
+```
+
+Run the live check only when network access is available. A failure is not a
+reason to substitute `main`; preserve the resolver error report and retry or
+use an explicit selector.

@@ -6,6 +6,27 @@ on:
     branches: [ "main" ]
 
 jobs:
+  modding-api-regression:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+
+    - name: Run ModdingAPI acceptance gate on Linux
+      if: runner.os == 'Linux'
+      shell: bash
+      run: bash skills/blasphemous-modding-helper/scripts/test_modding_api_acceptance.sh --require-clean
+
+    - name: Run ModdingAPI acceptance gate on Windows
+      if: runner.os == 'Windows'
+      shell: pwsh
+      run: ./skills/blasphemous-modding-helper/scripts/test_modding_api_acceptance.ps1 -RequireClean
+
   build:
     permissions:
       contents: write

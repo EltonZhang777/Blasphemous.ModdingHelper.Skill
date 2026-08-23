@@ -3,7 +3,7 @@
     Public-behavior tests for manage_modding_api.ps1.
 #>
 
-$ErrorActionPreference = "Stop"
+$ErrorActionPreference = "Continue"
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $Cloner = Join-Path $ScriptDir "clone_modding_api.ps1"
 $Manager = Join-Path $ScriptDir "manage_modding_api.ps1"
@@ -32,6 +32,18 @@ function Assert-ErrorReport([string]$Text) {
     Assert-Contains $Text "next_step:"
 }
 
+$PowerShell = $env:MODDING_API_POWERSHELL
+if ([string]::IsNullOrWhiteSpace($PowerShell)) {
+    $powerShellCommand = Get-Command powershell.exe -ErrorAction SilentlyContinue
+    if ($null -eq $powerShellCommand) {
+        $powerShellCommand = Get-Command pwsh -ErrorAction SilentlyContinue
+    }
+    if ($null -eq $powerShellCommand) {
+        Fail-Test "PowerShell is required for lifecycle tests"
+    }
+    $PowerShell = $powerShellCommand.Source
+}
+
 function Invoke-Git([string]$WorkingDirectory, [string[]]$Arguments) {
     $previousErrorActionPreference = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
@@ -54,11 +66,6 @@ $previousHome = $env:MODDING_API_TEST_HOME
 $previousTestMode = $env:MODDING_API_TEST_MODE
 $previousNetworkFailure = $env:MODDING_API_TEST_NETWORK_FAILURE
 $env:MODDING_API_TEST_MODE = "1"
-$PowerShell = (Get-Command pwsh -ErrorAction SilentlyContinue).Source
-if ([string]::IsNullOrWhiteSpace($PowerShell)) {
-    $PowerShell = (Get-Command powershell.exe -ErrorAction Stop).Source
-}
-
 try {
     $remote = Join-Path $TestRoot "modding-api.git"
     $seed = Join-Path $TestRoot "seed"

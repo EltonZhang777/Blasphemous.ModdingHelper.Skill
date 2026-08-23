@@ -20,6 +20,18 @@ function Assert-Contains([string]$Haystack, [string]$Needle) {
     }
 }
 
+$PowerShell = $env:MODDING_API_POWERSHELL
+if ([string]::IsNullOrWhiteSpace($PowerShell)) {
+    $powerShellCommand = Get-Command powershell.exe -ErrorAction SilentlyContinue
+    if ($null -eq $powerShellCommand) {
+        $powerShellCommand = Get-Command pwsh -ErrorAction SilentlyContinue
+    }
+    if ($null -eq $powerShellCommand) {
+        Fail-Test "PowerShell is required for clone tests"
+    }
+    $PowerShell = $powerShellCommand.Source
+}
+
 function Invoke-Git([string]$WorkingDirectory, [string[]]$Arguments) {
     $previousErrorActionPreference = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
@@ -273,14 +285,10 @@ try {
         Fail-Test "explicit commit clone should use detached HEAD"
     }
 
-    $powerShell = (Get-Command pwsh -ErrorAction SilentlyContinue).Source
-    if ([string]::IsNullOrWhiteSpace($powerShell)) {
-        $powerShell = (Get-Command powershell.exe -ErrorAction Stop).Source
-    }
     $previousErrorActionPreference = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
     try {
-        $existingOutput = @(& $powerShell -NoProfile -ExecutionPolicy Bypass -File $Cloner -TargetPath $tagTarget -Selector tag:v1.0.0 -MetadataFile $metadata 2>&1)
+        $existingOutput = @(& $PowerShell -NoProfile -ExecutionPolicy Bypass -File $Cloner -TargetPath $tagTarget -Selector tag:v1.0.0 -MetadataFile $metadata 2>&1)
         $existingExitCode = $LASTEXITCODE
     }
     finally {

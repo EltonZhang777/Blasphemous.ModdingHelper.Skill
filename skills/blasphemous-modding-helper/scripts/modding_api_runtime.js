@@ -19,7 +19,7 @@ function commandOutput(result) {
 }
 
 function networkFailure(value) {
-    return /network|curl|connect|resolve host|timed out|timeout|unable to access|could not resolve|failed to connect|connection refused|connection reset|http [45]\d\d/i.test(text(value));
+    return /network|curl|connect|resolve host|timed out|timeout|ETIMEDOUT|ECONNREFUSED|ECONNRESET|unable to access|could not resolve|failed to connect|connection refused|connection reset|http [45]\d\d/i.test(text(value));
 }
 
 function runGit(cwd, args) {
@@ -43,11 +43,14 @@ function runResolver(scriptDir, selector, metadataFile) {
         args.push(process.platform === 'win32' ? '-MetadataFile' : '--metadata-file', metadataFile);
     }
     const commands = process.platform === 'win32'
-        ? [process.env.MODDING_API_POWERSHELL, 'pwsh', 'powershell.exe'].filter(Boolean)
+        ? [process.env.MODDING_API_POWERSHELL, 'powershell.exe', 'pwsh'].filter(Boolean)
         : ['bash'];
+    const timeoutValue = Number(process.env.MODDING_API_RESOLVER_TIMEOUT_MS || 75000);
+    const timeout = Number.isFinite(timeoutValue) && timeoutValue > 0 ? timeoutValue : 75000;
     for (const command of commands) {
         const result = childProcess.spawnSync(command, args, {
             encoding: 'utf8',
+            timeout,
             windowsHide: true
         });
         if (!result.error || result.error.code !== 'ENOENT') {
