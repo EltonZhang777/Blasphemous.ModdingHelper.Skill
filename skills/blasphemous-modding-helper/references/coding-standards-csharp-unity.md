@@ -35,7 +35,7 @@ The agent MUST inspect the narrowest authoritative source for a compatibility qu
 - Namespaces MUST align with the Mod project structure.
 - Implementation details SHOULD remain `private` or `internal`; a Mod SHOULD expose only the API that it or another Mod actually needs.
 - Members SHOULD follow a stable order: constants, static state, instance state, properties/events, constructors, lifecycle callbacks, public API, then private helpers.
-- Patch aggregation files MAY use a deliberate multi-type layout; Harmony-specific organization is owned by the Harmony branch.
+- Patch aggregation files MAY use a deliberate multi-type layout; Harmony-specific organization is owned by the [Harmony patching branch](coding-standards-harmony-patching.md).
 
 ## Runtime Unity components
 
@@ -156,4 +156,3 @@ Before finishing a Mod-owned C# task, the reviewer MUST verify:
 - No UnityEditor, Inspector, Prefab, ScriptableObject, or serialization assumption was introduced.
 - Positive and negative routing examples remain consistent with the scope gate.
 - Requirement-level wording follows [Requirement levels](requirement-levels-definitions.md).
-

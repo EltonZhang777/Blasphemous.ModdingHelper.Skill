@@ -13,7 +13,7 @@ At the start of every Skill invocation, you MUST read [Requirement levels](refer
 
 ## Coding standards
 
-Before generating, modifying, reviewing, or refactoring Mod-owned C# in a caller's Mod repository, you MUST read the [coding standards](references/sub-skills/coding-standards.md). It applies the ownership gate, routes C# and runtime Unity work to the [C# and runtime Unity standards](references/coding-standards-csharp-unity.md), and routes ModdingAPI tasks to the ModdingAPI branch; Harmony remains a later branch.
+Before generating, modifying, reviewing, or refactoring Mod-owned C# in a caller's Mod repository, you MUST read the [coding standards](references/sub-skills/coding-standards.md). It applies the ownership gate, routes C# and runtime Unity work to the [C# and runtime Unity standards](references/coding-standards-csharp-unity.md), ModdingAPI tasks to the ModdingAPI branch, and Harmony or Patch tasks to the [Harmony patching standards](references/coding-standards-harmony-patching.md).
 
 ## Preferences (`preferences.md`)
 
