@@ -19,6 +19,72 @@ locations are defined in [preferences-schema.md](../config/preferences-schema.md
 The explicit local-checkout setup flow is in
 [first-time-setup.md#q6-local-moddingapi-reference](../config/first-time-setup.md#q6-local-moddingapi-reference).
 
+## Routing contract
+
+The selected reference is the sole ModdingAPI authority for the task. Start at
+the upstream development index and follow only the linked page needed for the
+question:
+
+- Local checkout: `<modding_api_reference_path>/docs/development/main.md`.
+- Remote fallback: `<MODDING_API_DOCS_URL>/development/main.md`, where
+  `MODDING_API_DOCS_URL` comes from the resolver for the selected reference.
+
+The `main.md` name identifies the documentation index. It is not a request to
+read an unqualified Git branch. The resolver's tag, branch, or commit remains
+part of every remote URL and every local-reference decision.
+
+## Stable API topic routing
+
+Use this table as the first route for ordinary ModdingAPI work. Open the
+selected reference's `docs/development/main.md`, then load the named page and
+any directly linked page required by the question.
+
+| Task topic | First page | Typical follow-up |
+| --- | --- | --- |
+| Project setup and package shape | `docs/development/setup.md` | `docs/development/mod.md` |
+| Mod class, registration, and lifecycle | `docs/development/mod.md` | `docs/development/execution.md` |
+| Initialization and callback order | `docs/development/execution.md` | `docs/development/mod.md` |
+| Persistent data and save compatibility | `docs/development/persistence.md` | `docs/development/mod.md` |
+| ModLog methods and severity | `docs/development/logging.md` | Referenced assembly/source when facts conflict |
+| Mod configuration | `docs/development/config.md` | `docs/development/files.md` when paths or data files matter |
+| File utilities and mod-owned files | `docs/development/files.md` | `docs/development/config.md` when configuration is involved |
+| Input and keybindings | `docs/development/input.md` | `docs/development/mod.md` for registration context |
+| Localization and translations | `docs/development/localization.md` | `docs/development/files.md` for resource paths |
+
+The table is a route, not a replacement API reference. Confirm version-sensitive
+signatures and behavior against the actual referenced assembly and matching
+source before writing code.
+
+## Advanced and archived topics
+
+Load these pages only when the task names the topic or the stable route points
+to it. The upstream index currently labels them `Services (Archive)`:
+
+| Topic | First page | Handling |
+| --- | --- | --- |
+| Console commands | `docs/development/console.md` | Read on demand; verify current command types in source |
+| Custom items | `docs/development/items.md` | Read on demand; verify current item APIs in source |
+| Level modifications | `docs/development/levels.md` | Read on demand; label active-development behavior as version-sensitive |
+| Custom penitences | `docs/development/penitence.md` | Read on demand; verify current types in source |
+
+For a topic absent from both tables, use the selected reference's
+`docs/development/main.md` as an index, follow the exact linked page on demand,
+and record the resolved reference before relying on its guidance. Do not copy
+the upstream documentation tree into this Skill.
+
+## Game-source separation
+
+Keep the two source routes distinct:
+
+- ModdingAPI API, lifecycle, logging, and framework behavior use this
+  release-aware reference route.
+- Decompiled Blasphemous game classes use
+  [Blasphemous Source Code Navigation](../source_code_navigation/MAIN.md) and
+  its source-analyzer branch.
+
+A task may load both routes when it compares framework behavior with a game
+class, but each claim must remain tied to the route that owns it.
+
 ## Release-aware remote fallback
 
 The official upstream is
@@ -122,3 +188,20 @@ means usage or configuration failure, and `1` means a runtime, Git, network,
 offline, or reference-state failure. Every failure prints a terminal text
 `[ERROR REPORT]` containing `operation`, `target_path`, `selector`,
 `current_head`, `worktree_state`, `network_state`, `cause`, and `next_step`.
+
+## Documentation smoke check
+
+Run the deterministic documentation smoke check from the skill directory:
+
+```bash
+bash scripts/test_referencing_modding_api.sh
+```
+
+```powershell
+& .\scripts\test_referencing_modding_api.ps1
+```
+
+It verifies the top-level pointer, the stable and archived route tables, the
+game-source boundary, and both preferences outcomes: a configured local path
+selects the local route, while skipped local setup selects the release-aware
+remote route.
