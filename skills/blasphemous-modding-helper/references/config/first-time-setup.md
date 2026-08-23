@@ -7,74 +7,75 @@ description: First-time setup flow for blasphemous-modding-helper preferences
 
 ## Overview
 
-When no `preferences.md` is found, guide user through preference setup.
+When no `preferences.md` is found, this reference describes the preference-setup flow.
 
-**BLOCKING OPERATION**: This setup MUST complete before ANY action. Do NOT:
-- Analyze user question
-- Proceed to any workflow steps
+**BLOCKING OPERATION**: This setup MUST complete before ANY action.
+The agent MUST NOT:
+- The agent MUST NOT analyze the user's question.
+- The agent MUST NOT proceed to any workflow steps.
 
-ONLY ask the questions in this setup flow, save `preferences.md`, and then continue.
+The agent MUST ask only the questions in this setup flow, MUST save `preferences.md`, and MUST continue only after those steps complete.
 
 ## Setup Flow
 
 ```text
 1. No `preferences.md` found
 
-2. AskUserQuestion: save location (see Q1)
+2. The agent MUST ask the save-location AskUserQuestion (see Q1).
    ─── Asked first to avoid "auto-write" destination conflict ───
 
-3. AskUserQuestion: "Do you have decompiled Blasphemous source code?" (see Q2)
+3. The agent MUST ask: "Do you have decompiled Blasphemous source code?" (see Q2).
    │
-   ├─ Yes → enter manual path flow:
-   │   4. AskUserQuestion: lightweight source code path (see Q3; REQUIRED)
-   │      ├─ Validate fail → retry Q3
-   │      └─ OK → continue
-   │   5. AskUserQuestion: "Do you also have full source code?" (see Q4)
-   │      ├─ Yes → AskUserQuestion: full source code path (see Q4b)
-   │      └─ No  → skip
-   │   6. AskUserQuestion: modding profile path (see Q5)
-   │   7. AskUserQuestion: configure a local ModdingAPI reference (see Q6)
-   │      ├─ Yes → use the selected preferences scope, choose a selector, and run the fresh-clone command
-   │      │        ├─ Success → record normalized path and selector
-   │      │        └─ Failure → show the terminal error report and do not add fields
-   │      └─ Skip → leave local reference fields absent; remote fallback remains available
-   │   8. Validate all paths (lightweight MUST exist)
-   │      ├─ Fail → retry corresponding single question
-   │      └─ OK → continue
-   │   9. Create or update `preferences.md`
-   │   10. Continue
+   ├─ Yes → the agent MUST enter the manual path flow:
+   │   4. The agent MUST ask for the lightweight source code path (see Q3; REQUIRED).
+   │      ├─ Validate fail → the agent MUST retry Q3
+   │      └─ OK → the agent MUST continue
+   │   5. The agent MUST ask: "Do you also have full source code?" (see Q4).
+   │      ├─ Yes → the agent MUST ask for the full source code path (see Q4b)
+   │      └─ No  → the agent MAY skip Q4b
+   │   6. The agent MUST ask for the modding profile path (see Q5).
+    │   7. The agent MUST ask whether to configure a local ModdingAPI reference (see Q6).
+    │      ├─ Yes → the agent MUST use the selected preferences scope, choose a selector, and run the fresh-clone command.
+    │      │        ├─ Success → the agent MUST record the normalized path and selector.
+    │      │        └─ Failure → the agent MUST show the terminal error report and MUST NOT add the fields.
+    │      └─ Skip → the agent MUST leave local reference fields absent; remote fallback remains available.
+    │   8. The agent MUST validate all paths (lightweight MUST exist).
+    │      ├─ Fail → the agent MUST retry the corresponding single question.
+    │      └─ OK → the agent MAY continue.
+    │   9. The agent MUST create or update `preferences.md`.
+    │   10. The agent MUST continue.
    │
-   └─ No (run decompiler) → run decompile script synchronously
+   └─ No (run decompiler) → the agent MUST run the decompile script synchronously
        (Windows: `scripts/decompile_source.ps1` ; macOS/Linux: `scripts/decompile_source.sh`)
        ├─ Success →
        │   lightweight_source_code_path = <skill-root>/source_code/ (auto-set)
-       │   5. AskUserQuestion: "Do you also have full source code?" (see Q4)
-       │      ├─ Yes → AskUserQuestion: full source code path (see Q4b)
-       │      └─ No  → skip
-       │   6. AskUserQuestion: modding profile path (see Q5)
-       │   7. AskUserQuestion: configure a local ModdingAPI reference (see Q6)
-       │      ├─ Yes → use the selected preferences scope, choose a selector, and run the fresh-clone command
-       │      └─ Skip → leave local reference fields absent
-       │   8. Validate all paths (lightweight MUST exist)
-       │   9. Create or update `preferences.md`
-       │   10. Continue
+       │   5. The agent MUST ask: "Do you also have full source code?" (see Q4).
+       │      ├─ Yes → the agent MUST ask for the full source code path (see Q4b)
+       │      └─ No  → the agent MUST skip Q4b
+       │   6. The agent MUST ask for the modding profile path (see Q5).
+       │   7. The agent MUST ask whether to configure a local ModdingAPI reference (see Q6).
+       │      ├─ Yes → the agent MUST use the selected preferences scope, choose a selector, and run the fresh-clone command.
+       │      └─ Skip → the agent MUST leave local reference fields absent; remote fallback remains available.
+       │   8. The agent MUST validate all paths (lightweight MUST exist).
+       │   9. The agent MUST create or update `preferences.md`.
+       │   10. The agent MUST continue.
        │
        └─ Failed (exit code != 0) →
-           Report error details to user
-           AskUser: "Decompilation failed. Provide source paths manually?"
-           ├─ Yes → enter manual path flow at step 4 (Q3)
-           └─ No  → abort setup, instruct user to fix error and retry
+           The agent MUST report error details to the user.
+           The agent MUST ask: "Decompilation failed. Provide source paths manually?"
+           ├─ Yes → the agent MUST enter manual path flow at step 4 (Q3).
+           └─ No  → the agent MUST abort setup and instruct the user to fix the error and retry.
 ```
 
 ## AskUserQuestion Questions
 
 **Language of AskUserQuestion Questions**: you SHOULD attempt to use the user's input language or language preference of the editor/cli they're using when asking questions.
 - This means you SHOULD attempt to translate the questions' header, question, options, etc. However, you SHOULD NEVER translate the user input or any file, path, etc.
-- Default to English only when user's input language is not available.
+- The agent SHOULD default to English only when the user's input language is not available.
 
-Use AskUserQuestion with **ALL applicable** questions in **ONE** call:
-- If user answered "Yes" to Q2: ask Q1 + Q2 + Q3 + Q4 + Q5 + Q6 + save location = 6 questions
-- If user answered "No" to Q2: ask Q1 + Q2 + Q4 + Q5 + Q6 + save location = 5 questions (Q3 auto-filled)
+The agent MUST use AskUserQuestion with **ALL applicable** questions in **ONE** call:
+- If Q2 is "Yes", the agent MUST ask Q1 + Q2 + Q3 + Q4 + Q5 + Q6 in one call; Q4b and selector details are conditional inputs.
+- If Q2 is "No", the agent MUST ask Q1 + Q2 + Q4 + Q5 + Q6 in one call; Q3 is auto-filled, and Q4b and selector details are conditional inputs.
 
 ### Q1: Save Location
 
@@ -88,7 +89,7 @@ options:
     description: "Project scope; see preferences-schema.md#approved-local-reference-locations — scoped to this repository"
 ```
 
-Note: Asked first so auto-write for decompile branch knows destination.
+Note: The agent MUST ask this first so auto-write for the decompile branch knows the destination.
 
 ### Q2: Decompiled Source Branch
 
@@ -102,11 +103,11 @@ options:
     description: "I already have decompiled source code, I will provide paths"
 ```
 
-- User selects **No**: Agent runs the decompile script synchronously:
+- When the user selects **No**, the agent MUST run the decompile script synchronously:
   - **Windows**: `scripts/decompile_source.ps1`
   - **macOS/Linux**: `scripts/decompile_source.sh`
-  On success, `lightweight_source_code_path` is auto-filled to `<skill-root>/source_code/`. On failure, prompt user whether to provide paths manually.
-- User selects **Yes**: Enter manual path flow.
+  On success, `lightweight_source_code_path` is auto-filled to `<skill-root>/source_code/`. On failure, the agent MUST prompt the user whether to provide paths manually.
+- When the user selects **Yes**, the agent MUST enter the manual path flow.
 
 ### Q3: Lightweight Source Code Path
 
@@ -118,7 +119,7 @@ options: a user-input path
 
 Note:
 - This is the **MINIMUM required field**. At least lightweight MUST be set.
-- For the decompile branch (Q2 = No), this path is auto-determined — skip this question.
+- For the decompile branch (Q2 = No), this path is auto-determined — the agent MUST skip this question.
 
 ### Q4: Full Source Code (optional)
 
@@ -132,7 +133,7 @@ options:
     description: "Skip full source code, proceed with lightweight source only"
 ```
 
-Note: Only ask this if lightweight source code is already provided (manually or via decompile). This field is purely optional.
+Note: The agent MUST ask this only if lightweight source code is already provided (manually or via decompile). This field is purely optional.
 
 ### Q4b: Full Source Code Path (conditional)
 
@@ -142,7 +143,7 @@ question: "Where is your full source code of decompiled Blasphemous project?"
 options: a user-input path
 ```
 
-Note: Only ask if user answered "Yes" to Q4.
+Note: The agent MUST ask this only if the user answered "Yes" to Q4.
 
 ### Q5: Modding Profile Path
 
@@ -152,7 +153,7 @@ question: "Where is your Blasphemous modding profile root path?"
 options: a user-input path
 ```
 
-Note: This path must be entered manually in all branches. The modding profile is typically a full game copy, not part of the original game installation, so it cannot be auto-detected from the game path.
+Note: This path MUST be entered manually in all branches. The modding profile is typically a full game copy, not part of the original game installation, so it cannot be auto-detected from the game path.
 
 ### Q6: Local ModdingAPI Reference
 
@@ -166,9 +167,9 @@ options:
     description: "Leave local reference fields absent and use the release-aware remote fallback"
 ```
 
-If the user selects **Yes**, use the same scope selected in Q1. Do not select
-an independent reference scope: the local reference and its preferences must
-stay in the same scope domain. The approved paths are authoritative in
+If the user selects **Yes**, the agent MUST use the same scope selected in Q1.
+The agent MUST NOT select an independent reference scope: the agent MUST keep
+the local reference and its preferences in the same scope domain. The approved paths are authoritative in
 [preferences-schema.md#approved-local-reference-locations](preferences-schema.md#approved-local-reference-locations).
 
 ```yaml
@@ -183,11 +184,12 @@ options:
     description: "Use branch:REF or commit:SHA for deliberate development or source pinning"
 ```
 
-For **Exact tag**, collect the tag name and pass `tag:REF`. For an explicit
-branch or commit, collect the branch name or 40-character SHA and pass
-`branch:REF` or `commit:SHA`. `latest` needs no additional value.
+For **Exact tag**, the agent MUST collect the tag name and pass `tag:REF`.
+For an explicit branch or commit, the agent MUST collect the branch name or
+40-character SHA and pass `branch:REF` or `commit:SHA`. `latest` needs no
+additional value.
 
-Run the matching fresh-clone command from the skill directory:
+The agent MUST run the matching fresh-clone command from the skill directory:
 
 ```bash
 bash scripts/clone_modding_api.sh --scope user --selector latest
@@ -197,8 +199,8 @@ bash scripts/clone_modding_api.sh --scope user --selector latest
 & .\scripts\clone_modding_api.ps1 -Scope user -Selector latest
 ```
 
-Use `--scope project` / `-Scope project` when Q1 selected Project; use User
-when Q1 selected User. The clone command refuses an existing target, uses shallow history by default, checks out
+The agent MUST use `--scope project` / `-Scope project` when Q1 selected
+Project and MUST use User when Q1 selected User. The clone command refuses an existing target, uses shallow history by default, checks out
 tags and commits detached, creates a tracking branch for explicit branches,
 writes the normalized absolute path plus selector to the selected
 `preferences.md`, and writes the sibling lock state described in
@@ -207,47 +209,47 @@ It does not replace an existing checkout.
 
 ## Validate User Input
 
-Validate if the user input paths exist and are valid using command-line tools.
+The agent MUST validate whether the user-input paths exist and are valid using command-line tools.
 
 Validation criteria:
 - All branches:
-  - `lightweight_source_code_path` **MUST** exist (required) — validate root path exists, should ideally contain `.sln` file
-  - `full_source_code_path` (if provided) — validate root path exists, should ideally contain `.sln` file
-  - `modding_profile_path` (if provided) — should contain `Blasphemous.exe` and `Modding` folder
-  - local ModdingAPI reference parent — must be writable when Q6 is enabled; the fresh-clone target itself must not already exist
-- If any check fails, revert to the **corresponding single question** (not the entire flow):
+  - `lightweight_source_code_path` **MUST** exist — validate that the root path exists; it SHOULD ideally contain an `.sln` file
+  - `full_source_code_path` (if provided) — validate that the root path exists; it SHOULD ideally contain an `.sln` file
+  - `modding_profile_path` (if provided) — it SHOULD contain `Blasphemous.exe` and a `Modding` folder
+  - When Q6 is enabled, the local ModdingAPI reference parent MUST be writable, and the fresh-clone target MUST NOT already exist.
+- If any check fails, the agent MUST return to the **corresponding single question** (not the entire flow):
   - Lightweight fail → retry Q3 only
   - Full fail (if provided) → retry Q4b only
   - Modding profile fail → retry Q5 only
 - Decompile branch: script exit code 0 validates lightweight automatically
 
 **Script failure handling** (Q2 = No, script exit code != 0):
-1. Display the script's error output to the user
-2. Ask: "Decompilation failed. Would you like to provide source paths manually instead?"
-   - Yes → enter manual path flow at Q3 (lightweight)
-   - No → abort setup, instruct user to resolve error and retry
+1. The agent MUST display the script's error output to the user.
+2. The agent MUST ask: "Decompilation failed. Would you like to provide source paths manually instead?"
+   - Yes → the agent MUST enter manual path flow at Q3 (lightweight).
+   - No → the agent MUST abort setup and instruct the user to resolve the error and retry.
 
 **Local reference failure handling** (Q6 = Yes, clone exit code != 0):
-1. Display the clone command's terminal error report.
-2. Do not write or update `modding_api_reference_path` or `modding_api_reference_selector`.
-3. Ask the user whether to retry with a corrected selector or path; selecting Skip leaves the release-aware remote fallback enabled.
+1. The agent MUST display the clone command's terminal error report.
+2. The agent MUST NOT write or update `modding_api_reference_path` or `modding_api_reference_selector`.
+3. The agent MUST ask the user whether to retry with a corrected selector or path; selecting Skip leaves the release-aware remote fallback enabled.
 
 ## Save Locations
 
-Use the approved preferences and local-reference paths in
+The agent MUST use the approved preferences and local-reference paths in
 [preferences-schema.md#approved-local-reference-locations](preferences-schema.md#approved-local-reference-locations).
 
 ## Setup Workflow After User-questions
 
-1. Create directory if needed
-2. Write or update `preferences.md` with selected values. Preserve unknown and legacy fields. Add `modding_api_reference_path` and `modding_api_reference_selector` only when Q6 is enabled and the clone succeeds.
-3. If Q6 was skipped, leave both local reference fields absent.
-4. Confirm: "Preferences saved to [path], you can edit it by yourself at any time."
-5. Continue main agent workflow using saved preferences
+1. The agent MUST create the directory if needed.
+2. The agent MUST write or update `preferences.md` with the selected values, preserve unknown and legacy fields, and add `modding_api_reference_path` and `modding_api_reference_selector` only when Q6 is enabled and the clone succeeds.
+3. If Q6 was skipped, the agent MUST leave both local reference fields absent.
+4. The agent MUST confirm: "Preferences saved to [path], you can edit it by yourself at any time."
+5. The agent MUST continue the main agent workflow using the saved preferences.
 
 ## `preferences.md` Template
 
-see [preferences-schema.md](preferences-schema.md) for detailed template restrictions.
+The agent MUST read [preferences-schema.md](preferences-schema.md) for detailed template restrictions.
 
 ## Modifying Preferences Later
 
