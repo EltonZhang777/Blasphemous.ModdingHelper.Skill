@@ -50,9 +50,72 @@ git -C "$SEED" checkout main >/dev/null
 printf '{"tag_name":"v1.0.0","draft":false,"prerelease":false,"resolved_ref":"v1.0.0","resolved_commit":"%s"}\n' "$release_commit" > "$METADATA"
 printf '{"resolved_ref":"dev","resolved_commit":"%s"}\n' "$dev_commit" > "$TEST_ROOT/dev.json"
 
+if fixture_gate_output=$(MODDING_API_TEST_MODE=0 MODDING_API_TEST_REPOSITORY="$REMOTE" bash "$CLONER" \
+    --target-path "$TEST_ROOT/fixture-gate-reference" \
+    --selector latest \
+    --metadata-file "$METADATA" 2>&1); then
+    fail "clone metadata fixtures should require test mode"
+else
+    fixture_gate_exit_code=$?
+fi
+[[ "$fixture_gate_exit_code" -eq 2 ]] || fail "clone metadata fixtures should return exit code 2"
+assert_contains "$fixture_gate_output" "require test mode"
+
+if invalid_scope_output=$(MODDING_API_TEST_MODE=0 bash "$CLONER" \
+    --scope invalid \
+    --target-path "$TEST_ROOT/invalid-scope-reference" \
+    --selector latest 2>&1); then
+    fail "invalid scope should fail"
+else
+    invalid_scope_exit_code=$?
+fi
+[[ "$invalid_scope_exit_code" -eq 2 ]] || fail "invalid scope should return exit code 2"
+assert_contains "$invalid_scope_output" "[ERROR REPORT]"
+assert_contains "$invalid_scope_output" "invalid scope"
+
+if unknown_option_output=$(bash "$CLONER" --bogus 2>&1); then
+    fail "unknown options should fail"
+else
+    unknown_option_exit_code=$?
+fi
+[[ "$unknown_option_exit_code" -eq 2 ]] || fail "unknown options should return exit code 2"
+assert_contains "$unknown_option_output" "unknown option"
+
 mkdir -p "$PROJECT/.skills/blasphemous-modding-helper"
 printf 'lightweight_source_code_path: legacy-source\nmodding_profile_path: legacy-profile\n' \
     > "$PROJECT/.skills/blasphemous-modding-helper/preferences.md"
+
+blocked_parent="$TEST_ROOT/blocked-preferences"
+printf 'not a directory\n' > "$blocked_parent"
+rollback_target="$TEST_ROOT/rollback-reference"
+if rollback_output=$(MODDING_API_TEST_REPOSITORY="$REMOTE" bash "$CLONER" \
+    --target-path "$rollback_target" \
+    --preferences-file "$blocked_parent/preferences.md" \
+    --selector latest \
+    --metadata-file "$METADATA" 2>&1); then
+    fail "preferences failure should fail the clone"
+else
+    rollback_exit_code=$?
+fi
+[[ "$rollback_exit_code" -eq 1 ]] || fail "preferences failure should return runtime exit code 1"
+assert_contains "$rollback_output" "preferences"
+[[ ! -e "$rollback_target" && ! -e "$rollback_target.lock" ]] || fail "preferences failure should roll back the new checkout and lock"
+
+lock_only_target="$TEST_ROOT/lock-only-reference"
+lock_only_path="$lock_only_target.lock"
+printf 'sentinel lock' > "$lock_only_path"
+if lock_only_output=$(MODDING_API_TEST_REPOSITORY="$REMOTE" bash "$CLONER" \
+    --target-path "$lock_only_target" \
+    --selector latest \
+    --metadata-file "$METADATA" 2>&1); then
+    fail "an existing sibling lock should be rejected"
+else
+    lock_only_exit_code=$?
+fi
+[[ "$lock_only_exit_code" -eq 2 ]] || fail "an existing sibling lock should return exit code 2"
+assert_contains "$lock_only_output" "lock path already exists"
+[[ "$(<"$lock_only_path")" == "sentinel lock" ]] || fail "an existing sibling lock must not be replaced"
+[[ ! -e "$lock_only_target" ]] || fail "a lock-only conflict must not create a checkout"
 
 pushd "$PROJECT" >/dev/null
 if ! output=$(MODDING_API_TEST_REPOSITORY="$REMOTE" bash "$CLONER" \
@@ -66,7 +129,13 @@ popd >/dev/null
 
 target="$PROJECT/.skills/blasphemous-modding-helper/references/modding-api"
 preferences="$PROJECT/.skills/blasphemous-modding-helper/preferences.md"
+lock_file="$PROJECT/.skills/blasphemous-modding-helper/references/modding-api.lock"
 normalized_target="$(cd "$target" && pwd)"
+normalized_lock_file="$lock_file"
+if command -v cygpath >/dev/null 2>&1; then
+    normalized_target="$(cygpath -w "$normalized_target")"
+    normalized_lock_file="$(cygpath -w "$normalized_lock_file")"
+fi
 
 assert_contains "$output" "MODDING_API_OPERATION=clone"
 assert_contains "$output" "MODDING_API_REFERENCE_PATH=$normalized_target"
@@ -74,6 +143,11 @@ assert_contains "$output" "MODDING_API_SELECTOR=latest"
 assert_contains "$output" "MODDING_API_RESOLVED_TAG=v1.0.0"
 assert_contains "$output" "MODDING_API_RESOLVED_COMMIT=$release_commit"
 assert_contains "$output" "MODDING_API_SHALLOW=true"
+assert_contains "$output" "MODDING_API_LOCK_PATH=$normalized_lock_file"
+assert_contains "$(<"$lock_file")" "selector: latest"
+assert_contains "$(<"$lock_file")" "resolved_tag: v1.0.0"
+assert_contains "$(<"$lock_file")" "resolved_commit: $release_commit"
+assert_contains "$(<"$lock_file")" "checked_at: "
 [[ -f "$target/.git/shallow" ]] || fail "clone should use shallow history by default"
 [[ "$(git -C "$target" rev-parse HEAD)" == "$release_commit" ]] || fail "clone should resolve the release commit"
 if git -C "$target" symbolic-ref --quiet --short HEAD >/dev/null; then
@@ -100,6 +174,9 @@ if ! configured_output=$(MODDING_API_TEST_REPOSITORY="$REMOTE" bash "$CLONER" \
     fail "preferences-driven clone should succeed"
 fi
 configured_normalized_target="$(cd "$configured_target" && pwd)"
+if command -v cygpath >/dev/null 2>&1; then
+    configured_normalized_target="$(cygpath -w "$configured_normalized_target")"
+fi
 assert_contains "$configured_output" "MODDING_API_REFERENCE_PATH=$configured_normalized_target"
 assert_contains "$configured_output" "MODDING_API_SELECTOR=tag:v1.0.0"
 [[ "$(git -C "$configured_target" rev-parse HEAD)" == "$release_commit" ]] || fail "preferences selector should drive the requested tag"
@@ -114,6 +191,9 @@ fi
 user_target="$USER_HOME/.skills/blasphemous-modding-helper/references/modding-api"
 user_preferences="$USER_HOME/.skills/blasphemous-modding-helper/preferences.md"
 user_normalized_target="$(cd "$user_target" && pwd)"
+if command -v cygpath >/dev/null 2>&1; then
+    user_normalized_target="$(cygpath -w "$user_normalized_target")"
+fi
 assert_contains "$user_output" "MODDING_API_REFERENCE_PATH=$user_normalized_target"
 [[ -d "$user_target/.git" ]] || fail "user scope should use the approved reference path"
 assert_contains "$(<"$user_preferences")" "modding_api_reference_path: $user_normalized_target"
@@ -167,6 +247,10 @@ if existing_output=$(MODDING_API_TEST_REPOSITORY="$REMOTE" bash "$CLONER" \
 fi
 assert_contains "$existing_output" "[ERROR REPORT]"
 assert_contains "$existing_output" "already exists"
+assert_contains "$existing_output" "current_head:"
+assert_contains "$existing_output" "worktree_state:"
+assert_contains "$existing_output" "network_state:"
+assert_contains "$existing_output" "next_step:"
 
 skip_preferences="$TEST_ROOT/skip-preferences.md"
 printf 'lightweight_source_code_path: legacy-source\n' > "$skip_preferences"

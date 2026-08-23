@@ -200,8 +200,10 @@ bash scripts/clone_modding_api.sh --scope user --selector latest
 Use `--scope project` / `-Scope project` when Q1 selected Project; use User
 when Q1 selected User. The clone command refuses an existing target, uses shallow history by default, checks out
 tags and commits detached, creates a tracking branch for explicit branches,
-and writes the normalized absolute path plus selector to the selected
-`preferences.md`. It does not replace an existing checkout.
+writes the normalized absolute path plus selector to the selected
+`preferences.md`, and writes the sibling lock state described in
+[preferences-schema.md#sibling-lock-state](preferences-schema.md#sibling-lock-state).
+It does not replace an existing checkout.
 
 ## Validate User Input
 

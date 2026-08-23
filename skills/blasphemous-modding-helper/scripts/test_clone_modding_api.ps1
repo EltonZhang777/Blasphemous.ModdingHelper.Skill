@@ -79,6 +79,29 @@ try {
         resolved_commit = $devCommit.Trim()
     } | ConvertTo-Json -Compress)
 
+    $env:MODDING_API_TEST_MODE = "0"
+    $fixtureGateOutput = @(& $Cloner -TargetPath (Join-Path $TestRoot "fixture-gate-reference") -Selector latest -MetadataFile $metadata 2>&1)
+    if ($LASTEXITCODE -ne 2) {
+        Fail-Test "clone metadata fixtures should require test mode and return exit code 2"
+    }
+    Assert-Contains (($fixtureGateOutput | ForEach-Object { [string]$_ }) -join "`n") "require test mode"
+
+    $invalidScopeOutput = @(& $Cloner -Scope invalid -TargetPath (Join-Path $TestRoot "invalid-scope-reference") -Selector latest 2>&1)
+    if ($LASTEXITCODE -ne 2) {
+        Fail-Test "invalid scope should return configuration exit code 2"
+    }
+    $invalidScopeText = ($invalidScopeOutput | ForEach-Object { [string]$_ }) -join "`n"
+    Assert-Contains $invalidScopeText "[ERROR REPORT]"
+    Assert-Contains $invalidScopeText "invalid scope"
+
+    $unknownOptionOutput = @(& $Cloner -Bogus 2>&1)
+    if ($LASTEXITCODE -ne 2) {
+        Fail-Test "unknown PowerShell options should return configuration exit code 2"
+    }
+    Assert-Contains (($unknownOptionOutput | ForEach-Object { [string]$_ }) -join "`n") "unknown option"
+
+    $env:MODDING_API_TEST_MODE = "1"
+
     $legacyDirectory = Join-Path $project ".skills\blasphemous-modding-helper"
     New-Item -ItemType Directory -Force -Path $legacyDirectory | Out-Null
     Set-Content -LiteralPath (Join-Path $legacyDirectory "preferences.md") -Value @(
@@ -87,6 +110,33 @@ try {
     )
 
     $env:MODDING_API_TEST_REPOSITORY = $remote
+    $blockedParent = Join-Path $TestRoot "blocked-preferences"
+    Set-Content -LiteralPath $blockedParent -Value "not a directory" -NoNewline
+    $rollbackTarget = Join-Path $TestRoot "rollback-reference"
+    $rollbackOutput = @(& $Cloner -TargetPath $rollbackTarget -PreferencesFile (Join-Path $blockedParent "preferences.md") -Selector latest -MetadataFile $metadata 2>&1)
+    if ($LASTEXITCODE -ne 1) {
+        Fail-Test "preferences failure should return runtime exit code 1"
+    }
+    Assert-Contains (($rollbackOutput | ForEach-Object { [string]$_ }) -join "`n") "preferences"
+    if ((Test-Path -LiteralPath $rollbackTarget) -or (Test-Path -LiteralPath "$rollbackTarget.lock")) {
+        Fail-Test "preferences failure should roll back the new checkout and lock"
+    }
+
+    $lockOnlyTarget = Join-Path $TestRoot "lock-only-reference"
+    $lockOnlyPath = "$lockOnlyTarget.lock"
+    Set-Content -LiteralPath $lockOnlyPath -Value "sentinel lock" -NoNewline
+    $lockOnlyOutput = @(& $Cloner -TargetPath $lockOnlyTarget -Selector latest -MetadataFile $metadata 2>&1)
+    if ($LASTEXITCODE -ne 2) {
+        Fail-Test "an existing sibling lock should return configuration exit code 2"
+    }
+    Assert-Contains (($lockOnlyOutput | ForEach-Object { [string]$_ }) -join "`n") "lock path already exists"
+    if ((Get-Content -LiteralPath $lockOnlyPath -Raw) -ne "sentinel lock") {
+        Fail-Test "an existing sibling lock must not be replaced"
+    }
+    if (Test-Path -LiteralPath $lockOnlyTarget) {
+        Fail-Test "a lock-only conflict must not create a checkout"
+    }
+
     Push-Location $project
     try {
         $output = @(& $Cloner -Scope project -Selector latest -MetadataFile $metadata 2>&1)
@@ -102,6 +152,7 @@ try {
 
     $target = Join-Path $project ".skills\blasphemous-modding-helper\references\modding-api"
     $preferences = Join-Path $project ".skills\blasphemous-modding-helper\preferences.md"
+    $lockFile = Join-Path $project ".skills\blasphemous-modding-helper\references\modding-api.lock"
     $normalizedTarget = [System.IO.Path]::GetFullPath($target)
 
     Assert-Contains $outputText "MODDING_API_OPERATION=clone"
@@ -110,6 +161,12 @@ try {
     Assert-Contains $outputText "MODDING_API_RESOLVED_TAG=v1.0.0"
     Assert-Contains $outputText "MODDING_API_RESOLVED_COMMIT=$($releaseCommit.Trim())"
     Assert-Contains $outputText "MODDING_API_SHALLOW=true"
+    Assert-Contains $outputText "MODDING_API_LOCK_PATH=$lockFile"
+    $lockText = Get-Content -LiteralPath $lockFile -Raw
+    Assert-Contains $lockText "selector: latest"
+    Assert-Contains $lockText "resolved_tag: v1.0.0"
+    Assert-Contains $lockText "resolved_commit: $($releaseCommit.Trim())"
+    Assert-Contains $lockText "checked_at: "
     if (-not (Test-Path -LiteralPath (Join-Path $target ".git\shallow"))) {
         Fail-Test "clone should use shallow history by default"
     }
@@ -235,6 +292,10 @@ try {
     $existingText = ($existingOutput | ForEach-Object { [string]$_ }) -join "`n"
     Assert-Contains $existingText "[ERROR REPORT]"
     Assert-Contains $existingText "already exists"
+    Assert-Contains $existingText "current_head:"
+    Assert-Contains $existingText "worktree_state:"
+    Assert-Contains $existingText "network_state:"
+    Assert-Contains $existingText "next_step:"
 
     $skipPreferences = Join-Path $TestRoot "skip-preferences.md"
     Set-Content -LiteralPath $skipPreferences -Value "lightweight_source_code_path: legacy-source"

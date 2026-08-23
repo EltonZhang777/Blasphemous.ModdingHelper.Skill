@@ -53,12 +53,72 @@ or a retry when the Release lookup fails.
 
 When setup succeeds, use the stored absolute path for documentation and source
 lookups. The fresh-clone commands are explicit operations and create a shallow
-checkout pinned to the stored selector:
+checkout pinned to the stored selector. They also write the sibling lock state
+`<reference-path>.lock`; the lock is outside the checkout and records the
+selector, resolved tag, resolved commit, check time, and supported repository:
 
 - Bash: `scripts/clone_modding_api.sh`
 - PowerShell: `scripts/clone_modding_api.ps1`
 
 Tags and commits are detached; explicit branches track their corresponding
-`origin/<branch>`. Existing targets are not replaced. Update, lock, and
-offline lifecycle behavior belongs to the later lifecycle specification; this
-sub-skill only defines how to choose the reference for the current task.
+`origin/<branch>`. Existing targets are not replaced.
+
+## Explicit lifecycle operations
+
+Use the lifecycle manager only when the user explicitly asks to check or
+update a local checkout. Ordinary ModdingAPI questions must not mutate the
+checkout. The shared `scripts/clone_modding_api.js` and
+`scripts/manage_modding_api.js` implementations own clone and lifecycle
+behavior; Bash and PowerShell expose thin equivalent entry points. Both
+script surfaces expose the same operation model:
+
+```bash
+bash scripts/manage_modding_api.sh --operation check
+bash scripts/manage_modding_api.sh --operation update
+bash scripts/manage_modding_api.sh --operation update --dry-run
+bash scripts/manage_modding_api.sh --operation check --offline
+```
+
+```powershell
+& .\scripts\manage_modding_api.ps1 -Operation check
+& .\scripts\manage_modding_api.ps1 -Operation update
+& .\scripts\manage_modding_api.ps1 -Operation update -DryRun
+& .\scripts\manage_modding_api.ps1 -Operation check -Offline
+```
+
+The manager reads `modding_api_reference_path` and
+`modding_api_reference_selector` from the selected preferences file, unless
+`--target-path`/`-TargetPath` or `--selector`/`-Selector` is supplied. It also
+accepts the same `--scope`/`-Scope` and `--preferences-file`/`-PreferencesFile`
+options as the fresh-clone command. When none of those three routing options
+is supplied, it discovers project preferences in the current directory first,
+then user preferences; an explicit scope always selects its approved path.
+
+`check` resolves the requested selector, verifies a clean worktree and the
+official origin, confirms the checkout shape and current HEAD, and writes a
+fresh lock state when the checkout matches. `update` is the only operation
+that fetches and changes a checkout: fixed references fetch the resolved
+commit and remain detached; explicit branches fetch their remote-tracking
+branch and advance only with a fast-forward. A dirty worktree, invalid
+repository, wrong origin, divergent history, wrong checkout shape, or missing
+reference stops before destructive recovery. The manager never resets,
+stashes, deletes, or replaces a checkout. A shallow branch checkout may be
+deepened during update so Git can prove that the fast-forward is safe; fixed
+reference updates remain shallow by default.
+
+`--dry-run` resolves and validates the planned operation but performs no
+fetch, checkout, merge, or lock-state write. A matching `check --offline`
+uses only the sibling lock and local Git state; it succeeds only when the
+selector, resolved commit/tag, origin, clean worktree, checkout shape, and
+current HEAD agree. For a branch dry-run whose local remote-tracking ref is
+absent, the operation remains non-mutating and emits
+`MODDING_API_PLAN_REQUIRES_FETCH=true`. An offline update fails because it
+cannot refresh the reference. If an online `check` loses network access, it may fall back to
+that same matching lock validation; missing or mismatching offline state is
+an error and must not be presented as a verified version.
+
+Exit codes are stable across Bash and PowerShell: `0` means success, `2`
+means usage or configuration failure, and `1` means a runtime, Git, network,
+offline, or reference-state failure. Every failure prints a terminal text
+`[ERROR REPORT]` containing `operation`, `target_path`, `selector`,
+`current_head`, `worktree_state`, `network_state`, `cause`, and `next_step`.

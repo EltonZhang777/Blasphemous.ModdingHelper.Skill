@@ -39,3 +39,21 @@ The stored `modding_api_reference_path` value is absolute after setup. Missing
 ModdingAPI fields are valid in legacy preferences and are added only when the
 user opts into local reference setup. A skipped local setup leaves both fields
 absent so release-aware remote fallback remains available.
+
+## Sibling lock state
+
+The lifecycle commands store reproducibility state beside, not inside, the
+checkout. For a reference path ending in `references/modding-api`, the lock
+path is `references/modding-api.lock`. The lock is plain `key: value` text:
+
+```yaml
+selector: latest
+resolved_tag: v1.0.0
+resolved_commit: 0123456789abcdef0123456789abcdef01234567
+checked_at: 2026-08-22T12:34:56Z
+repository: https://github.com/BrandenEK/Blasphemous.ModdingAPI.git
+```
+
+`selector`, `resolved_tag`, `resolved_commit`, and `checked_at` are required.
+The `repository` value records the supported upstream used by the operation.
+The lock file is managed state and is not part of the upstream Git worktree.
