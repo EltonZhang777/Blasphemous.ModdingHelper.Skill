@@ -35,6 +35,8 @@ The `main.md` name identifies the documentation index. It is not a request to
 read an unqualified Git branch; the agent MUST NOT interpret it that way. The resolver's tag, branch, or commit remains
 part of every remote URL and every local-reference decision.
 
+Reference selection is complete when the active `preferences.md` scope has been read and the agent has recorded one resolved route: a validated local checkout with its selector/lock state, or the release-aware remote resolver output required for browsing.
+
 ## Stable API topic routing
 
 The agent MUST use this table as the first route for ordinary ModdingAPI work. The agent MUST open the
@@ -190,6 +192,8 @@ offline, or reference-state failure. Every failure prints a terminal text
 `[ERROR REPORT]` containing `operation`, `target_path`, `selector`,
 `current_head`, `worktree_state`, `network_state`, `cause`, and `next_step`.
 
+The agent MUST mark lifecycle verification complete when an explicitly requested operation exits successfully and reports the resolved selector and checkout state: a non-dry-run `check` or `update` MUST leave the expected lock state, while a `--dry-run` MUST report its validated plan without writing lock state. A question that did not request lifecycle mutation is complete only after the agent reports that no lifecycle operation was performed.
+
 ## Documentation smoke check
 
 The agent MUST run the deterministic documentation smoke check from the caller's Mod repository using the explicit Skill-root path:
@@ -224,9 +228,10 @@ The gate runs the resolver, clone, lifecycle, and documentation suites through
 both Bash and PowerShell. Their fixture scenarios cover annotated tags,
 branches, exact commits, clean updates, dirty worktrees, wrong origins,
 missing references, network failure, offline locks, output fields, and exit
-codes. It also checks resolver parity, installer dry-runs, local Markdown links,
-and `git diff --check`. It never contacts GitHub and never uses a user's
-reference checkout.
+codes. It also checks resolver parity, installer dry-runs, repository-owned
+Markdown links, reports ignored local Markdown artifacts separately, and runs
+`git diff --check`. It never contacts GitHub and never uses a user's reference
+checkout.
 
 The final verification invocation may require a clean worktree:
 
@@ -254,3 +259,9 @@ bash "$SKILL_ROOT/scripts/test_modding_api_live.sh"
 The agent MAY run the live check only when network access is available. A failure MUST NOT be
 treated as a reason to substitute `main`; the agent MUST preserve the resolver error report and
 retry or use an explicit selector.
+
+Acceptance verification is complete when the documentation smoke check and the
+cross-platform acceptance gate both exit successfully. Ignored local Markdown
+artifacts MAY produce a separate warning, but MUST NOT make repository-owned
+documentation validation fail; a live network check is optional and MUST be
+reported as not run when it was not requested or unavailable.

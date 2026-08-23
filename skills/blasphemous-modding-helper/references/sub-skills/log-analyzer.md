@@ -31,3 +31,13 @@ This step is complete only when the CLI resolves the Unity log or the warning re
 
 `launched`, `ready`, and `mod_loaded` are startup states. They MUST NOT be used to verify visual, input, combat, menu, save, or other gameplay behavior. After startup evidence is collected, the agent MUST ask the player to operate the game and report the observed behavior in natural language; the agent MUST treat that report as the manual gameplay evidence.
 
+## Completion criteria
+
+The agent MUST mark log analysis complete only when the report contains all of the following:
+
+1. The active preferences file and every log source inspected, or the exact missing path and the required preference-update handoff.
+2. The expected pattern, relevant log evidence, and a conclusion tied to that evidence. If the BepInEx log is sufficient, the agent MUST state that a Unity-log read was not required; otherwise, the Unity-log result MUST be included.
+3. A concrete next action: a code/configuration change, another evidence request, a tracked-session operation, or player Manual verification.
+
+Missing or unreadable evidence is not a successful analysis. The analysis is complete in that case only when the warning names the missing source, the active preferences file, and the next action needed to recover.
+

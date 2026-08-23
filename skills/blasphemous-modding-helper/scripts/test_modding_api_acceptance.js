@@ -377,18 +377,43 @@ function runInstallerSmoke(env) {
   }
 }
 
-function collectMarkdownFiles(directory, output) {
-  for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
-    if (entry.name === ".git" || entry.name === "node_modules") {
-      continue;
-    }
-    const entryPath = path.join(directory, entry.name);
-    if (entry.isDirectory()) {
-      collectMarkdownFiles(entryPath, output);
-    } else if (entry.isFile() && entry.name.toLowerCase().endsWith(".md")) {
-      output.push(entryPath);
-    }
-  }
+function gitMarkdownFiles(args) {
+  const result = support.runCommand("git", args);
+  assert(result.status === 0, `Git Markdown file discovery failed:\n${result.output}`);
+  return result.output
+    .split("\0")
+    .filter((relativePath) => relativePath.length > 0)
+    .filter((relativePath) => relativePath.toLowerCase().endsWith(".md"))
+    .map((relativePath) => path.resolve(repositoryRoot, relativePath))
+    .filter((file) => fs.existsSync(file) && fs.statSync(file).isFile());
+}
+
+function trackedMarkdownFiles() {
+  return gitMarkdownFiles([
+    "ls-files",
+    "--cached",
+    "--others",
+    "--exclude-standard",
+    "-z",
+    "--",
+    "*.md",
+  ]);
+}
+
+function ignoredMarkdownFiles() {
+  return gitMarkdownFiles([
+    "ls-files",
+    "--others",
+    "--ignored",
+    "--exclude-standard",
+    "-z",
+    "--",
+    "*.md",
+  ]);
+}
+
+function displayPath(file) {
+  return path.relative(repositoryRoot, file).replace(/\\/g, "/");
 }
 
 function markdownTarget(rawTarget) {
@@ -401,13 +426,11 @@ function markdownTarget(rawTarget) {
   return target.split("#", 1)[0];
 }
 
-function checkMarkdownLinks() {
-  const files = [];
-  collectMarkdownFiles(repositoryRoot, files);
+function findMissingMarkdownLinks(files) {
   const missing = [];
-  const linkPattern = /!?\[[^\]]*\]\(([^)\r\n]+)\)/g;
   for (const file of files) {
     const contents = fs.readFileSync(file, "utf8");
+    const linkPattern = /!?\[[^\]]*\]\(([^)\r\n]+)\)/g;
     let match;
     while ((match = linkPattern.exec(contents)) !== null) {
       const target = markdownTarget(match[1]);
@@ -421,11 +444,32 @@ function checkMarkdownLinks() {
       }
       const resolved = path.resolve(path.dirname(file), decodeURIComponent(target));
       if (!fs.existsSync(resolved)) {
-        missing.push(`${path.relative(repositoryRoot, file)} -> ${target}`);
+        missing.push(`${displayPath(file)} -> ${target}`);
       }
     }
   }
-  assert(missing.length === 0, `missing Markdown links:\n${missing.join("\n")}`);
+  return missing;
+}
+
+function checkMarkdownLinks() {
+  const repositoryFiles = trackedMarkdownFiles();
+  const ignoredFiles = ignoredMarkdownFiles();
+  const missing = findMissingMarkdownLinks(repositoryFiles);
+  const ignoredMissing = findMissingMarkdownLinks(ignoredFiles);
+
+  if (ignoredFiles.length > 0) {
+    process.stdout.write(
+      `[INFO] ignored Markdown files excluded from repository link validation (${ignoredFiles.length}):\n` +
+        `${ignoredFiles.map(displayPath).join("\n")}\n`,
+    );
+  }
+  if (ignoredMissing.length > 0) {
+    process.stdout.write(
+      `[WARN] ignored local Markdown link findings (not release failures):\n` +
+        `${ignoredMissing.join("\n")}\n`,
+    );
+  }
+  assert(missing.length === 0, `missing repository Markdown links:\n${missing.join("\n")}`);
 }
 
 function checkGitDiff() {
