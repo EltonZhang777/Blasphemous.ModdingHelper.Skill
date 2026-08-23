@@ -59,7 +59,9 @@ You MUST follow the workflow steps in order, unless otherwise explicitly specifi
 
 ### Step 1: Load Preferences
 
-The agent MUST check `preferences.md` (see Preferences section above).
+The agent MUST follow the Preferences gate above.
+
+**Done when**: the check-preferences result is `project` or `user` and the selected file has been read, parsed, and applied, or first-time setup has completed. For the tracked-session stop exception, this step is complete when the recorded process is stopped or confirmed gone without loading preferences.
 
 ### Step 2: Analyze User Question
 
@@ -69,10 +71,10 @@ The agent MUST analyze the user question to determine user intent and the task t
   - If yes, the agent SHOULD create a sub-agent or sub-task to handle the source code analysis using [references/sub-skills/source-analyzer.md](references/sub-skills/source-analyzer.md).
 - Whether the user request involves debugging, log tracking, or error tracking.
   - If yes, the agent SHOULD create a sub-agent or sub-task to handle log analysis using [references/sub-skills/log-analyzer.md](references/sub-skills/log-analyzer.md).
-- Whether the user request involves building, deploying, launching, stopping, cleaning, or collecting startup evidence for a mod test.
-  - If yes, use the authoritative [`/blasphemous-modding-test`](references/sub-skills/blasphemous-modding-test.md) sub-skill.
+- Whether the user request involves a mod test: building or selecting a mod package, deploying it, launching it, reading startup evidence or test logs/status, stopping or cleaning a session, or collecting Manual verification, including when no new automated run is requested.
+  - If yes, the agent MUST route to the authoritative [`/blasphemous-modding-test`](references/sub-skills/blasphemous-modding-test.md) sub-skill.
 
-**Done when**: the user question is classified into one or more of the four branches (source code analysis, log analysis, mod testing, or general modding question), and every applicable branch has been routed to its authoritative sub-skill or analysis task.
+**Done when**: the user question is classified into one or more of the four branches (source code analysis, log analysis, mod testing, or general modding question), and every applicable specialized branch has been routed to its authoritative sub-skill or analysis task.
 
 ### Step 3: Use Tools to Gather Information
 
@@ -98,3 +100,5 @@ If any source code analysis or modding operation fails with file-not-found or pa
 
 - **If Yes**: The agent MUST delete `preferences.md` and trigger first-time setup again (see Step 1). This allows the user to correct outdated or incorrect paths.
 - **If No**: The agent MUST continue with the current paths and report the specific failure to the user.
+
+**Done when**: either setup has produced a validated preferences file, or the agent has continued with the current paths and reported the specific failure. The tracked-session stop exception is complete when the recorded process is stopped or confirmed gone and no unrelated process was touched.

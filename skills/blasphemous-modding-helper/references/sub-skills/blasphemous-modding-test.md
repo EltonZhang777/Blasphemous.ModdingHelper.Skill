@@ -1,12 +1,12 @@
 # `/blasphemous-modding-test`
 
-This is the authoritative workflow for repeatable local Blasphemous mod tests. The agent MUST use it when a task needs to build or select a mod package, deploy it to a modding profile, launch the profile-local game, inspect startup evidence, stop a tracked session, clean a deployment, or collect the player's Manual verification description.
+This is the authoritative workflow for repeatable local Blasphemous mod tests. The agent MUST use it when a task needs to build or select a mod package, deploy it to a modding profile, launch the profile-local game, inspect startup evidence, stop a tracked session, clean a deployment, or collect the player's Manual verification description, including when no new automated run is requested.
 
 The Python CLI automates filesystem, build, process, and log operations. It does not control the game through MCP and it does not verify visual, input, combat, menu, save, or other in-game behavior. Keep the automated evidence and the player's **Manual verification** as separate evidence sources.
 
 ## Entry conditions
 
-1. The agent MUST follow the top-level skill's preferences gate and first-time setup before using the workflow. The active `preferences.md` MUST define `modding_profile_path`; the agent MUST use the [preferences schema](../config/preferences-schema.md) and [first-time setup](../config/first-time-setup.md) when it is missing or invalid.
+1. The agent MUST complete the top-level skill's Preferences gate and first-time setup before using the workflow. This sub-skill adds one profile-specific requirement: the active `preferences.md` MUST define `modding_profile_path`; the agent MUST use the [preferences schema](../config/preferences-schema.md) and [first-time setup](../config/first-time-setup.md) when that field is missing or invalid.
 2. The agent MUST resolve a native Python 3 interpreter before invoking the CLI. `PYTHON3` below means that resolved executable; it is not an arbitrary shell command. On Windows, the agent MUST use the configured Python installation rather than assuming `python` or `py` is on `PATH`.
 3. The agent MUST use native Windows PowerShell, or native Linux/macOS Bash. The CLI MUST reject Git Bash, Cygwin, WSL, Proton, Wine, and unsupported operating systems. Paths MUST remain quoted when they contain spaces.
 4. The agent MUST confirm that the selected profile is a disposable or mirror game installation. The CLI operates on that profile's `Modding` root and launches its local game executable.

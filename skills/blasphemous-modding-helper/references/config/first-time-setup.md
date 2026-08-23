@@ -9,12 +9,13 @@ description: First-time setup flow for blasphemous-modding-helper preferences
 
 When no `preferences.md` is found, this reference describes the preference-setup flow.
 
-**BLOCKING OPERATION**: This setup MUST complete before ANY action.
-The agent MUST NOT:
-- The agent MUST NOT analyze the user's question.
-- The agent MUST NOT proceed to any workflow steps.
+**BLOCKING OPERATION**: This setup MUST complete before source analysis, log analysis, modding operations, or test workflow commands. The tracked-session stop exception remains available when normal context preflight is unavailable: `/blasphemous-modding-test stop SESSION_ID` MUST use only the recorded session identity and MUST address only that tracked process tree.
+
+The agent MUST enter the main workflow only after setup completes.
 
 The agent MUST ask only the questions in this setup flow, MUST save `preferences.md`, and MUST continue only after those steps complete.
+
+Setup is complete when the selected-scope `preferences.md` has been written and confirmed, or setup has aborted with the error and retry path reported to the user. The tracked-session stop exception is complete when the recorded process is stopped or confirmed gone without reading or editing preferences.
 
 ## Setup Flow
 
