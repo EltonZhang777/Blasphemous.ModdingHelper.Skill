@@ -3,6 +3,8 @@
 The agent MUST use this sub-skill whenever a task needs ModdingAPI documentation, source
 guidance, or coding conventions. The agent MUST resolve the reference before browsing it.
 
+Before executing a command in this reference, the agent MUST follow the [Skill command context](../../SKILL.md#skill-command-context). The agent MUST run the commands from the caller's Mod repository; the caller does not need a repository checkout containing the Skill.
+
 ## Reference selection
 
 1. The agent MUST read the selected `preferences.md`.
@@ -91,11 +93,11 @@ The official upstream is
 reference before opening documentation or source:
 
 ```bash
-bash scripts/resolve_modding_api.sh --selector latest
+bash "$SKILL_ROOT/scripts/resolve_modding_api.sh" --selector latest
 ```
 
 ```powershell
-& .\scripts\resolve_modding_api.ps1 -Selector latest
+& (Join-Path $SkillRoot 'scripts\resolve_modding_api.ps1') -Selector latest
 ```
 
 The agent MUST use the resolver's `MODDING_API_DOCS_URL` and `MODDING_API_SOURCE_URL` outputs
@@ -122,8 +124,8 @@ checkout pinned to the stored selector. They also write the sibling lock state
 `<reference-path>.lock`; the lock is outside the checkout and records the
 selector, resolved tag, resolved commit, check time, and supported repository:
 
-- Bash: `scripts/clone_modding_api.sh`
-- PowerShell: `scripts/clone_modding_api.ps1`
+- Bash: `bash "$SKILL_ROOT/scripts/clone_modding_api.sh"`
+- PowerShell: `& (Join-Path $SkillRoot 'scripts\clone_modding_api.ps1')`
 
 Tags and commits are detached; explicit branches track their corresponding
 `origin/<branch>`. Existing targets are not replaced.
@@ -132,23 +134,23 @@ Tags and commits are detached; explicit branches track their corresponding
 
 The agent MUST use the lifecycle manager only when the user explicitly asks to check or
 update a local checkout. Ordinary ModdingAPI questions MUST NOT mutate the
-checkout. The shared `scripts/clone_modding_api.js` and
-`scripts/manage_modding_api.js` implementations own clone and lifecycle
+checkout. The shared Skill-root `clone_modding_api.js` and
+`manage_modding_api.js` implementations own clone and lifecycle
 behavior; Bash and PowerShell expose thin equivalent entry points. Both
 script surfaces expose the same operation model:
 
 ```bash
-bash scripts/manage_modding_api.sh --operation check
-bash scripts/manage_modding_api.sh --operation update
-bash scripts/manage_modding_api.sh --operation update --dry-run
-bash scripts/manage_modding_api.sh --operation check --offline
+bash "$SKILL_ROOT/scripts/manage_modding_api.sh" --operation check
+bash "$SKILL_ROOT/scripts/manage_modding_api.sh" --operation update
+bash "$SKILL_ROOT/scripts/manage_modding_api.sh" --operation update --dry-run
+bash "$SKILL_ROOT/scripts/manage_modding_api.sh" --operation check --offline
 ```
 
 ```powershell
-& .\scripts\manage_modding_api.ps1 -Operation check
-& .\scripts\manage_modding_api.ps1 -Operation update
-& .\scripts\manage_modding_api.ps1 -Operation update -DryRun
-& .\scripts\manage_modding_api.ps1 -Operation check -Offline
+& (Join-Path $SkillRoot 'scripts\manage_modding_api.ps1') -Operation check
+& (Join-Path $SkillRoot 'scripts\manage_modding_api.ps1') -Operation update
+& (Join-Path $SkillRoot 'scripts\manage_modding_api.ps1') -Operation update -DryRun
+& (Join-Path $SkillRoot 'scripts\manage_modding_api.ps1') -Operation check -Offline
 ```
 
 The manager reads `modding_api_reference_path` and
@@ -190,14 +192,14 @@ offline, or reference-state failure. Every failure prints a terminal text
 
 ## Documentation smoke check
 
-The agent MUST run the deterministic documentation smoke check from the skill directory:
+The agent MUST run the deterministic documentation smoke check from the caller's Mod repository using the explicit Skill-root path:
 
 ```bash
-bash scripts/test_referencing_modding_api.sh
+bash "$SKILL_ROOT/scripts/test_referencing_modding_api.sh"
 ```
 
 ```powershell
-& .\scripts\test_referencing_modding_api.ps1
+& (Join-Path $SkillRoot 'scripts\test_referencing_modding_api.ps1')
 ```
 
 It verifies the top-level pointer, the stable and archived route tables, the
@@ -211,11 +213,11 @@ The agent MUST run the deterministic acceptance gate before publishing changes t
 reference workflow:
 
 ```bash
-bash scripts/test_modding_api_acceptance.sh
+bash "$SKILL_ROOT/scripts/test_modding_api_acceptance.sh"
 ```
 
 ```powershell
-& .\scripts\test_modding_api_acceptance.ps1
+& (Join-Path $SkillRoot 'scripts\test_modding_api_acceptance.ps1')
 ```
 
 The gate runs the resolver, clone, lifecycle, and documentation suites through
@@ -229,11 +231,11 @@ reference checkout.
 The final verification invocation may require a clean worktree:
 
 ```bash
-bash scripts/test_modding_api_acceptance.sh --require-clean
+bash "$SKILL_ROOT/scripts/test_modding_api_acceptance.sh" --require-clean
 ```
 
 ```powershell
-& .\scripts\test_modding_api_acceptance.ps1 -RequireClean
+& (Join-Path $SkillRoot 'scripts\test_modding_api_acceptance.ps1') -RequireClean
 ```
 
 The live network check is separate and manual. It resolves the actual latest
@@ -242,11 +244,11 @@ resolved tag and commit, and verifies tag-specific documentation and source
 URLs:
 
 ```bash
-bash scripts/test_modding_api_live.sh
+bash "$SKILL_ROOT/scripts/test_modding_api_live.sh"
 ```
 
 ```powershell
-& .\scripts\test_modding_api_live.ps1
+& (Join-Path $SkillRoot 'scripts\test_modding_api_live.ps1')
 ```
 
 The agent MAY run the live check only when network access is available. A failure MUST NOT be

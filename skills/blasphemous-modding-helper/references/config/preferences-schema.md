@@ -23,7 +23,7 @@ modding_api_reference_selector: latest
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `full_source_code_path` | string | N/A | Full source code path (root path storing all source code files; it is preferably a path containing an `.sln` file) |
-| `lightweight_source_code_path` | string | N/A | **Minimum field.** Lightweight source code path (root path storing decompiled game DLL source code; it is preferably a path containing an `.sln` file). The decompile scripts (`scripts/decompile_source.ps1` for Windows, `scripts/decompile_source.sh` for macOS/Linux) auto-generate this — their default output maps here. |
+| `lightweight_source_code_path` | string | N/A | **Minimum field.** Lightweight source code path (root path storing decompiled game DLL source code; it is preferably a path containing an `.sln` file). The Skill-root decompile scripts ([decompile_source.ps1](../../scripts/decompile_source.ps1) for Windows, [decompile_source.sh](../../scripts/decompile_source.sh) for macOS/Linux) auto-generate this — their default output maps here. |
 | `modding_profile_path` | string | N/A | Blasphemous modding profile root path (SHOULD contain `Blasphemous.exe` and `Modding` folder) |
 | `unity_log_dir` | string | Optional | Directory containing the current Unity log. Windows normally contains `output_log.txt`; native Linux/macOS profiles normally contain `Player.log`. The test CLI reports a recovery handoff when this field or its log is missing. |
 | `modding_api_reference_path` | string, optional | N/A | Normalized absolute path to a local ModdingAPI reference checkout. When absent, the agent uses the release-aware remote fallback. |

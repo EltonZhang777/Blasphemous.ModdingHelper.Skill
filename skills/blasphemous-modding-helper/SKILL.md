@@ -11,6 +11,19 @@ You are helping with Blasphemous mod development.
 
 At the start of every Skill invocation, you MUST read [Requirement levels](references/requirement-levels-definitions.md). It defines the RFC 2119 vocabulary used by every authored normative instruction in this Skill; external documentation, source code, and illustrative examples retain their original wording as described there.
 
+## Skill command context
+
+All executable examples in this Skill use the same command context:
+
+- `SKILL_ROOT` in Bash and `$SkillRoot` in PowerShell MUST be the absolute path to the installed directory that contains this `SKILL.md` and its `scripts/` directory. These are placeholders for the resolved Skill installation path; the agent MUST NOT infer the path from a caller repository's checkout layout.
+- The agent MUST keep the caller's Mod repository as the current working directory when invoking Skill scripts. Project-relative paths, `.csproj` discovery, and project-scoped preferences MUST continue to resolve from that caller directory.
+- The agent MUST invoke each Skill script through an explicit Skill-root path and MUST use the interpreter or entry point required by that script:
+  - Bash shell entry point: `bash "$SKILL_ROOT/scripts/<script>.sh" [arguments]`
+  - PowerShell entry point: `& (Join-Path $SkillRoot 'scripts\<script>.ps1') [arguments]`
+  - Python CLI: `"$PYTHON3" "$SKILL_ROOT/scripts/<script>.py" [arguments]` or `& $PYTHON3 (Join-Path $SkillRoot 'scripts\<script>.py') [arguments]`, after the reference has resolved `PYTHON3`.
+  - Node.js CLI: `node "$SKILL_ROOT/scripts/<script>.js" [arguments]` when the reference names a Node.js entry point.
+- The agent MUST resolve and set the appropriate root variable before copying a command. The root variable identifies the Skill installation; it is not the caller's Mod repository and MUST NOT be replaced with a checkout-relative `skills/blasphemous-modding-helper` path.
+
 ## Coding standards
 
 Before generating, modifying, reviewing, or refactoring Mod-owned C# in a caller's Mod repository, you MUST read the [coding standards](references/sub-skills/coding-standards.md). It applies the ownership gate, routes C# and runtime Unity work to the [C# and runtime Unity standards](references/coding-standards-csharp-unity.md), ModdingAPI tasks to the [ModdingAPI standards](references/coding-standards-moddingAPI.md), and Harmony or Patch tasks to the [Harmony patching standards](references/coding-standards-harmony-patching.md).
@@ -30,12 +43,12 @@ The agent MUST use the check-preferences scripts to find `preferences.md`:
 
 ```bash
 # macOS, Linux, WSL, Git Bash
-bash scripts/check_preferences.sh
+bash "$SKILL_ROOT/scripts/check_preferences.sh"
 ```
 
 ```powershell
 # PowerShell (Windows)
-& .\scripts\check_preferences.ps1
+& (Join-Path $SkillRoot 'scripts\check_preferences.ps1')
 ```
 
 Output is one of: `"project"`, `"user"`, or nothing (not found).

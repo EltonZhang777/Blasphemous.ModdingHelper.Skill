@@ -10,7 +10,8 @@
 
     Usage: dot-calling agent captures stdout to determine scope.
 .EXAMPLE
-    $scope = & scripts\check_preferences.ps1
+    $SkillRoot = 'C:\path\to\blasphemous-modding-helper'
+    $scope = & (Join-Path $SkillRoot 'scripts\check_preferences.ps1')
 #>
 
 $projectPath = ".skills/blasphemous-modding-helper/preferences.md"

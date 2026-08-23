@@ -61,11 +61,26 @@ The agent does not run this gate automatically. Deployment changes an external p
 
 Invocation template:
 
-```text
-<python3> skills/blasphemous-modding-helper/scripts/blasphemous_modding_test.py run --project <PROJECT.csproj> --profile <PROFILE> --unity-log-dir <UNITY_LOG_DIR> --startup-timeout 60
-<python3> skills/blasphemous-modding-helper/scripts/blasphemous_modding_test.py logs <SESSION_ID>
-<python3> skills/blasphemous-modding-helper/scripts/blasphemous_modding_test.py stop <SESSION_ID>
-<python3> skills/blasphemous-modding-helper/scripts/blasphemous_modding_test.py clean <SESSION_ID>
+The agent MUST resolve a native Python 3 interpreter as `PYTHON3` before running these commands. The agent MUST run them from the caller's Mod repository and MUST set `SKILL_ROOT` in Bash or `$SkillRoot` in PowerShell to the installed directory containing the Skill's `SKILL.md` and `scripts/`, as defined by the [authoritative command context](../../skills/blasphemous-modding-helper/SKILL.md#skill-command-context).
+
+PowerShell:
+
+```powershell
+$PYTHON3 = 'C:\path\to\python.exe'
+& $PYTHON3 (Join-Path $SkillRoot 'scripts\blasphemous_modding_test.py') run --project <PROJECT.csproj> --profile <PROFILE> --unity-log-dir <UNITY_LOG_DIR> --startup-timeout 60
+& $PYTHON3 (Join-Path $SkillRoot 'scripts\blasphemous_modding_test.py') logs <SESSION_ID>
+& $PYTHON3 (Join-Path $SkillRoot 'scripts\blasphemous_modding_test.py') stop <SESSION_ID>
+& $PYTHON3 (Join-Path $SkillRoot 'scripts\blasphemous_modding_test.py') clean <SESSION_ID>
+```
+
+Native Bash:
+
+```bash
+PYTHON3=/path/to/python3
+"$PYTHON3" "$SKILL_ROOT/scripts/blasphemous_modding_test.py" run --project <PROJECT.csproj> --profile <PROFILE> --unity-log-dir <UNITY_LOG_DIR> --startup-timeout 60
+"$PYTHON3" "$SKILL_ROOT/scripts/blasphemous_modding_test.py" logs <SESSION_ID>
+"$PYTHON3" "$SKILL_ROOT/scripts/blasphemous_modding_test.py" stop <SESSION_ID>
+"$PYTHON3" "$SKILL_ROOT/scripts/blasphemous_modding_test.py" clean <SESSION_ID>
 ```
 
 Completion criterion: the user has supplied the Manual verification and the agent has paired it with CLI/log evidence, or the record contains a warning naming the exact blocked step. `mod_loaded` never satisfies this gate by itself.

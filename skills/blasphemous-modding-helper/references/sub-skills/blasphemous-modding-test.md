@@ -15,23 +15,27 @@ Done when: the agent can name the active preferences file, project, profile, Pyt
 
 ## CLI entry point
 
-The repository entry point is:
+Before executing a command in this reference, the agent MUST follow the [Skill command context](../../SKILL.md#skill-command-context). The agent MUST run the CLI from the caller's Mod repository and MUST NOT assume that the caller has a repository checkout containing `skills/blasphemous-modding-helper`.
+
+The CLI entry point is:
 
 ```text
-skills/blasphemous-modding-helper/scripts/blasphemous_modding_test.py
+$SKILL_ROOT/scripts/blasphemous_modding_test.py
 ```
 
 PowerShell invocation shape:
 
 ```powershell
-& $PYTHON3 .\skills\blasphemous-modding-helper\scripts\blasphemous_modding_test.py <command> [options]
+& $PYTHON3 (Join-Path $SkillRoot 'scripts\blasphemous_modding_test.py') <command> [options]
 ```
 
 Native Bash invocation shape:
 
 ```bash
-"$PYTHON3" skills/blasphemous-modding-helper/scripts/blasphemous_modding_test.py <command> [options]
+"$PYTHON3" "$SKILL_ROOT/scripts/blasphemous_modding_test.py" <command> [options]
 ```
+
+The argument shapes below abbreviate the shell-specific invocation above as `<TEST_CLI>`. The agent MUST expand that placeholder with the PowerShell or Bash form; it MUST NOT replace it with a checkout-relative script path.
 
 The CLI has five commands: `run`, `stop`, `clean`, `logs`, and read-only `status`. The session identifier printed by `run` is a 32-character lowercase hexadecimal value and is required by `stop`, `clean`, and `logs`.
 
@@ -47,7 +51,7 @@ Common options are accepted by `run`, `clean`, `logs`, and `status`:
 ### `run`: build, deploy, launch, and optionally wait
 
 ```text
-<python3> .../blasphemous_modding_test.py run [common options]
+<TEST_CLI> run [common options]
     [--configuration Debug|Release]
     [--artifact PATH]
     [--dry-run]
@@ -117,7 +121,7 @@ Completion criterion: preflight has identified the exact profile, `Modding` root
 ### `stop`: stop one tracked session
 
 ```text
-<python3> .../blasphemous_modding_test.py stop SESSION_ID [--force]
+<TEST_CLI> stop SESSION_ID [--force]
 ```
 
 `stop` operates only on the process identity recorded in that session manifest and its captured child tree. It never selects a process by name and never attaches to an unrelated game. Without `--force`, request a normal stop; `--force` is limited to the same tracked tree when graceful termination does not finish.
@@ -133,7 +137,7 @@ Completion criterion: the tracked process is stopped or confirmed gone, and no u
 ### `logs`: read current startup evidence
 
 ```text
-<python3> .../blasphemous_modding_test.py logs SESSION_ID [common options] [--full]
+<TEST_CLI> logs SESSION_ID [common options] [--full]
 ```
 
 The CLI reads the existing logs in place and stores only evidence metadata in the temporary session manifest. It does not create a persistent log report or copy log contents. Default output is the last 200 lines per source; `--full` prints the complete current file.
@@ -164,7 +168,7 @@ Completion criterion: the agent reports the state, current/stale/missing status 
 ### `status`: read-only session view
 
 ```text
-<python3> .../blasphemous_modding_test.py status [common options]
+<TEST_CLI> status [common options]
 ```
 
 `status` prints the selected context and sessions newest first. Each entry reports its role (`active`, `archived`, or `cleaned`), deployment state, cleanup state, tracked process state, and evidence state. It copies no files, launches no process, and does not inspect gameplay.
@@ -174,7 +178,7 @@ Completion criterion: the agent can discover the newest session and all older ro
 ### `clean`: newest-first safe rollback
 
 ```text
-<python3> .../blasphemous_modding_test.py clean SESSION_ID [common options]
+<TEST_CLI> clean SESSION_ID [common options]
     [--remove-new-files]
 ```
 

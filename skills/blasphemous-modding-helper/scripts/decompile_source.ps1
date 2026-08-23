@@ -19,10 +19,12 @@
     Default: ../source_code (relative to this script location)
 
 .EXAMPLE
-    .\decompile_source.ps1
+    $SkillRoot = 'C:\path\to\blasphemous-modding-helper'
+    & (Join-Path $SkillRoot 'scripts\decompile_source.ps1')
 
 .EXAMPLE
-    .\decompile_source.ps1 -GamePath "D:\Games\Blasphemous" -OutputPath "D:\Projects\blasphemous-source"
+    $SkillRoot = 'C:\path\to\blasphemous-modding-helper'
+    & (Join-Path $SkillRoot 'scripts\decompile_source.ps1') -GamePath "D:\Games\Blasphemous" -OutputPath "D:\Projects\blasphemous-source"
 #>
 param(
     [Parameter(Mandatory = $false)]
@@ -90,7 +92,7 @@ catch {
 Failed to validate game path: $($_.Exception.Message)
 
 If your game is installed in a custom location, provide the correct path:
-    .\decompile_source.ps1 -GamePath "D:\Your\Custom\Path\Blasphemous"
+    & (Join-Path $SkillRoot 'scripts\decompile_source.ps1') -GamePath "D:\Your\Custom\Path\Blasphemous"
 
 Default path was: "$GamePath"
 "@

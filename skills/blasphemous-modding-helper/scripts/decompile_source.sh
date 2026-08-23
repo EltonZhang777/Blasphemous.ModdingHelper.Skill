@@ -10,8 +10,9 @@
 # Designed to be run once as a one-time setup step.
 #
 # Usage:
-#   ./decompile_source.sh
-#   ./decompile_source.sh -g /path/to/Blasphemous -o /path/to/output
+#   SKILL_ROOT=/path/to/blasphemous-modding-helper
+#   bash "$SKILL_ROOT/scripts/decompile_source.sh"
+#   bash "$SKILL_ROOT/scripts/decompile_source.sh" -g /path/to/Blasphemous -o /path/to/output
 #
 # Arguments:
 #   -g <path>  Game installation directory (auto-detected by OS)

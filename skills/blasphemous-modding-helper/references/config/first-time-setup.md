@@ -11,6 +11,8 @@ When no `preferences.md` is found, this reference describes the preference-setup
 
 **BLOCKING OPERATION**: This setup MUST complete before source analysis, log analysis, modding operations, or test workflow commands. The tracked-session stop exception remains available when normal context preflight is unavailable: `/blasphemous-modding-test stop SESSION_ID` MUST use only the recorded session identity and MUST address only that tracked process tree.
 
+Before executing a command in this reference, the agent MUST follow the [Skill command context](../../SKILL.md#skill-command-context).
+
 The agent MUST enter the main workflow only after setup completes.
 
 The agent MUST ask only the questions in this setup flow, MUST save `preferences.md`, and MUST continue only after those steps complete.
@@ -47,7 +49,7 @@ Setup is complete when the selected-scope `preferences.md` has been written and 
     │   10. The agent MUST continue.
    │
    └─ No (run decompiler) → the agent MUST run the decompile script synchronously
-       (Windows: `scripts/decompile_source.ps1` ; macOS/Linux: `scripts/decompile_source.sh`)
+       (Windows: `& (Join-Path $SkillRoot 'scripts\decompile_source.ps1')` ; macOS/Linux: `bash "$SKILL_ROOT/scripts/decompile_source.sh"`)
        ├─ Success →
        │   lightweight_source_code_path = <skill-root>/source_code/ (auto-set)
        │   5. The agent MUST ask: "Do you also have full source code?" (see Q4).
@@ -105,8 +107,8 @@ options:
 ```
 
 - When the user selects **No**, the agent MUST run the decompile script synchronously:
-  - **Windows**: `scripts/decompile_source.ps1`
-  - **macOS/Linux**: `scripts/decompile_source.sh`
+  - **Windows**: `& (Join-Path $SkillRoot 'scripts\decompile_source.ps1')`
+  - **macOS/Linux**: `bash "$SKILL_ROOT/scripts/decompile_source.sh"`
   On success, `lightweight_source_code_path` is auto-filled to `<skill-root>/source_code/`. On failure, the agent MUST prompt the user whether to provide paths manually.
 - When the user selects **Yes**, the agent MUST enter the manual path flow.
 
@@ -190,14 +192,14 @@ For an explicit branch or commit, the agent MUST collect the branch name or
 40-character SHA and pass `branch:REF` or `commit:SHA`. `latest` needs no
 additional value.
 
-The agent MUST run the matching fresh-clone command from the skill directory:
+The agent MUST run the matching fresh-clone command from the caller's Mod repository using the explicit Skill-root path:
 
 ```bash
-bash scripts/clone_modding_api.sh --scope user --selector latest
+bash "$SKILL_ROOT/scripts/clone_modding_api.sh" --scope user --selector latest
 ```
 
 ```powershell
-& .\scripts\clone_modding_api.ps1 -Scope user -Selector latest
+& (Join-Path $SkillRoot 'scripts\clone_modding_api.ps1') -Scope user -Selector latest
 ```
 
 The agent MUST use `--scope project` / `-Scope project` when Q1 selected
