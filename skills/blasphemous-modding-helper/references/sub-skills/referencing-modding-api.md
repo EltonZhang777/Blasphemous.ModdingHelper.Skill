@@ -1,16 +1,16 @@
 # Referencing ModdingAPI
 
-Use this sub-skill whenever a task needs ModdingAPI documentation, source
-guidance, or coding conventions. Resolve the reference before browsing it.
+The agent MUST use this sub-skill whenever a task needs ModdingAPI documentation, source
+guidance, or coding conventions. The agent MUST resolve the reference before browsing it.
 
 ## Reference selection
 
-1. Read the selected `preferences.md`.
-2. If `modding_api_reference_path` is present, use that local checkout. The
-   path is authoritative for the task; do not clone or update it during an
-   ordinary question. If its selector is absent, treat it as `latest` for
+1. The agent MUST read the selected `preferences.md`.
+2. If `modding_api_reference_path` is present, the agent MUST use that local checkout. The
+   path is authoritative for the task; the agent MUST NOT clone or update it during an
+   ordinary question. If its selector is absent, the agent MUST treat it as `latest` for
    explicit local-reference lifecycle commands.
-3. If the local fields are absent, use the release-aware remote fallback below.
+3. If the local fields are absent, the agent MUST use the release-aware remote fallback below.
    This is valid for legacy preferences and for a first-time setup where the
    user selected **Skip** for the local checkout.
 
@@ -21,7 +21,7 @@ The explicit local-checkout setup flow is in
 
 ## Routing contract
 
-The selected reference is the sole ModdingAPI authority for the task. Start at
+The selected reference is the sole ModdingAPI authority for the task. The agent MUST start at
 the upstream development index and follow only the linked page needed for the
 question:
 
@@ -30,12 +30,12 @@ question:
   `MODDING_API_DOCS_URL` comes from the resolver for the selected reference.
 
 The `main.md` name identifies the documentation index. It is not a request to
-read an unqualified Git branch. The resolver's tag, branch, or commit remains
+read an unqualified Git branch; the agent MUST NOT interpret it that way. The resolver's tag, branch, or commit remains
 part of every remote URL and every local-reference decision.
 
 ## Stable API topic routing
 
-Use this table as the first route for ordinary ModdingAPI work. Open the
+The agent MUST use this table as the first route for ordinary ModdingAPI work. The agent MUST open the
 selected reference's `docs/development/main.md`, then load the named page and
 any directly linked page required by the question.
 
@@ -51,13 +51,13 @@ any directly linked page required by the question.
 | Input and keybindings | `docs/development/input.md` | `docs/development/mod.md` for registration context |
 | Localization and translations | `docs/development/localization.md` | `docs/development/files.md` for resource paths |
 
-The table is a route, not a replacement API reference. Confirm version-sensitive
+The table is a route, not a replacement API reference. The agent MUST confirm version-sensitive
 signatures and behavior against the actual referenced assembly and matching
 source before writing code.
 
 ## Advanced and archived topics
 
-Load these pages only when the task names the topic or the stable route points
+The agent MUST load these pages only when the task names the topic or the stable route points
 to it. The upstream index currently labels them `Services (Archive)`:
 
 | Topic | First page | Handling |
@@ -67,23 +67,22 @@ to it. The upstream index currently labels them `Services (Archive)`:
 | Level modifications | `docs/development/levels.md` | Read on demand; label active-development behavior as version-sensitive |
 | Custom penitences | `docs/development/penitence.md` | Read on demand; verify current types in source |
 
-For a topic absent from both tables, use the selected reference's
+For a topic absent from both tables, the agent MUST use the selected reference's
 `docs/development/main.md` as an index, follow the exact linked page on demand,
-and record the resolved reference before relying on its guidance. Do not copy
+and record the resolved reference before relying on its guidance. The agent MUST NOT copy
 the upstream documentation tree into this Skill.
 
 ## Game-source separation
 
-Keep the two source routes distinct:
+The agent MUST keep the two source routes distinct:
 
-- ModdingAPI API, lifecycle, logging, and framework behavior use this
-  release-aware reference route.
-- Decompiled Blasphemous game classes use
+- ModdingAPI API, lifecycle, logging, and framework behavior MUST use the release-aware reference route.
+- Decompiled Blasphemous game classes MUST use
   [Blasphemous Source Code Navigation](../source_code_navigation/MAIN.md) and
   its source-analyzer branch.
 
 A task may load both routes when it compares framework behavior with a game
-class, but each claim must remain tied to the route that owns it.
+class, but each claim MUST remain tied to the route that owns it.
 
 ## Release-aware remote fallback
 
@@ -99,7 +98,7 @@ bash scripts/resolve_modding_api.sh --selector latest
 & .\scripts\resolve_modding_api.ps1 -Selector latest
 ```
 
-Use the resolver's `MODDING_API_DOCS_URL` and `MODDING_API_SOURCE_URL` outputs
+The agent MUST use the resolver's `MODDING_API_DOCS_URL` and `MODDING_API_SOURCE_URL` outputs
 for remote browsing. The `latest` selector is resolved from the official
 GitHub Releases endpoint and accepts only the newest non-draft,
 non-prerelease Release. It does not silently use `main` or another moving
@@ -110,14 +109,14 @@ one of:
 - `branch:REF` for an explicit branch, including `branch:main` when requested;
 - `commit:SHA` for an exact 40-character commit.
 
-Both resolver scripts emit the same `MODDING_API_*` fields. A nonzero exit
-prints a terminal `[ERROR REPORT]` with the cause and next step. Preserve that
-report, do not invent a URL, and ask for a corrected selector, local checkout,
+Both resolver scripts MUST emit the same `MODDING_API_*` fields. A nonzero exit
+MUST print a terminal `[ERROR REPORT]` with the cause and next step. The agent MUST preserve that
+report, MUST NOT invent a URL, and MUST ask for a corrected selector, local checkout,
 or a retry when the Release lookup fails.
 
 ## Local checkout use
 
-When setup succeeds, use the stored absolute path for documentation and source
+When setup succeeds, the agent MUST use the stored absolute path for documentation and source
 lookups. The fresh-clone commands are explicit operations and create a shallow
 checkout pinned to the stored selector. They also write the sibling lock state
 `<reference-path>.lock`; the lock is outside the checkout and records the
@@ -131,8 +130,8 @@ Tags and commits are detached; explicit branches track their corresponding
 
 ## Explicit lifecycle operations
 
-Use the lifecycle manager only when the user explicitly asks to check or
-update a local checkout. Ordinary ModdingAPI questions must not mutate the
+The agent MUST use the lifecycle manager only when the user explicitly asks to check or
+update a local checkout. Ordinary ModdingAPI questions MUST NOT mutate the
 checkout. The shared `scripts/clone_modding_api.js` and
 `scripts/manage_modding_api.js` implementations own clone and lifecycle
 behavior; Bash and PowerShell expose thin equivalent entry points. Both
@@ -181,7 +180,7 @@ absent, the operation remains non-mutating and emits
 `MODDING_API_PLAN_REQUIRES_FETCH=true`. An offline update fails because it
 cannot refresh the reference. If an online `check` loses network access, it may fall back to
 that same matching lock validation; missing or mismatching offline state is
-an error and must not be presented as a verified version.
+an error and MUST NOT be presented as a verified version.
 
 Exit codes are stable across Bash and PowerShell: `0` means success, `2`
 means usage or configuration failure, and `1` means a runtime, Git, network,
@@ -191,7 +190,7 @@ offline, or reference-state failure. Every failure prints a terminal text
 
 ## Documentation smoke check
 
-Run the deterministic documentation smoke check from the skill directory:
+The agent MUST run the deterministic documentation smoke check from the skill directory:
 
 ```bash
 bash scripts/test_referencing_modding_api.sh
@@ -208,7 +207,7 @@ remote route.
 
 ## Cross-platform acceptance gate
 
-Run the deterministic acceptance gate before publishing changes to the
+The agent MUST run the deterministic acceptance gate before publishing changes to the
 reference workflow:
 
 ```bash
@@ -250,6 +249,6 @@ bash scripts/test_modding_api_live.sh
 & .\scripts\test_modding_api_live.ps1
 ```
 
-Run the live check only when network access is available. A failure is not a
-reason to substitute `main`; preserve the resolver error report and retry or
-use an explicit selector.
+The agent MAY run the live check only when network access is available. A failure MUST NOT be
+treated as a reason to substitute `main`; the agent MUST preserve the resolver error report and
+retry or use an explicit selector.

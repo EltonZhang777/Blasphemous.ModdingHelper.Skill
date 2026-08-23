@@ -23,11 +23,11 @@ This sub-skill analyzes Blasphemous log files, focusing on debugging Mod-related
 
 When the mod-test CLI reports a missing Unity log directory or log:
 
-1. Ask the user for the directory that contains the current Unity log.
-2. Add `unity_log_dir: PATH` to the active `preferences.md`, or pass `--unity-log-dir PATH` for a one-run override. Project preferences take precedence over user preferences.
-3. Re-run `logs SESSION_ID` or the explicit startup-evidence wait.
+1. The agent MUST ask the user for the directory that contains the current Unity log.
+2. The agent MUST add `unity_log_dir: PATH` to the active `preferences.md`, or pass `--unity-log-dir PATH` for a one-run override. Project preferences MUST take precedence over user preferences.
+3. The agent MUST re-run `logs SESSION_ID` or the explicit startup-evidence wait.
 
 This step is complete only when the CLI resolves the Unity log or the warning remains visible with the exact missing path and preference file to update. The CLI reads the existing BepInEx and Unity logs in place; it does not create persistent log copies.
 
-`launched`, `ready`, and `mod_loaded` are startup states. They do not verify visual, input, combat, menu, save, or other gameplay behavior. After startup evidence is collected, ask the player to operate the game and report the observed behavior in natural language; treat that report as the manual gameplay evidence.
+`launched`, `ready`, and `mod_loaded` are startup states. They MUST NOT be used to verify visual, input, combat, menu, save, or other gameplay behavior. After startup evidence is collected, the agent MUST ask the player to operate the game and report the observed behavior in natural language; the agent MUST treat that report as the manual gameplay evidence.
 
