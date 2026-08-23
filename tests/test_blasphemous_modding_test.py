@@ -1,5 +1,6 @@
 import hashlib
 import importlib.util
+import io
 import json
 import os
 import platform
@@ -10,7 +11,9 @@ import sys
 import tempfile
 import unittest
 import zipfile
+from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
+from types import SimpleNamespace
 from unittest import mock
 
 
@@ -63,6 +66,18 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
             capture_output=True,
             text=True,
             check=False,
+        )
+
+    def run_module_cli(self, module, *arguments):
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+        with mock.patch.object(module.Path, "cwd", return_value=self.root.resolve()):
+            with redirect_stdout(stdout), redirect_stderr(stderr):
+                returncode = module.main(arguments)
+        return SimpleNamespace(
+            returncode=returncode,
+            stdout=stdout.getvalue(),
+            stderr=stderr.getvalue(),
         )
 
     def create_profile(self, name="profile"):
@@ -158,8 +173,15 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
         return package_root
 
     def deployment_manifests(self):
-        sessions = self.temp_root / "blasphemous-modding-test" / "sessions"
-        return sorted(sessions.glob("*/manifest.json"))
+        roots = (
+            self.temp_root / "blasphemous-modding-test" / "sessions",
+            self.temp_root / "sessions",
+        )
+        return sorted(
+            manifest
+            for sessions in roots
+            for manifest in sessions.glob("*/manifest.json")
+        )
 
     def load_cli_module(self):
         module_name = f"blasphemous_modding_test_{id(self)}"
@@ -168,6 +190,64 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
         sys.modules[module_name] = module
         spec.loader.exec_module(module)
         return module
+
+    def create_launched_session(self):
+        module = self.load_cli_module()
+        profile = self.create_profile()
+        launcher = profile / "custom-launcher"
+        launcher.write_bytes(b"launcher")
+        if os.name != "nt":
+            launcher.chmod(0o755)
+        project = self.create_project()
+        artifact = self.create_package(root=self.root, target_name="known-artifact")
+        self.write_project_preferences(profile)
+        environment = {
+            "Windows": "Windows",
+            "Linux": "Linux",
+            "Darwin": "macOS",
+        }[platform.system()]
+        profile_preflight = module.preflight_profile(
+            profile,
+            environment,
+            explicit_launcher=launcher.name,
+        )
+        process = mock.Mock()
+        process.pid = 1234
+        process.poll.return_value = None
+        identity = module.ProcessIdentity(
+            process.pid,
+            "start-token",
+            launcher.resolve(),
+        )
+
+        with mock.patch.object(
+            module,
+            "_deployment_state_root",
+            return_value=self.temp_root / "sessions",
+        ):
+            with module.prepare_artifact(
+                project,
+                "Debug",
+                explicit_artifact=str(artifact),
+                cwd=self.root,
+            ) as plan:
+                deployment = module.deploy_artifact(plan, profile_preflight)
+            with mock.patch.object(module, "_find_conflicting_process", return_value=None):
+                with mock.patch.object(module, "_process_identity", return_value=identity):
+                    with mock.patch.object(module.subprocess, "Popen", return_value=process):
+                        module.launch_session(deployment, profile_preflight)
+        return module, deployment, profile_preflight, process, identity
+
+    def live_process_double(self, module, launcher, pid=4321):
+        process = mock.Mock()
+        process.pid = pid
+        process.poll.return_value = None
+        identity = module.ProcessIdentity(
+            pid,
+            f"start-token-{pid}",
+            launcher.resolve(),
+        )
+        return process, identity
 
     def write_project_preferences(self, profile):
         preferences = self.root / ".skills" / "blasphemous-modding-helper" / "preferences.md"
@@ -205,8 +285,246 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
 
         self.assert_success(result)
         self.assertIn("run", result.stdout)
+        self.assertIn("stop", result.stdout)
         self.assertIn("status", result.stdout)
         self.assertIn("--dry-run", result.stdout)
+
+    def test_stop_help_exposes_session_and_force(self):
+        result = self.run_cli("stop", "--help")
+
+        self.assert_success(result)
+        self.assertIn("SESSION_ID", result.stdout)
+        self.assertIn("--force", result.stdout)
+
+    def test_launch_records_live_profile_process(self):
+        module = self.load_cli_module()
+        profile = self.create_profile()
+        launcher = profile / "custom-launcher"
+        launcher.write_bytes(b"launcher")
+        if os.name != "nt":
+            launcher.chmod(0o755)
+        project = self.create_project()
+        artifact = self.create_package(root=self.root, target_name="known-artifact")
+        self.write_project_preferences(profile)
+        environment = {
+            "Windows": "Windows",
+            "Linux": "Linux",
+            "Darwin": "macOS",
+        }[platform.system()]
+        profile_preflight = module.preflight_profile(
+            profile,
+            environment,
+            explicit_launcher=launcher.name,
+        )
+        process = mock.Mock()
+        process.pid = 1234
+        process.poll.return_value = None
+        identity = module.ProcessIdentity(
+            process.pid,
+            "start-token",
+            launcher.resolve(),
+        )
+
+        with mock.patch.object(
+            module,
+            "_deployment_state_root",
+            return_value=self.temp_root / "sessions",
+        ):
+            with module.prepare_artifact(
+                project,
+                "Debug",
+                explicit_artifact=str(artifact),
+                cwd=self.root,
+            ) as plan:
+                deployment = module.deploy_artifact(plan, profile_preflight)
+            with mock.patch.object(module, "_find_conflicting_process", return_value=None):
+                with mock.patch.object(module, "_process_identity", return_value=identity):
+                    with mock.patch.object(module.subprocess, "Popen", return_value=process) as popen:
+                        launch = module.launch_session(deployment, profile_preflight)
+
+        self.assertEqual(launch.session_id, deployment.session_id)
+        self.assertEqual(launch.pid, process.pid)
+        command, options = popen.call_args
+        self.assertEqual(command[0], [str(launcher.resolve())])
+        self.assertEqual(options["cwd"], str(profile.resolve()))
+        self.assertFalse(options["shell"])
+        payload = json.loads(
+            deployment.state_path.read_text(encoding="utf-8")
+        )
+        self.assertEqual(payload["process"]["state"], "launched")
+        self.assertEqual(payload["process"]["pid"], process.pid)
+        self.assertEqual(payload["process"]["start_token"], "start-token")
+
+    def test_launch_refuses_conflicting_running_launcher(self):
+        module = self.load_cli_module()
+        profile = self.create_profile()
+        launcher = profile / "custom-launcher"
+        launcher.write_bytes(b"launcher")
+        if os.name != "nt":
+            launcher.chmod(0o755)
+        project = self.create_project()
+        artifact = self.create_package(root=self.root, target_name="known-artifact")
+        self.write_project_preferences(profile)
+        environment = {
+            "Windows": "Windows",
+            "Linux": "Linux",
+            "Darwin": "macOS",
+        }[platform.system()]
+        profile_preflight = module.preflight_profile(
+            profile,
+            environment,
+            explicit_launcher=launcher.name,
+        )
+        conflict = module.ProcessIdentity(4321, "other-token", launcher.resolve())
+
+        with mock.patch.object(
+            module,
+            "_deployment_state_root",
+            return_value=self.temp_root / "sessions",
+        ):
+            with module.prepare_artifact(
+                project,
+                "Debug",
+                explicit_artifact=str(artifact),
+                cwd=self.root,
+            ) as plan:
+                deployment = module.deploy_artifact(plan, profile_preflight)
+            with mock.patch.object(
+                module,
+                "_find_conflicting_process",
+                return_value=conflict,
+            ):
+                with mock.patch.object(module.subprocess, "Popen") as popen:
+                    with self.assertRaises(module.CliError) as failure:
+                        module.launch_session(deployment, profile_preflight)
+
+        self.assertEqual(failure.exception.code, 50)
+        self.assertIn("already running", str(failure.exception))
+        popen.assert_not_called()
+
+    def test_launch_does_not_report_exited_process_as_launched(self):
+        module = self.load_cli_module()
+        profile = self.create_profile()
+        launcher = profile / "custom-launcher"
+        launcher.write_bytes(b"launcher")
+        if os.name != "nt":
+            launcher.chmod(0o755)
+        project = self.create_project()
+        artifact = self.create_package(root=self.root, target_name="known-artifact")
+        self.write_project_preferences(profile)
+        environment = {
+            "Windows": "Windows",
+            "Linux": "Linux",
+            "Darwin": "macOS",
+        }[platform.system()]
+        profile_preflight = module.preflight_profile(
+            profile,
+            environment,
+            explicit_launcher=launcher.name,
+        )
+        process = mock.Mock()
+        process.pid = 1234
+        process.poll.return_value = 7
+
+        with mock.patch.object(
+            module,
+            "_deployment_state_root",
+            return_value=self.temp_root / "sessions",
+        ):
+            with module.prepare_artifact(
+                project,
+                "Debug",
+                explicit_artifact=str(artifact),
+                cwd=self.root,
+            ) as plan:
+                deployment = module.deploy_artifact(plan, profile_preflight)
+            with mock.patch.object(module, "_find_conflicting_process", return_value=None):
+                with mock.patch.object(module.subprocess, "Popen", return_value=process):
+                    with self.assertRaises(module.CliError) as failure:
+                        module.launch_session(deployment, profile_preflight)
+
+        self.assertEqual(failure.exception.code, 50)
+        self.assertIn("exited", str(failure.exception))
+        payload = json.loads(
+            deployment.state_path.read_text(encoding="utf-8")
+        )
+        self.assertEqual(payload["process"]["state"], "exited")
+
+    def test_stop_terminates_tracked_process_and_is_idempotent(self):
+        module, deployment, profile_preflight, process, identity = self.create_launched_session()
+
+        with mock.patch.object(
+            module,
+            "_deployment_state_root",
+            return_value=self.temp_root / "sessions",
+        ):
+            with mock.patch.object(module, "_process_identity", return_value=identity):
+                with mock.patch.object(module, "_terminate_process_tree") as terminate:
+                    with mock.patch.object(module, "_wait_for_process_exit", return_value=True):
+                        result = module.stop_session(deployment.session_id, force=True)
+
+        self.assertEqual(result.session_id, deployment.session_id)
+        self.assertEqual(result.state, "stopped")
+        terminate.assert_called_once_with(identity, force=True)
+        payload = json.loads(
+            deployment.state_path.read_text(encoding="utf-8")
+        )
+        self.assertEqual(payload["process"]["state"], "stopped")
+
+        with mock.patch.object(
+            module,
+            "_deployment_state_root",
+            return_value=self.temp_root / "sessions",
+        ):
+            with mock.patch.object(module, "_terminate_process_tree") as terminate_again:
+                repeated = module.stop_session(deployment.session_id)
+        self.assertEqual(repeated.state, "stopped")
+        terminate_again.assert_not_called()
+
+    def test_stop_marks_an_already_exited_process_without_termination(self):
+        module, deployment, profile_preflight, process, identity = self.create_launched_session()
+
+        with mock.patch.object(
+            module,
+            "_deployment_state_root",
+            return_value=self.temp_root / "sessions",
+        ):
+            with mock.patch.object(module, "_process_identity", return_value=None):
+                with mock.patch.object(module, "_terminate_process_tree") as terminate:
+                    result = module.stop_session(deployment.session_id)
+
+        self.assertEqual(result.state, "exited")
+        terminate.assert_not_called()
+        payload = json.loads(
+            deployment.state_path.read_text(encoding="utf-8")
+        )
+        self.assertEqual(payload["process"]["state"], "exited")
+
+    def test_stop_refuses_a_reused_pid_without_termination(self):
+        module, deployment, profile_preflight, process, identity = self.create_launched_session()
+        replacement = module.ProcessIdentity(
+            identity.pid,
+            "replacement-start-token",
+            identity.executable,
+        )
+
+        with mock.patch.object(
+            module,
+            "_deployment_state_root",
+            return_value=self.temp_root / "sessions",
+        ):
+            with mock.patch.object(module, "_process_identity", return_value=replacement):
+                with mock.patch.object(module, "_terminate_process_tree") as terminate:
+                    with self.assertRaises(module.CliError) as failure:
+                        module.stop_session(deployment.session_id)
+
+        self.assertEqual(failure.exception.code, 70)
+        self.assertIn("reused", str(failure.exception))
+        terminate.assert_not_called()
+        payload = json.loads(
+            deployment.state_path.read_text(encoding="utf-8")
+        )
+        self.assertEqual(payload["process"]["state"], "launched")
 
     def test_dry_run_resolves_project_and_profile_without_mutation(self):
         profile = self.create_profile()
@@ -411,6 +729,34 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
 
         self.assert_success(result)
         self.assertIn(f"Launcher: {custom_launcher}", result.stdout)
+        self.assertIn("Warning: Using explicit launcher override", result.stderr)
+
+    def test_default_launcher_symlink_cannot_escape_the_profile(self):
+        profile = self.create_profile()
+        launcher = self.launcher_path(profile)
+        launcher.unlink()
+        external_launcher = self.root / launcher.name
+        external_launcher.parent.mkdir(parents=True, exist_ok=True)
+        external_launcher.write_bytes(b"external-launcher")
+        if os.name != "nt":
+            external_launcher.chmod(0o755)
+        try:
+            os.symlink(external_launcher, launcher)
+        except OSError as error:
+            self.skipTest(f"symbolic links unavailable: {error}")
+        self.create_project()
+        package_root = self.create_package()
+        self.write_project_preferences(profile)
+
+        result = self.run_cli(
+            "run",
+            "--dry-run",
+            "--artifact",
+            str(package_root),
+        )
+
+        self.assertEqual(result.returncode, 10)
+        self.assertIn("No known game launcher", result.stderr)
 
     def test_invalid_preferences_encoding_returns_profile_preference_error(self):
         preferences = self.root / ".skills" / "blasphemous-modding-helper" / "preferences.md"
@@ -432,6 +778,19 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
         result = self.run_cli(
             "run",
             "--dry-run",
+            environment=environment,
+        )
+
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("unsupported", result.stderr.lower())
+
+    def test_stop_rejects_compatibility_shell(self):
+        environment = self.environment.copy()
+        environment["MSYSTEM"] = "MINGW64"
+
+        result = self.run_cli(
+            "stop",
+            "00000000000000000000000000000000",
             environment=environment,
         )
 
@@ -480,11 +839,31 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
 
     @unittest.skipUnless(shutil.which("dotnet"), "dotnet SDK required")
     def test_default_build_deploys_the_validated_package(self):
+        module = self.load_cli_module()
         profile = self.create_profile()
         self.create_buildable_project()
         self.write_project_preferences(profile)
+        process, identity = self.live_process_double(module, self.launcher_path(profile))
+        real_popen = module.subprocess.Popen
 
-        result = self.run_cli("run")
+        def popen_side_effect(command, *arguments, **keywords):
+            if command[0] == str(self.launcher_path(profile)):
+                return process
+            return real_popen(command, *arguments, **keywords)
+
+        with mock.patch.object(
+            module,
+            "_deployment_state_root",
+            return_value=self.temp_root / "sessions",
+        ):
+            with mock.patch.object(module, "_find_conflicting_process", return_value=None):
+                with mock.patch.object(module, "_process_identity", return_value=identity):
+                    with mock.patch.object(
+                        module.subprocess,
+                        "Popen",
+                        side_effect=popen_side_effect,
+                    ):
+                        result = self.run_module_cli(module, "run")
 
         self.assert_success(result)
         self.assertEqual(
@@ -607,6 +986,7 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
         self.assertIn(f"Artifact: {artifact}", result.stdout)
 
     def test_run_deploys_artifact_relative_to_selected_modding_root(self):
+        module = self.load_cli_module()
         profile = self.create_profile()
         self.create_project()
         artifact = self.create_package(root=self.root, target_name="known-artifact")
@@ -616,12 +996,22 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
             encoding="utf-8",
         )
         self.write_project_preferences(profile)
+        process, identity = self.live_process_double(module, self.launcher_path(profile))
 
-        result = self.run_cli(
-            "run",
-            "--artifact",
-            str(artifact),
-        )
+        with mock.patch.object(
+            module,
+            "_deployment_state_root",
+            return_value=self.temp_root / "sessions",
+        ):
+            with mock.patch.object(module, "_find_conflicting_process", return_value=None):
+                with mock.patch.object(module, "_process_identity", return_value=identity):
+                    with mock.patch.object(module.subprocess, "Popen", return_value=process):
+                        result = self.run_module_cli(
+                            module,
+                            "run",
+                            "--artifact",
+                            str(artifact),
+                        )
 
         self.assert_success(result)
         for relative_path in (
@@ -635,9 +1025,30 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
             )
         self.assertFalse((profile / "plugins").exists())
         self.assertIn("Deployment session:", result.stdout)
+        self.assertIn("Launch state: launched", result.stdout)
+        self.assertIn("Process ID: 4321", result.stdout)
         self.assertIn("Deployed files: 3", result.stdout)
 
+    def test_launcher_command_string_is_rejected(self):
+        profile = self.create_profile()
+        self.create_project()
+        artifact = self.create_package(root=self.root, target_name="known-artifact")
+        self.write_project_preferences(profile)
+
+        result = self.run_cli(
+            "run",
+            "--dry-run",
+            "--artifact",
+            str(artifact),
+            "--launcher",
+            f"{self.launcher_path(profile)} --flag",
+        )
+
+        self.assertEqual(result.returncode, 10)
+        self.assertIn("does not exist", result.stderr)
+
     def test_deployment_records_backups_and_hashes_without_logs(self):
+        module = self.load_cli_module()
         profile = self.create_profile()
         self.create_project()
         artifact = self.create_package(root=self.root, target_name="known-artifact")
@@ -645,12 +1056,22 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
         existing.parent.mkdir()
         existing.write_bytes(b"pre-test-plugin")
         self.write_project_preferences(profile)
+        process, identity = self.live_process_double(module, self.launcher_path(profile))
 
-        result = self.run_cli(
-            "run",
-            "--artifact",
-            str(artifact),
-        )
+        with mock.patch.object(
+            module,
+            "_deployment_state_root",
+            return_value=self.temp_root / "sessions",
+        ):
+            with mock.patch.object(module, "_find_conflicting_process", return_value=None):
+                with mock.patch.object(module, "_process_identity", return_value=identity):
+                    with mock.patch.object(module.subprocess, "Popen", return_value=process):
+                        result = self.run_module_cli(
+                            module,
+                            "run",
+                            "--artifact",
+                            str(artifact),
+                        )
 
         self.assert_success(result)
         manifests = self.deployment_manifests()

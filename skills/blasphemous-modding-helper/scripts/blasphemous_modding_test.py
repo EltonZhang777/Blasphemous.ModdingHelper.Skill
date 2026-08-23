@@ -2,8 +2,9 @@
 """Profile-aware entry point for the Blasphemous mod test workflow.
 
 This workflow validates the invocation environment, resolves preferences and
-a project, preflights a modding profile, builds or selects one package, and
-deploys a validated artifact. Launch, evidence, and cleanup are later steps.
+a project, preflights a modding profile, builds or selects one package,
+deploys a validated artifact, and tracks the profile-local game process.
+Evidence and cleanup are later steps.
 """
 
 from __future__ import annotations
@@ -14,11 +15,13 @@ import json
 import os
 import platform
 import re
+import signal
 import shutil
 import stat
 import subprocess
 import sys
 import tempfile
+import time
 import uuid
 import zipfile
 import xml.etree.ElementTree as ET
@@ -39,6 +42,8 @@ EXIT_DEPLOY = 40
 EXIT_LAUNCH = 50
 EXIT_LOGS = 60
 EXIT_CLEAN = 70
+LAUNCH_GRACE_PERIOD_SECONDS = 0.5
+PROCESS_POLL_INTERVAL_SECONDS = 0.05
 
 
 class CliError(Exception):
@@ -99,6 +104,26 @@ class DeploymentResult:
     session_id: str
     state_path: Path
     deployed_files: Tuple[Path, ...]
+
+
+@dataclass(frozen=True)
+class ProcessIdentity:
+    pid: int
+    start_token: str
+    executable: Optional[Path]
+
+
+@dataclass(frozen=True)
+class LaunchResult:
+    session_id: str
+    state_path: Path
+    pid: int
+
+
+@dataclass(frozen=True)
+class StopResult:
+    session_id: str
+    state: str
 
 
 @dataclass
@@ -826,26 +851,786 @@ def _manifest_payload(
     return payload
 
 
+def _atomic_write_json(path: Path, payload: Dict[str, object]) -> None:
+    temporary = path.with_suffix(".tmp")
+    temporary.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    os.replace(temporary, path)
+
+
 def _write_manifest(
     transaction: DeploymentTransaction,
     status: str,
     error: Optional[str] = None,
     rollback_error: Optional[str] = None,
 ) -> None:
-    temporary = transaction.state_path.with_suffix(".tmp")
-    temporary.write_text(
-        json.dumps(
-            _manifest_payload(transaction, status, error, rollback_error),
-            ensure_ascii=False,
-            indent=2,
-            sort_keys=True,
-        )
-        + "\n",
-        encoding="utf-8",
+    _atomic_write_json(
+        transaction.state_path,
+        _manifest_payload(transaction, status, error, rollback_error),
     )
-    os.replace(temporary, transaction.state_path)
 
 
+def _read_session_manifest(state_path: Path) -> Dict[str, object]:
+    try:
+        payload = json.loads(state_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as error:
+        raise CliError(
+            EXIT_CLEAN,
+            "stop/clean",
+            f"Could not read session state {state_path}: {error}",
+        ) from error
+    if not isinstance(payload, dict):
+        raise CliError(
+            EXIT_CLEAN,
+            "stop/clean",
+            f"Session state is not an object: {state_path}",
+        )
+    return payload
+
+
+def _session_manifest_path(session_id: str) -> Path:
+    if re.fullmatch(r"[0-9a-f]{32}", session_id) is None:
+        raise CliError(
+            EXIT_CLEAN,
+            "stop/clean",
+            "Session ID must be a 32-character hexadecimal identifier.",
+        )
+    state_path = _deployment_state_root() / session_id / "manifest.json"
+    if not state_path.is_file():
+        raise CliError(
+            EXIT_CLEAN,
+            "stop/clean",
+            f"Tracked session state does not exist: {session_id}",
+        )
+    return state_path
+
+
+def _normalise_executable(path: Optional[Path]) -> Optional[Path]:
+    if path is None:
+        return None
+    try:
+        return path.resolve(strict=False)
+    except OSError:
+        return path.absolute()
+
+
+def _same_executable(first: Optional[Path], second: Optional[Path]) -> bool:
+    first_value = _normalise_executable(first)
+    second_value = _normalise_executable(second)
+    if first_value is None or second_value is None:
+        return False
+    return first_value.as_posix().casefold() == second_value.as_posix().casefold()
+
+
+def _windows_process_identity(
+    pid: int,
+    strict: bool = False,
+) -> Optional[ProcessIdentity]:
+    import ctypes
+    from ctypes import wintypes
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    handle = kernel32.OpenProcess(0x1000, False, pid)
+    if not handle:
+        error_code = ctypes.get_last_error()
+        if error_code == 5:
+            if strict:
+                raise PermissionError(error_code, "OpenProcess access denied")
+            return None
+        if error_code not in {2, 6, 87, 1168}:
+            raise OSError(error_code, "OpenProcess failed")
+        return None
+    try:
+        creation = wintypes.FILETIME()
+        exit_time = wintypes.FILETIME()
+        kernel_time = wintypes.FILETIME()
+        user_time = wintypes.FILETIME()
+        if not kernel32.GetProcessTimes(
+            handle,
+            ctypes.byref(creation),
+            ctypes.byref(exit_time),
+            ctypes.byref(kernel_time),
+            ctypes.byref(user_time),
+        ):
+            error_code = ctypes.get_last_error()
+            if error_code == 5:
+                if strict:
+                    raise PermissionError(error_code, "GetProcessTimes access denied")
+                return None
+            if error_code not in {2, 6, 87, 1168}:
+                raise OSError(error_code, "GetProcessTimes failed")
+            return None
+        start_token = (
+            f"{creation.dwHighDateTime:08x}{creation.dwLowDateTime:08x}"
+        )
+        executable: Optional[Path] = None
+        buffer = ctypes.create_unicode_buffer(32768)
+        buffer_size = wintypes.DWORD(len(buffer))
+        if kernel32.QueryFullProcessImageNameW(
+            handle,
+            0,
+            buffer,
+            ctypes.byref(buffer_size),
+        ):
+            executable = _normalise_executable(Path(buffer.value))
+        return ProcessIdentity(pid, start_token, executable)
+    finally:
+        kernel32.CloseHandle(handle)
+
+
+def _proc_process_identity(
+    pid: int,
+    strict: bool = False,
+) -> Optional[ProcessIdentity]:
+    stat_path = Path("/proc") / str(pid) / "stat"
+    try:
+        contents = stat_path.read_text(encoding="utf-8")
+    except OSError as error:
+        if strict and getattr(error, "errno", None) == 13:
+            raise
+        return None
+    except UnicodeError:
+        return None
+    closing_parenthesis = contents.rfind(")")
+    if closing_parenthesis < 0:
+        return None
+    fields = contents[closing_parenthesis + 2 :].split()
+    if len(fields) < 20:
+        return None
+    try:
+        start_token = fields[19]
+    except IndexError:
+        return None
+    executable: Optional[Path] = None
+    executable_path = Path("/proc") / str(pid) / "exe"
+    try:
+        executable = _normalise_executable(executable_path.resolve(strict=True))
+    except OSError:
+        pass
+    return ProcessIdentity(pid, start_token, executable)
+
+
+def _ps_process_identity(
+    pid: int,
+    strict: bool = False,
+) -> Optional[ProcessIdentity]:
+    start_result = subprocess.run(
+        ["ps", "-p", str(pid), "-o", "lstart="],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if start_result.returncode != 0 or not start_result.stdout.strip():
+        return None
+    command_result = subprocess.run(
+        ["ps", "-p", str(pid), "-o", "command="],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    command = command_result.stdout.strip()
+    executable: Optional[Path] = None
+    if command:
+        first_word = command.split()[0]
+        if "/" in first_word:
+            executable = _normalise_executable(Path(first_word))
+    return ProcessIdentity(pid, start_result.stdout.strip(), executable)
+
+
+def _process_identity(
+    pid: int,
+    strict: bool = False,
+) -> Optional[ProcessIdentity]:
+    if pid <= 0:
+        return None
+    if os.name == "nt":
+        return _windows_process_identity(pid, strict=strict)
+    if (Path("/proc")).is_dir():
+        return _proc_process_identity(pid, strict=strict)
+    return _ps_process_identity(pid, strict=strict)
+
+
+def _windows_process_entries() -> Tuple[Tuple[int, int, str], ...]:
+    import ctypes
+    from ctypes import wintypes
+
+    class ProcessEntry32W(ctypes.Structure):
+        _fields_ = [
+            ("dwSize", wintypes.DWORD),
+            ("cntUsage", wintypes.DWORD),
+            ("th32ProcessID", wintypes.DWORD),
+            ("th32DefaultHeapID", ctypes.POINTER(wintypes.ULONG)),
+            ("th32ModuleID", wintypes.DWORD),
+            ("cntThreads", wintypes.DWORD),
+            ("th32ParentProcessID", wintypes.DWORD),
+            ("pcPriClassBase", wintypes.LONG),
+            ("dwFlags", wintypes.DWORD),
+            ("szExeFile", wintypes.WCHAR * 260),
+        ]
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    snapshot = kernel32.CreateToolhelp32Snapshot(0x00000002, 0)
+    if snapshot == -1:
+        raise OSError(ctypes.get_last_error(), "CreateToolhelp32Snapshot failed")
+    try:
+        entry = ProcessEntry32W()
+        entry.dwSize = ctypes.sizeof(ProcessEntry32W)
+        entries: List[Tuple[int, int, str]] = []
+        if not kernel32.Process32FirstW(snapshot, ctypes.byref(entry)):
+            return ()
+        while True:
+            entries.append(
+                (
+                    int(entry.th32ProcessID),
+                    int(entry.th32ParentProcessID),
+                    str(entry.szExeFile),
+                )
+            )
+            if not kernel32.Process32NextW(snapshot, ctypes.byref(entry)):
+                break
+        return tuple(entries)
+    finally:
+        kernel32.CloseHandle(snapshot)
+
+
+def _process_ids() -> Tuple[int, ...]:
+    if os.name == "nt":
+        return tuple(pid for pid, _, _ in _windows_process_entries())
+
+    proc_root = Path("/proc")
+    if proc_root.is_dir():
+        process_ids = []
+        for candidate in proc_root.iterdir():
+            if candidate.name.isdigit():
+                process_ids.append(int(candidate.name))
+        return tuple(process_ids)
+
+    result = subprocess.run(
+        ["ps", "-axo", "pid="],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        raise OSError(result.stderr.strip() or "ps failed")
+    process_ids = []
+    for line in result.stdout.splitlines():
+        try:
+            process_ids.append(int(line.strip()))
+        except ValueError:
+            continue
+    return tuple(process_ids)
+
+
+def _process_image_name(pid: int, known_name: Optional[str] = None) -> Optional[str]:
+    if known_name is not None:
+        return known_name
+    proc_name = Path("/proc") / str(pid) / "comm"
+    if proc_name.is_file():
+        try:
+            return proc_name.read_text(encoding="utf-8").strip().casefold()
+        except (OSError, UnicodeError):
+            return None
+    try:
+        result = subprocess.run(
+            ["ps", "-p", str(pid), "-o", "comm="],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError:
+        return None
+    if result.returncode != 0 or not result.stdout.strip():
+        return None
+    return Path(result.stdout.strip()).name.casefold()
+
+
+def _find_conflicting_process(launcher: Path) -> Optional[ProcessIdentity]:
+    current_pid = os.getpid()
+    if os.name == "nt":
+        process_entries = _windows_process_entries()
+        process_ids = tuple(pid for pid, _, _ in process_entries)
+        image_names = {
+            pid: image_name.casefold()
+            for pid, _, image_name in process_entries
+        }
+    else:
+        process_ids = _process_ids()
+        image_names = {}
+    for pid in process_ids:
+        if pid == current_pid:
+            continue
+        identity = _process_identity(pid)
+        if identity is not None and _same_executable(identity.executable, launcher):
+            return identity
+        if identity is not None and identity.executable is not None:
+            continue
+        image_name = _process_image_name(pid, image_names.get(pid))
+        if (
+            image_name == launcher.name.casefold()
+            and (identity is None or identity.executable is None)
+        ):
+            return identity or ProcessIdentity(pid, "uninspectable", None)
+    return None
+
+
+def _inspect_conflicting_process(profile: ProfilePreflight) -> Optional[ProcessIdentity]:
+    try:
+        return _find_conflicting_process(profile.launcher)
+    except OSError as error:
+        raise CliError(
+            EXIT_LAUNCH,
+            "launch",
+            f"Could not inspect running processes before launch: {error}",
+        ) from error
+
+
+def _tracked_process_is_alive(identity: ProcessIdentity) -> bool:
+    try:
+        current = _process_identity(identity.pid, strict=True)
+    except OSError as error:
+        raise CliError(
+            EXIT_CLEAN,
+            "stop/clean",
+            f"Could not inspect tracked process ID {identity.pid}: {error}; refusing to stop it.",
+        ) from error
+    if current is None:
+        return False
+    if current.start_token != identity.start_token:
+        raise CliError(
+            EXIT_CLEAN,
+            "stop/clean",
+            f"Tracked process ID {identity.pid} was reused by another process; refusing to stop it.",
+        )
+    if identity.executable and current.executable and not _same_executable(
+        current.executable,
+        identity.executable,
+    ):
+        raise CliError(
+            EXIT_CLEAN,
+            "stop/clean",
+            f"Tracked process ID {identity.pid} no longer belongs to the selected launcher; refusing to stop it.",
+        )
+    return True
+
+
+def _process_parent_map() -> Dict[int, int]:
+    if os.name == "nt":
+        return {
+            pid: parent_pid
+            for pid, parent_pid, _ in _windows_process_entries()
+        }
+    proc_root = Path("/proc")
+    if proc_root.is_dir():
+        parents: Dict[int, int] = {}
+        for candidate in proc_root.iterdir():
+            if not candidate.name.isdigit():
+                continue
+            identity_path = candidate / "stat"
+            try:
+                contents = identity_path.read_text(encoding="utf-8")
+            except (OSError, UnicodeError):
+                continue
+            closing_parenthesis = contents.rfind(")")
+            if closing_parenthesis < 0:
+                continue
+            fields = contents[closing_parenthesis + 2 :].split()
+            if len(fields) < 4:
+                continue
+            try:
+                parents[int(candidate.name)] = int(fields[1])
+            except ValueError:
+                continue
+        return parents
+
+    result = subprocess.run(
+        ["ps", "-axo", "pid=,ppid="],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        raise OSError(result.stderr.strip() or "ps failed")
+    parents = {}
+    for line in result.stdout.splitlines():
+        fields = line.split()
+        if len(fields) < 2:
+            continue
+        try:
+            parents[int(fields[0])] = int(fields[1])
+        except ValueError:
+            continue
+    return parents
+
+
+def _descendant_pids(root_pid: int) -> Tuple[int, ...]:
+    children: Dict[int, List[int]] = {}
+    for pid, parent_pid in _process_parent_map().items():
+        children.setdefault(parent_pid, []).append(pid)
+    descendants: List[int] = []
+    pending = list(children.get(root_pid, ()))
+    while pending:
+        pid = pending.pop(0)
+        descendants.append(pid)
+        pending.extend(children.get(pid, ()))
+    return tuple(descendants)
+
+
+def _wait_for_process_exit(identity: ProcessIdentity, timeout: float = 1.0) -> bool:
+    deadline = time.monotonic() + timeout
+    while True:
+        current = _process_identity(identity.pid, strict=True)
+        if current is None or current.start_token != identity.start_token:
+            return True
+        if time.monotonic() >= deadline:
+            return False
+        time.sleep(PROCESS_POLL_INTERVAL_SECONDS)
+
+
+def _same_process_identity(
+    expected: ProcessIdentity,
+    current: Optional[ProcessIdentity],
+) -> bool:
+    if current is None or current.start_token != expected.start_token:
+        return False
+    if expected.executable and current.executable and not _same_executable(
+        current.executable,
+        expected.executable,
+    ):
+        return False
+    return True
+
+
+def _wait_for_process_alive(
+    identity: ProcessIdentity,
+    timeout: float = LAUNCH_GRACE_PERIOD_SECONDS,
+) -> Tuple[bool, Optional[ProcessIdentity]]:
+    """Confirm that the launched identity remains alive through startup grace."""
+
+    deadline = time.monotonic() + timeout
+    while True:
+        current = _process_identity(identity.pid, strict=True)
+        if not _same_process_identity(identity, current):
+            return False, current
+        if time.monotonic() >= deadline:
+            return True, current
+        time.sleep(PROCESS_POLL_INTERVAL_SECONDS)
+
+
+def _snapshot_process_tree(identity: ProcessIdentity) -> Tuple[ProcessIdentity, ...]:
+    current = _process_identity(identity.pid, strict=True)
+    if current is None:
+        return ()
+    if not _same_process_identity(identity, current):
+        raise OSError(
+            f"tracked process ID {identity.pid} changed before termination"
+        )
+    tree = [current]
+    for pid in _descendant_pids(identity.pid):
+        child = _process_identity(pid, strict=True)
+        if child is not None:
+            tree.append(child)
+    return tuple(tree)
+
+
+def _terminate_process_tree(identity: ProcessIdentity, force: bool = False) -> None:
+    tree = _snapshot_process_tree(identity)
+    if not tree:
+        return
+    if os.name == "nt":
+        if not _same_process_identity(
+            identity,
+            _process_identity(identity.pid, strict=True),
+        ):
+            raise OSError(
+                f"tracked process ID {identity.pid} changed before taskkill"
+            )
+        command = ["taskkill", "/PID", str(identity.pid), "/T"]
+        if force:
+            command.append("/F")
+        result = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if result.returncode != 0 and _same_process_identity(
+            identity,
+            _process_identity(identity.pid, strict=True),
+        ):
+            raise OSError(result.stderr.strip() or result.stdout.strip() or "taskkill failed")
+        return
+
+    termination_signal = signal.SIGKILL if force else signal.SIGTERM
+    for process in reversed(tree):
+        current = _process_identity(process.pid, strict=True)
+        if current is None:
+            continue
+        if not _same_process_identity(process, current):
+            raise OSError(
+                f"process ID {process.pid} changed before termination"
+            )
+        try:
+            os.kill(current.pid, termination_signal)
+        except ProcessLookupError:
+            continue
+        except PermissionError as error:
+            raise OSError(
+                f"could not stop process {current.pid}: {error}"
+            ) from error
+
+
+def _update_process_state(
+    state_path: Path,
+    process_state: Dict[str, object],
+) -> None:
+    payload = _read_session_manifest(state_path)
+    payload["process"] = process_state
+    _atomic_write_json(state_path, payload)
+
+
+def _launch_failure_state(
+    profile: ProfilePreflight,
+    state: str,
+    error: str,
+    pid: Optional[int] = None,
+    exit_code: Optional[int] = None,
+) -> Dict[str, object]:
+    process_state: Dict[str, object] = {
+        "state": state,
+        "launcher": str(profile.launcher),
+        "working_directory": str(profile.profile),
+        "error": error,
+        "recorded_at": datetime.now(timezone.utc).isoformat(),
+    }
+    if pid is not None:
+        process_state["pid"] = pid
+    if exit_code is not None:
+        process_state["exit_code"] = exit_code
+    return process_state
+
+
+def launch_session(
+    deployment: DeploymentResult,
+    profile: ProfilePreflight,
+) -> LaunchResult:
+    """Launch the selected profile and persist identity for a later stop."""
+
+    manifest = _read_session_manifest(deployment.state_path)
+    if manifest.get("session_id") != deployment.session_id:
+        raise CliError(
+            EXIT_LAUNCH,
+            "launch",
+            f"Deployment state does not match session {deployment.session_id}.",
+        )
+    conflict = _inspect_conflicting_process(profile)
+    if conflict is not None:
+        process_state = _launch_failure_state(
+            profile,
+            "blocked",
+            f"A matching launcher is already running with process ID {conflict.pid}.",
+        )
+        _update_process_state(deployment.state_path, process_state)
+        raise CliError(
+            EXIT_LAUNCH,
+            "launch",
+            f"A matching game instance is already running with process ID {conflict.pid}; refusing to attach.",
+        )
+
+    options: Dict[str, object] = {
+        "cwd": str(profile.profile),
+        "shell": False,
+    }
+    if os.name == "nt":
+        options["creationflags"] = getattr(
+            subprocess,
+            "CREATE_NEW_PROCESS_GROUP",
+            0,
+        )
+    else:
+        options["start_new_session"] = True
+
+    try:
+        process = subprocess.Popen([str(profile.launcher)], **options)
+    except OSError as error:
+        process_state = _launch_failure_state(profile, "failed", str(error))
+        _update_process_state(deployment.state_path, process_state)
+        raise CliError(
+            EXIT_LAUNCH,
+            "launch",
+            f"Could not start the selected launcher: {error}",
+        ) from error
+
+    exit_code = process.poll()
+    if exit_code is not None:
+        process_state = _launch_failure_state(
+            profile,
+            "exited",
+            f"The launcher exited before it became a live tracked process (exit code {exit_code}).",
+            pid=process.pid,
+            exit_code=exit_code,
+        )
+        _update_process_state(deployment.state_path, process_state)
+        raise CliError(
+            EXIT_LAUNCH,
+            "launch",
+            f"The game launcher exited before launch completed (exit code {exit_code}).",
+        )
+
+    try:
+        identity = _process_identity(process.pid, strict=True)
+    except OSError as error:
+        identity = None
+        identity_error = error
+    else:
+        identity_error = None
+    if identity is None:
+        try:
+            process.terminate()
+        except OSError:
+            pass
+        reason = str(identity_error or "process identity could not be read")
+        process_state = _launch_failure_state(
+            profile,
+            "failed",
+            reason,
+            pid=process.pid,
+        )
+        _update_process_state(deployment.state_path, process_state)
+        raise CliError(
+            EXIT_LAUNCH,
+            "launch",
+            f"The launcher started but could not be safely tracked: {reason}",
+        )
+
+    try:
+        alive, current = _wait_for_process_alive(identity)
+    except OSError as error:
+        alive = False
+        current = None
+        identity_error = error
+    else:
+        identity_error = None
+    if not alive:
+        if current is None:
+            state = "exited"
+            reason = "The launcher exited during the startup grace period."
+        elif not _same_process_identity(identity, current):
+            state = "failed"
+            reason = (
+                "The launched process identity changed during the startup grace "
+                "period; refusing to stop an unrelated process."
+            )
+        else:
+            state = "failed"
+            reason = str(
+                identity_error
+                or "The launched process could not be confirmed during startup grace."
+            )
+        process_state = _launch_failure_state(
+            profile,
+            state,
+            reason,
+            pid=process.pid,
+        )
+        _update_process_state(deployment.state_path, process_state)
+        raise CliError(EXIT_LAUNCH, "launch", reason)
+
+    process_state = {
+        "state": "launched",
+        "pid": identity.pid,
+        "start_token": identity.start_token,
+        "launcher": str(profile.launcher),
+        "working_directory": str(profile.profile),
+        "started_at": datetime.now(timezone.utc).isoformat(),
+    }
+    try:
+        _update_process_state(deployment.state_path, process_state)
+    except (CliError, OSError) as error:
+        try:
+            _terminate_process_tree(identity, force=True)
+        except OSError:
+            pass
+        raise CliError(
+            EXIT_LAUNCH,
+            "launch",
+            f"Could not persist tracked process state; the launched process was not retained: {error}",
+        ) from error
+    return LaunchResult(deployment.session_id, deployment.state_path, identity.pid)
+
+
+def stop_session(session_id: str, force: bool = False) -> StopResult:
+    """Stop only the process identity recorded for one test session."""
+
+    state_path = _session_manifest_path(session_id)
+    manifest = _read_session_manifest(state_path)
+    process_value = manifest.get("process")
+    if not isinstance(process_value, dict):
+        raise CliError(
+            EXIT_CLEAN,
+            "stop/clean",
+            f"Session {session_id} has no tracked game process.",
+        )
+    process_state = dict(process_value)
+    state = str(process_state.get("state", ""))
+    if state in {"stopped", "exited"}:
+        return StopResult(session_id, state)
+    if state != "launched":
+        raise CliError(
+            EXIT_CLEAN,
+            "stop/clean",
+            f"Session {session_id} is not stoppable in state '{state}'.",
+        )
+    try:
+        pid = int(process_state["pid"])
+        start_token = str(process_state["start_token"])
+        launcher = Path(str(process_state["launcher"]))
+    except (KeyError, TypeError, ValueError) as error:
+        raise CliError(
+            EXIT_CLEAN,
+            "stop/clean",
+            f"Session {session_id} has incomplete tracked process state: {error}",
+        ) from error
+    identity = ProcessIdentity(pid, start_token, launcher)
+    if not _tracked_process_is_alive(identity):
+        process_state["state"] = "exited"
+        process_state["recorded_at"] = datetime.now(timezone.utc).isoformat()
+        _update_process_state(state_path, process_state)
+        return StopResult(session_id, "exited")
+
+    try:
+        tracked_tree = _snapshot_process_tree(identity)
+        if not tracked_tree:
+            process_state["state"] = "exited"
+            process_state["recorded_at"] = datetime.now(timezone.utc).isoformat()
+            _update_process_state(state_path, process_state)
+            return StopResult(session_id, "exited")
+        _terminate_process_tree(identity, force=force)
+        if not _wait_for_process_exit(identity):
+            raise OSError(
+                f"process {pid} is still running after stop; retry with --force"
+            )
+        for child in tracked_tree[1:]:
+            if not _wait_for_process_exit(child):
+                raise OSError(
+                    f"child process {child.pid} is still running after stop; retry with --force"
+                )
+    except (OSError, CliError) as error:
+        if isinstance(error, CliError):
+            raise
+        raise CliError(
+            EXIT_CLEAN,
+            "stop/clean",
+            f"Could not stop tracked process tree for session {session_id}: {error}",
+        ) from error
+
+    process_state["state"] = "stopped"
+    process_state["force"] = force
+    process_state["stopped_at"] = datetime.now(timezone.utc).isoformat()
+    _update_process_state(state_path, process_state)
+    return StopResult(session_id, "stopped")
 def _create_deployment_transaction(
     profile: ProfilePreflight,
     plan: ArtifactPlan,
@@ -1207,15 +1992,24 @@ def _resolve_launcher(
             warnings.append(
                 f"The explicit launcher is outside the modding profile: {launcher}"
             )
+        else:
+            warnings.append(f"Using explicit launcher override: {launcher}")
         return launcher, tuple(warnings)
 
     candidates = _launcher_candidates(profile, environment)
     for candidate in candidates:
-        if candidate.is_file() and (
-            candidate.stat().st_size > 0
-            and (environment == "Windows" or os.access(candidate, os.X_OK))
+        if not candidate.is_file():
+            continue
+        try:
+            resolved_candidate = candidate.resolve(strict=True)
+        except OSError:
+            continue
+        if not _is_within(resolved_candidate, profile):
+            continue
+        if resolved_candidate.stat().st_size > 0 and (
+            environment == "Windows" or os.access(resolved_candidate, os.X_OK)
         ):
-            return candidate.resolve(), tuple(warnings)
+            return resolved_candidate, tuple(warnings)
     candidate_text = ", ".join(str(candidate) for candidate in candidates)
     raise CliError(
         EXIT_PROFILE,
@@ -1281,7 +2075,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="blasphemous-modding-test",
         description="Build, validate, and deploy a Blasphemous mod artifact.",
-        epilog="Use 'run --dry-run' to inspect the plan without deployment, or 'status' for a read-only profile view.",
+        epilog="Use 'run --dry-run' to inspect the plan without deployment or launch, 'stop SESSION_ID' to stop one tracked process tree, or 'status' for a read-only profile view.",
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
@@ -1305,6 +2099,21 @@ def build_parser() -> argparse.ArgumentParser:
         "--dry-run",
         action="store_true",
         help="Validate and print the plan without copying files or launching a process.",
+    )
+
+    stop_parser = subparsers.add_parser(
+        "stop",
+        help="Stop one tracked test-session process tree.",
+    )
+    stop_parser.add_argument(
+        "session_id",
+        metavar="SESSION_ID",
+        help="The session identifier printed by a successful run.",
+    )
+    stop_parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Force-stop only the tracked process tree when graceful stop fails.",
     )
 
     status_parser = subparsers.add_parser(
@@ -1357,10 +2166,21 @@ def _run_command(args: argparse.Namespace) -> int:
         if args.dry_run:
             print("Dry run: no profile files copied; no process launched.")
         else:
+            conflict = _inspect_conflicting_process(context.profile)
+            if conflict is not None:
+                raise CliError(
+                    EXIT_LAUNCH,
+                    "launch",
+                    f"A matching game instance is already running with process ID {conflict.pid}; refusing to deploy or attach.",
+                )
             result = deploy_artifact(plan, context.profile)
             print(f"Deployment session: {result.session_id}")
             print(f"Deployment state: deployed")
             print(f"Deployed files: {len(result.deployed_files)}")
+            launch = launch_session(result, context.profile)
+            print(f"Launch session: {launch.session_id}")
+            print("Launch state: launched")
+            print(f"Process ID: {launch.pid}")
     return EXIT_SUCCESS
 
 
@@ -1372,12 +2192,28 @@ def _status_command(args: argparse.Namespace) -> int:
     return EXIT_SUCCESS
 
 
+def _stop_command(args: argparse.Namespace) -> int:
+    detect_supported_environment()
+    result = stop_session(args.session_id, force=args.force)
+    print(f"Stop session: {result.session_id}")
+    print(f"Stop state: {result.state}")
+    if result.state == "exited":
+        print("Tracked process already exited; no process was terminated.")
+    elif args.force:
+        print("Stopped tracked process tree with force.")
+    else:
+        print("Stopped tracked process tree.")
+    return EXIT_SUCCESS
+
+
 def main(argv: Optional[Sequence[str]] = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     try:
         if args.command == "run":
             return _run_command(args)
+        if args.command == "stop":
+            return _stop_command(args)
         if args.command == "status":
             return _status_command(args)
         raise CliError(EXIT_USAGE, "usage/configuration", f"Unknown command: {args.command}")
