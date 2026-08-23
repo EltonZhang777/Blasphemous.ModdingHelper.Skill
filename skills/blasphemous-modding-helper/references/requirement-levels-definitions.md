@@ -34,7 +34,7 @@ An agent MUST NOT silently deviate from a local `MUST`, `MUST NOT`, `SHOULD`, or
 
 1. Identify the exact rule and requirement level being bypassed.
 2. Explain the reason, expected benefit, and relevant risks or compatibility impact.
-3. Ask the user to confirm the exception and wait for confirmation.
-4. Limit the exception to the confirmed case; the default rule remains in force elsewhere.
+3. The agent MUST ask the user to confirm the exception and wait for confirmation.
+4. The agent MUST limit the exception to the confirmed case; the default rule remains in force elsewhere.
 
 Choosing an option explicitly marked `MAY` or `OPTIONAL` is not itself an exception. A user-approved exception does not change the meaning of the RFC 2119 keywords or make the exception a new default.

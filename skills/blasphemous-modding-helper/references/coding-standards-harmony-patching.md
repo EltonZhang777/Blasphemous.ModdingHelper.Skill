@@ -156,10 +156,10 @@ Framework-managed discovery MUST remain separate from Mod lifecycle callbacks. P
 
 Manual `Harmony.Patch` is an exception, not a second default. Before writing one, the agent MUST ask the user and wait for confirmation. The exception MAY be approved only when automatic declaration cannot express the required timing, condition, external target, or exact target selection. An approved manual Patch MUST:
 
-- use a stable Mod-owned Harmony ID;
-- resolve and patch only the explicitly selected `MethodBase` or methods;
-- record why framework-managed declaration cannot express the case;
-- preserve the framework-managed discovery contract and its assembly-scan prohibition.
+- An approved manual Patch MUST use a stable Mod-owned Harmony ID.
+- An approved manual Patch MUST resolve and patch only the explicitly selected `MethodBase` or methods.
+- An approved manual Patch MUST record why framework-managed declaration cannot express the case.
+- An approved manual Patch MUST preserve the framework-managed discovery contract and its assembly-scan prohibition.
 
 If the user does not approve the exception, the agent MUST stop and use the declarative route or report the unresolved limitation.
 
