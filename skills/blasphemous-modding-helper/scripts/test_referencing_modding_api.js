@@ -7,11 +7,41 @@ const childProcess = require("child_process");
 
 const skillRoot = path.resolve(__dirname, "..");
 const topLevelSkill = path.join(skillRoot, "SKILL.md");
+const preflightReference = path.join(
+  skillRoot,
+  "references",
+  "config",
+  "invocation-preflight.md",
+);
+const firstTimeSetup = path.join(
+  skillRoot,
+  "references",
+  "config",
+  "first-time-setup.md",
+);
 const referencingSkill = path.join(
   skillRoot,
   "references",
   "sub-skills",
   "referencing-modding-api.md",
+);
+const sourceAnalyzer = path.join(
+  skillRoot,
+  "references",
+  "sub-skills",
+  "source-analyzer.md",
+);
+const logAnalyzer = path.join(
+  skillRoot,
+  "references",
+  "sub-skills",
+  "log-analyzer.md",
+);
+const moddingTest = path.join(
+  skillRoot,
+  "references",
+  "sub-skills",
+  "blasphemous-modding-test.md",
 );
 const sourceNavigation = path.join(
   skillRoot,
@@ -130,16 +160,78 @@ function resolveReleaseDocumentation(metadataFile) {
 
 function run() {
   const topLevel = readFile(topLevelSkill);
+  const preflight = readFile(preflightReference);
+  const setup = readFile(firstTimeSetup);
   const referencing = readFile(referencingSkill);
-  const source = readFile(sourceNavigation);
+  const source = readFile(sourceAnalyzer);
+  const logs = readFile(logAnalyzer);
+  const modTest = readFile(moddingTest);
+  const sourceNavigationText = readFile(sourceNavigation);
 
   assertContains(
     topLevel,
     "references/sub-skills/referencing-modding-api.md",
     "top-level Skill",
   );
+  assertContains(
+    topLevel,
+    "references/config/invocation-preflight.md",
+    "top-level Skill",
+  );
+  assertNotContains(topLevel, "## Skill command context", "top-level Skill");
+  assertNotContains(
+    topLevel,
+    "## Preferences gate (see Invocation preflight)",
+    "top-level Skill",
+  );
   assertNotContains(topLevel, "main branch", "top-level Skill");
   assertNotContains(topLevel, "/tree/main", "top-level Skill");
+
+  for (const heading of [
+    "# Invocation preflight",
+    "## Command context",
+    "## Preferences gate",
+    "## First-time setup and recovery",
+    "## Completion criteria",
+  ]) {
+    assertContains(preflight, heading, "Invocation preflight reference");
+  }
+  for (const contractText of [
+    "absolute installed directory",
+    "current working directory",
+    "Project scope MUST take precedence over user scope",
+    "check_preferences.sh",
+    "check_preferences.ps1",
+    "/blasphemous-modding-test stop SESSION_ID",
+  ]) {
+    assertContains(
+      preflight,
+      contractText,
+      "Invocation preflight reference",
+    );
+  }
+  assertContains(
+    setup,
+    "[Invocation preflight](invocation-preflight.md)",
+    "First-Time Setup reference",
+  );
+
+  for (const [label, document] of [
+    ["source route", source],
+    ["log route", logs],
+    ["mod-test route", modTest],
+    ["ModdingAPI route", referencing],
+  ]) {
+    assertContains(document, "../config/invocation-preflight.md", label);
+    assertNotContains(
+      document,
+      "../../SKILL.md#skill-command-context",
+      label,
+    );
+  }
+  assertContains(source, "## Completion criteria", "source route");
+  assertContains(logs, "## Completion criteria", "log route");
+  assertContains(modTest, "Completion criterion", "mod-test route");
 
   for (const heading of [
     "## Routing contract",
@@ -175,7 +267,11 @@ function run() {
     "../source_code_navigation/MAIN.md",
     "ModdingAPI reference sub-skill",
   );
-  assertContains(source, "# Blasphemous Source Code Navigation Guide", "source route");
+  assertContains(
+    sourceNavigationText,
+    "# Blasphemous Source Code Navigation Guide",
+    "source navigation",
+  );
 
   const fixtureRoot = fs.mkdtempSync(
     path.join(os.tmpdir(), "modding-api-reference-doc-smoke-"),

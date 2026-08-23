@@ -3,7 +3,7 @@
 The agent MUST use this sub-skill whenever a task needs ModdingAPI documentation, source
 guidance, or coding conventions. The agent MUST resolve the reference before browsing it.
 
-Before executing a command in this reference, the agent MUST follow the [Skill command context](../../SKILL.md#skill-command-context). The agent MUST run the commands from the caller's Mod repository; the caller does not need a repository checkout containing the Skill.
+Before executing a command in this reference, the agent MUST apply the command-context contract in [Invocation preflight](../config/invocation-preflight.md). The commands MUST run from the caller's Mod repository; the caller does not need a repository checkout containing the Skill.
 
 ## Reference selection
 
@@ -160,8 +160,9 @@ The manager reads `modding_api_reference_path` and
 `--target-path`/`-TargetPath` or `--selector`/`-Selector` is supplied. It also
 accepts the same `--scope`/`-Scope` and `--preferences-file`/`-PreferencesFile`
 options as the fresh-clone command. When none of those three routing options
-is supplied, it discovers project preferences in the current directory first,
-then user preferences; an explicit scope always selects its approved path.
+is supplied, it uses the active preferences context selected by [Invocation
+preflight](../config/invocation-preflight.md); an explicit scope always selects
+its approved path.
 
 `check` resolves the requested selector, verifies a clean worktree and the
 official origin, confirms the checkout shape and current HEAD, and writes a

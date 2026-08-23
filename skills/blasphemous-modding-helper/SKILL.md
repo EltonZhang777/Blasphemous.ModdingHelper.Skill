@@ -11,18 +11,9 @@ You are helping with Blasphemous mod development.
 
 At the start of every Skill invocation, you MUST read [Requirement levels](references/requirement-levels-definitions.md). It defines the RFC 2119 vocabulary used by every authored normative instruction in this Skill; external documentation, source code, and illustrative examples retain their original wording as described there.
 
-## Skill command context
+## Invocation preflight
 
-All executable examples in this Skill use the same command context:
-
-- `SKILL_ROOT` in Bash and `$SkillRoot` in PowerShell MUST be the absolute path to the installed directory that contains this `SKILL.md` and its `scripts/` directory. These are placeholders for the resolved Skill installation path; the agent MUST NOT infer the path from a caller repository's checkout layout.
-- The agent MUST keep the caller's Mod repository as the current working directory when invoking Skill scripts. Project-relative paths, `.csproj` discovery, and project-scoped preferences MUST continue to resolve from that caller directory.
-- The agent MUST invoke each Skill script through an explicit Skill-root path and MUST use the interpreter or entry point required by that script:
-  - Bash shell entry point: `bash "$SKILL_ROOT/scripts/<script>.sh" [arguments]`
-  - PowerShell entry point: `& (Join-Path $SkillRoot 'scripts\<script>.ps1') [arguments]`
-  - Python CLI: `"$PYTHON3" "$SKILL_ROOT/scripts/<script>.py" [arguments]` or `& $PYTHON3 (Join-Path $SkillRoot 'scripts\<script>.py') [arguments]`, after the reference has resolved `PYTHON3`.
-  - Node.js CLI: `node "$SKILL_ROOT/scripts/<script>.js" [arguments]` when the reference names a Node.js entry point.
-- The agent MUST resolve and set the appropriate root variable before copying a command. The root variable identifies the Skill installation; it is not the caller's Mod repository and MUST NOT be replaced with a checkout-relative `skills/blasphemous-modding-helper` path.
+Before selecting a branch or executing a command, the agent MUST read [Invocation preflight](references/config/invocation-preflight.md). It is the authoritative contract for Skill-root resolution, caller Mod-repository context, interpreter and shell expectations, preference scope and precedence, first-time setup, path recovery, the tracked-session stop exception, and shared completion.
 
 ## Coding standards
 
@@ -35,46 +26,15 @@ Before generating, modifying, reviewing, or refactoring Mod-owned C# in a caller
   - The route selects a configured local checkout or resolves the release-aware remote reference, then loads only the topic needed for the task.
 - Mods are developed under the Blasphemous ModdingAPI framework. The agent MUST follow the ModdingAPI conventions and best practices whenever it codes against the selected reference.
 
-## Preferences (`preferences.md`)
-
-The agent MUST check whether `preferences.md` exists.
-
-The agent MUST use the check-preferences scripts to find `preferences.md`:
-
-```bash
-# macOS, Linux, WSL, Git Bash
-bash "$SKILL_ROOT/scripts/check_preferences.sh"
-```
-
-```powershell
-# PowerShell (Windows)
-& (Join-Path $SkillRoot 'scripts\check_preferences.ps1')
-```
-
-Output is one of: `"project"`, `"user"`, or nothing (not found).
-
-`preferences.md` lives at `.skills/blasphemous-modding-helper/preferences.md` (project) or `$HOME/.skills/blasphemous-modding-helper/preferences.md` (user home). Full locations table: [references/config/first-time-setup.md#save-locations](references/config/first-time-setup.md#save-locations).
-
-| Result | Action |
-|--------|--------|
-| Found | The agent MUST read, parse, and apply the settings. On first use in the session, it SHOULD briefly remind the user: "Using preferences from [path]. You can edit `preferences.md` to customize source code path, etc." |
-| Not found | The agent MUST run first-time setup (see below) and MUST NOT silently use defaults or continue to the main workflow. |
-
-**`preferences.md` Contains**: `full_source_code_path`, `lightweight_source_code_path`, `modding_profile_path`, optional `unity_log_dir`, and optional ModdingAPI reference fields — see [references/config/preferences-schema.md](references/config/preferences-schema.md) for the full schema. Use [Referencing ModdingAPI](references/sub-skills/referencing-modding-api.md) for reference selection, remote fallback, lock state, offline checks, and explicit lifecycle operations.
-
-### First-Time Setup (BLOCKING)
-
-**CRITICAL**: When `preferences.md` is not found, you MUST run the first-time setup (a BLOCKING operation) before source analysis, modding operations, or any test command, following [references/config/first-time-setup.md](references/config/first-time-setup.md). The only narrow recovery exception is `/blasphemous-modding-test stop SESSION_ID`: it uses the recorded session identity, does not load or edit preferences, and may stop only that tracked process tree when normal context preflight is unavailable. All other test commands remain blocked until setup completes.
-
 ## Workflow
 
 You MUST follow the workflow steps in order, unless otherwise explicitly specified by the user.
 
-### Step 1: Load Preferences
+### Step 1: Complete invocation preflight
 
-The agent MUST follow the Preferences gate above.
+The agent MUST follow [Invocation preflight](references/config/invocation-preflight.md) before selecting a specialized branch or executing a command.
 
-**Done when**: the check-preferences result is `project` or `user` and the selected file has been read, parsed, and applied, or first-time setup has completed. For the tracked-session stop exception, this step is complete when the recorded process is stopped or confirmed gone without loading preferences.
+**Done when**: the completion criteria in Invocation preflight are satisfied and the selected branch has received the active preferences or recovery result.
 
 ### Step 2: Analyze User Question
 
@@ -109,9 +69,6 @@ The agent MUST use the gathered information to solve the user question.
 
 ### Step 5: Path Failure Recovery
 
-If any source code analysis or modding operation fails with file-not-found or path-related errors, the agent MUST ask the user: "Some operations failed using the saved paths in `preferences.md`. Would you like to re-run the first-time setup to update them?"
+The agent MUST follow the path-failure recovery contract in [Invocation preflight](references/config/invocation-preflight.md).
 
-- **If Yes**: The agent MUST delete `preferences.md` and trigger first-time setup again (see Step 1). This allows the user to correct outdated or incorrect paths.
-- **If No**: The agent MUST continue with the current paths and report the specific failure to the user.
-
-**Done when**: either setup has produced a validated preferences file, or the agent has continued with the current paths and reported the specific failure. The tracked-session stop exception is complete when the recorded process is stopped or confirmed gone and no unrelated process was touched.
+**Done when**: the shared recovery contract has produced a validated preferences file, or the agent has continued with the current paths and reported the specific failure and next action.

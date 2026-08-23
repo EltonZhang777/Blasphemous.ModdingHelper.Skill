@@ -6,7 +6,7 @@ The Python CLI automates filesystem, build, process, and log operations. It does
 
 ## Entry conditions
 
-1. The agent MUST complete the top-level skill's Preferences gate and first-time setup before using the workflow. This sub-skill adds one profile-specific requirement: the active `preferences.md` MUST define `modding_profile_path`; the agent MUST use the [preferences schema](../config/preferences-schema.md) and [first-time setup](../config/first-time-setup.md) when that field is missing or invalid.
+1. The agent MUST complete [Invocation preflight](../config/invocation-preflight.md) before using the workflow. This sub-skill adds one profile-specific requirement: the active `preferences.md` MUST define `modding_profile_path`; the agent MUST use the [preferences schema](../config/preferences-schema.md) and [first-time setup](../config/first-time-setup.md) when that field is missing or invalid.
 2. The agent MUST resolve a native Python 3 interpreter before invoking the CLI. `PYTHON3` below means that resolved executable; it is not an arbitrary shell command. On Windows, the agent MUST use the configured Python installation rather than assuming `python` or `py` is on `PATH`.
 3. The agent MUST use native Windows PowerShell, or native Linux/macOS Bash. The CLI MUST reject Git Bash, Cygwin, WSL, Proton, Wine, and unsupported operating systems. Paths MUST remain quoted when they contain spaces.
 4. The agent MUST confirm that the selected profile is a disposable or mirror game installation. The CLI operates on that profile's `Modding` root and launches its local game executable.
@@ -15,7 +15,7 @@ Done when: the agent can name the active preferences file, project, profile, Pyt
 
 ## CLI entry point
 
-Before executing a command in this reference, the agent MUST follow the [Skill command context](../../SKILL.md#skill-command-context). The agent MUST run the CLI from the caller's Mod repository and MUST NOT assume that the caller has a repository checkout containing `skills/blasphemous-modding-helper`.
+Before executing a command in this reference, the agent MUST apply the command-context contract in [Invocation preflight](../config/invocation-preflight.md). The CLI MUST run from the caller's Mod repository; the caller does not need a repository checkout containing `skills/blasphemous-modding-helper`.
 
 The CLI entry point is:
 
@@ -194,16 +194,13 @@ The default policy therefore restores the old files but does not delete new file
 
 Completion criterion: the requested session is `cleaned` or `already-cleaned`, every restored/removed/retained file is reported, and protected files are unchanged.
 
-## Preferences and precedence
+## Preferences and CLI overrides
 
-For context-loading commands, the CLI checks these locations in order:
+The shared [Invocation preflight](../config/invocation-preflight.md) owns preference scope selection, project-over-user precedence, first-time setup, path recovery, and the tracked-session stop exception. After it selects the active file, this CLI requires `modding_profile_path`.
 
-1. Project scope: `<current working directory>/.skills/blasphemous-modding-helper/preferences.md`.
-2. User scope: `$HOME/.skills/blasphemous-modding-helper/preferences.md`.
+Explicit CLI options override the selected preference for that invocation: `--profile`, `--project`, `--launcher`, and `--unity-log-dir`. The CLI does not rewrite preferences; after the missing-log handoff, the agent writes a user-supplied Unity log directory into the active file.
 
-The first existing file wins. Its `modding_profile_path` is required. Explicit CLI options override the selected preference for that invocation: `--profile`, `--project`, `--launcher`, and `--unity-log-dir`. The CLI does not rewrite preferences; the agent writes a user-supplied Unity log directory into the active file after the missing-log handoff.
-
-`stop SESSION_ID` uses only the recorded session state and host check, so it is the narrow recovery exception when normal context preflight is unavailable. The top-level skill permits this exception because `stop` neither reads nor edits preferences and only addresses the exact tracked process tree. `run`, `clean`, `logs`, and `status` still require the normal preferences/profile gate.
+`stop SESSION_ID` is this workflow's implementation of the tracked-session recovery exception and uses only recorded session state plus the host process check. `run`, `clean`, `logs`, and `status` require the normal Invocation preflight and profile gate.
 
 ## Automated evidence versus Manual verification
 

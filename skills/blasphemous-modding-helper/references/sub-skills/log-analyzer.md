@@ -7,6 +7,10 @@ This sub-skill analyzes Blasphemous log files, focusing on debugging Mod-related
 - Unity and Mod log information and stack-trace interpretation
 - Mod-code issue prioritization during bug analysis
 
+## Entry conditions
+
+Before log analysis, the agent MUST complete [Invocation preflight](../config/invocation-preflight.md). This branch adds log-source requirements: the active `preferences.md` MUST provide `modding_profile_path`, and `unity_log_dir` MUST be resolved when Unity evidence is needed.
+
 ## Log File Paths
 - Blasphemous Unity log file: resolve `unity_log_dir` from `preferences.md`; Windows normally uses `$env:USERPROFILE/AppData/LocalLow/TheGameKitchen/Blasphemous/output_log.txt`, while native Linux/macOS profiles normally use `Player.log` under the configured directory
 - BepInEx log file: `<modding_profile_path>/BepInEx/LogOutput.log`
@@ -24,7 +28,7 @@ This sub-skill analyzes Blasphemous log files, focusing on debugging Mod-related
 When the mod-test CLI reports a missing Unity log directory or log:
 
 1. The agent MUST ask the user for the directory that contains the current Unity log.
-2. The agent MUST add `unity_log_dir: PATH` to the active `preferences.md`, or pass `--unity-log-dir PATH` for a one-run override. Project preferences MUST take precedence over user preferences.
+2. The agent MUST add `unity_log_dir: PATH` to the active `preferences.md`, or pass `--unity-log-dir PATH` for a one-run override. The active file is the scope selected by [Invocation preflight](../config/invocation-preflight.md).
 3. The agent MUST re-run `logs SESSION_ID` or the explicit startup-evidence wait.
 
 This step is complete only when the CLI resolves the Unity log or the warning remains visible with the exact missing path and preference file to update. The CLI reads the existing BepInEx and Unity logs in place; it does not create persistent log copies.
