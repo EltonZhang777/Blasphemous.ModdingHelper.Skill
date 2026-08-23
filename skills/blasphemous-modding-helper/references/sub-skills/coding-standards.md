@@ -8,7 +8,7 @@ Before generating, modifying, reviewing, or refactoring Mod-owned C# in the Call
 - The supported game baseline is Unity `2017.4.40f1`.
 - The caller's actual compiler, referenced assemblies, and project target MUST take precedence over a general language or Unity baseline.
 - The agent MAY consult the [Unity 2017.4 Script Reference](https://docs.unity3d.com/2017.4/Documentation/ScriptReference/30_search.html) when a runtime Unity fact needs verification.
-- ModdingAPI-specific behavior MUST be checked against the caller's referenced ModdingAPI assembly and corresponding source or documentation. Until dedicated ModdingAPI and Harmony branch references are available, their task-specific guidance remains in the [legacy aggregate reference](../coding-standards.md).
+- ModdingAPI-specific behavior MUST be checked against the caller's referenced ModdingAPI assembly and corresponding source or documentation. ModdingAPI tasks route to the [ModdingAPI standards](../coding-standards-moddingAPI.md); Harmony tasks remain on the [legacy aggregate reference](../coding-standards.md) until the Harmony branch is available.
 
 ## Scope gate
 
@@ -27,7 +27,7 @@ A C# task includes generating, modifying, reviewing, or refactoring Mod-owned C#
 | Task signal | Required reference |
 | --- | --- |
 | Mod-owned C# naming, file/type/member organization, compiler compatibility, or runtime Unity callbacks | [C# and runtime Unity standards](../coding-standards-csharp-unity.md) |
-| ModdingAPI, `BlasMod`, `ModLog`, or service-integration behavior | [Legacy aggregate reference](../coding-standards.md) until the ModdingAPI branch is available |
+| ModdingAPI API or setup, `BlasMod`, `ModLog`, `ModServiceProvider`, ConfigHandler, FileHandler, InputHandler, LocalizationHandler, persistence, console/commands, items, levels, penitences, or other service-integration behavior | [ModdingAPI standards](../coding-standards-moddingAPI.md) |
 | Harmony or Patch behavior | [Legacy aggregate reference](../coding-standards.md) until the Harmony branch is available |
 | Decompiled, upstream, dependency, generated, or directly copied code in the excluded scope | No Mod-owned C# branch; preserve the excluded or copied code under the scope gate |
 
@@ -49,4 +49,4 @@ Request: reformat a decompiled Assembly-CSharp class copied for reference.
 Route: scope gate; preserve the external source and do not load the Mod-owned C# branch.
 ```
 
-The later ModdingAPI and Harmony tickets MUST extend this table without changing the scope gate or the requirement-level contract.
+The Harmony ticket MUST extend this table without changing the scope gate or the requirement-level contract.
