@@ -1,5 +1,6 @@
 .trae/
 .baoyu-skills/
+docs/adr/
 .wt/
 
 ## Ignore Visual Studio temporary files, build results, and

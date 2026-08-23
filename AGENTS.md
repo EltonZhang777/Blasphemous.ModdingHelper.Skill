@@ -60,3 +60,13 @@ There is no package test suite or build script; CI's installer smoke tests and r
 ## Local material
 
 Ignore local planning material labelled in `.gitignore`. Generated decompiled source, modding profiles, logs, and preference files are user data; keep them out of the skill package and release archive.
+
+## Agent skills
+
+### Issue tracker
+
+Issues and specs for this repo live as GitHub issues. Use the `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Domain docs
+
+This repo uses a single-context domain glossary at root and ADRs under `docs/adr/`. See `docs/agents/domain.md`.
