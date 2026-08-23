@@ -16,6 +16,28 @@ _Avoid_: decompiled source, upstream code, dependency code, generated output
 External code reproduced without substantive behavioral or structural changes.
 _Avoid_: adapted code, rewritten code
 
+## Standards routing vocabulary
+
+**Coding-standards sub-skill**:
+The routing entry that applies the Mod-owned scope gate and selects the detailed standards needed for a Mod-owned C# task.
+_Avoid_: legacy aggregate standards document
+
+**Branch reference**:
+A detailed standards reference selected by the Coding-standards sub-skill for one responsibility: C# and runtime Unity, ModdingAPI, or Harmony patching.
+_Avoid_: competing standards authority
+
+**Progressive disclosure**:
+The routing policy that keeps shared entry rules in the Coding-standards sub-skill and loads only the Branch references triggered by the task.
+
+**C# and runtime Unity standards**:
+The Branch reference for C# naming, organization, compiler compatibility, and runtime Unity callbacks.
+
+**ModdingAPI standards**:
+The Branch reference for ModdingAPI APIs, the BlasMod lifecycle, services, development-document routing, and ModLog.
+
+**Harmony patching standards**:
+The Branch reference for Patch files and classes, targets, injections, framework-managed patch discovery, and approved manual patching.
+
 ## Harmony vocabulary
 
 **Patch file**:
