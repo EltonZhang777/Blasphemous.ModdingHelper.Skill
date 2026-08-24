@@ -2,7 +2,7 @@
 
 Boss system source code navigation. All paths relative to `Assembly-CSharp/`.
 
-> **Boss/Enemy ownership rule**: This document covers Boss main classes/behaviour under `Gameplay/GameControllers/Bosses/`. Entities under `Enemies/` that are driven by the Boss system (`MasterAnguish` audio, `SingleAnguish` animation) and Boss-level enemies (`Menina`) are documented in [enemy.md](enemy.md); same-named entities (Boss vs regular enemy, e.g. `PontiffHusk`) are cross-linked inline.
+> **Boss/Enemy ownership rule**: This document covers Boss main classes/behaviour under `Gameplay/GameControllers/Bosses/`. Entities under `Enemies/` that are driven by Boss system (`MasterAnguish` audio, `SingleAnguish` animation) and Boss-level enemies (`Menina`) are documented in [enemy.md](enemy.md); same-named entities (Boss vs regular enemy, e.g. `PontiffHusk`) are cross-linked inline.
 
 ## Core Design Patterns
 
@@ -41,7 +41,7 @@ Boss system source code navigation. All paths relative to `Assembly-CSharp/`.
 
 ## Common Components
 
-The following components are located in `Gameplay/GameControllers/Bosses/` and are shared by multiple bosses.
+These components are located in `Gameplay/GameControllers/Bosses/` and are shared by multiple bosses.
 
 ### BossFight Management
 

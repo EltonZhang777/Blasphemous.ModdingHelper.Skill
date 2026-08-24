@@ -2,7 +2,7 @@
 
 ## Format
 
-`preferences.md` uses plain `key: value` lines (a YAML subset, no top-level marker):
+`preferences.md` uses plain `key: value` lines (YAML subset, no top-level marker):
 
 ```yaml
 full_source_code_path: Path/to/blasphemous-source-code
@@ -31,23 +31,23 @@ modding_api_reference_selector: latest
 
 ## Approved local reference locations
 
-The local checkout uses the same scope domain as its preferences file:
+Local checkout uses same scope domain as its preferences file:
 
 | Scope | Reference path | Preferences path |
 |-------|----------------|------------------|
 | User | `$HOME/.skills/blasphemous-modding-helper/references/modding-api` | `$HOME/.skills/blasphemous-modding-helper/preferences.md` |
 | Project | `.skills/blasphemous-modding-helper/references/modding-api` | `.skills/blasphemous-modding-helper/preferences.md` |
 
-The stored `modding_api_reference_path` value is absolute after setup. Missing
+Stored `modding_api_reference_path` value is absolute after setup. Missing
 ModdingAPI fields are valid in legacy preferences and are added only when the
-user opts into local reference setup. A skipped local setup leaves both fields
+user opts into local reference setup. skipped local setup leaves both fields
 absent so release-aware remote fallback remains available.
 
 ## Sibling lock state
 
-The lifecycle commands store reproducibility state beside, not inside, the
-checkout. For a reference path ending in `references/modding-api`, the lock
-path is `references/modding-api.lock`. The lock is plain `key: value` text:
+Lifecycle commands store reproducibility state beside, not inside, the
+checkout. For reference path ending in `references/modding-api`, lock
+path is `references/modding-api.lock`. lock is plain `key: value` text:
 
 ```yaml
 selector: latest
@@ -58,5 +58,5 @@ repository: https://github.com/BrandenEK/Blasphemous.ModdingAPI.git
 ```
 
 `selector`, `resolved_tag`, `resolved_commit`, and `checked_at` are required.
-The `repository` value records the supported upstream used by the operation.
-The lock file is managed state and is not part of the upstream Git worktree.
+`repository` value records supported upstream used by operation.
+Lock file is managed state and is not part of upstream Git worktree.

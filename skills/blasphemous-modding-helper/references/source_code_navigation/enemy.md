@@ -10,7 +10,7 @@
 ## Core Design Patterns
 
 1. Inheritance: `MonoBehaviour → Entity → Enemy → <EnemyName>`; `Enemy` has `[RequireComponent(typeof(EnemyBehaviour))]`
-2. AI runs on a NodeCanvas behaviour tree; `EnemyBehaviour` is the root, driven by `PlayerHeard` / `PlayerSeen` / `SensorHitsFloor` / `GotParry`
+2. AI runs on NodeCanvas behaviour tree; `EnemyBehaviour` is root, driven by `PlayerHeard` / `PlayerSeen` / `SensorHitsFloor` / `GotParry`
 3. Attacks: `EnemyAttack : Attack : Trait`; damage flows through `IDamageable.Damage(Hit)`
 4. Per-enemy folder layout: `AI|IA/` (behaviour) + `Attack/` + `Animator/` + `Audio/`
 
@@ -306,7 +306,7 @@ EnemyBehaviour
 
 ### 2. Entity State Management — `Entity.Status`
 
-- `Entity.Status` is an `EntityStatus` instance (`Framework/FrameworkCore/EntityStatus.cs`)
+- `Entity.Status` is `EntityStatus` instance (`Framework/FrameworkCore/EntityStatus.cs`)
 - Key properties: `Unattacable`, `Invulnerable`, `Orientation`
 - `EntityStates` enum controls behaviour state: `Wander` / `Attack` / `Hurt` / `Idle` / `Chasing`
 
@@ -321,7 +321,7 @@ EnemyBehaviour
 ### 4. Weapon System — `Weapon`
 
 - Weapon base class: `Entities/Weapon/Weapon.cs`
-- Each enemy can have a dedicated weapon in its `Attack/` subdirectory (e.g., `AcolyteCandlestick`, `FlagellantWhip`)
+- Each enemy can have dedicated weapon in its `Attack/` subdirectory (e.g., `AcolyteCandlestick`, `FlagellantWhip`)
 
 ### 5. Typical Enemy File Structure
 

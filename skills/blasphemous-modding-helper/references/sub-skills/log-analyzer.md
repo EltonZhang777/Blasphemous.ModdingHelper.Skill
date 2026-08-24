@@ -9,39 +9,39 @@ This sub-skill analyzes Blasphemous log files, focusing on debugging Mod-related
 
 ## Entry conditions
 
-Before log analysis, the agent MUST complete [Invocation preflight](../config/invocation-preflight.md). This branch adds log-source requirements: the active `preferences.md` MUST provide `modding_profile_path`, and `unity_log_dir` MUST be resolved when Unity evidence is needed.
+Before log analysis, agent MUST complete [Invocation preflight](../config/invocation-preflight.md). This branch adds log-source requirements: active `preferences.md` MUST provide `modding_profile_path`, and `unity_log_dir` MUST be resolved when Unity evidence is needed.
 
 ## Log File Paths
-- Blasphemous Unity log file: resolve `unity_log_dir` from `preferences.md`; Windows normally uses `$env:USERPROFILE/AppData/LocalLow/TheGameKitchen/Blasphemous/output_log.txt`, while native Linux/macOS profiles normally use `Player.log` under the configured directory
+- Blasphemous Unity log file: resolve `unity_log_dir` from `preferences.md`; Windows normally uses `$env:USERPROFILE/AppData/LocalLow/TheGameKitchen/Blasphemous/output_log.txt`, while native Linux/macOS profiles normally use `Player.log` under configured directory
 - BepInEx log file: `<modding_profile_path>/BepInEx/LogOutput.log`
-  - The agent MUST acquire `<modding_profile_path>` from `preferences.md`.
+  - Agent MUST acquire `<modding_profile_path>` from `preferences.md`.
 
 ## Analysis Approach
 
-1. The agent MUST analyze the user input to extract the expected pattern, the log details to find, and the log file to check when one is specified.
-2. The agent MUST check the BepInEx log file first. Almost all error-level and warning-level messages are documented there, as are all levels of Mod log output.
-3. If the BepInEx log file cannot provide enough information, or the user specifies the Blasphemous Unity log file, the agent MUST examine that Unity log for more comprehensive information.
-4. The agent MUST provide clear, technical analysis of the log contents.
+1. Agent MUST analyze user input to extract expected pattern, log details to find, and log file to check when one is specified.
+2. Agent MUST check BepInEx log file first. Almost all error-level and warning-level messages are documented there, as are all levels of Mod log output.
+3. If BepInEx log file cannot provide enough information, or user specifies Blasphemous Unity log file, agent MUST examine that Unity log for more comprehensive information.
+4. Agent MUST provide clear, technical analysis of log contents.
 
 ## Startup evidence handoff
 
-When the mod-test CLI reports a missing Unity log directory or log:
+When mod-test CLI reports missing Unity log directory or log:
 
-1. The agent MUST ask the user for the directory that contains the current Unity log.
-2. The agent MUST add `unity_log_dir: PATH` to the active `preferences.md`, or pass `--unity-log-dir PATH` for a one-run override. The active file is the scope selected by [Invocation preflight](../config/invocation-preflight.md).
-3. The agent MUST re-run `logs SESSION_ID` or the explicit startup-evidence wait.
+1. Agent MUST ask user for directory that contains current Unity log.
+2. Agent MUST add `unity_log_dir: PATH` to active `preferences.md`, or pass `--unity-log-dir PATH` for one-run override. active file is scope selected by [Invocation preflight](../config/invocation-preflight.md).
+3. Agent MUST re-run `logs SESSION_ID` or explicit startup-evidence wait.
 
-This step is complete only when the CLI resolves the Unity log or the warning remains visible with the exact missing path and preference file to update. The CLI reads the existing BepInEx and Unity logs in place; it does not create persistent log copies.
+This step is complete only when CLI resolves Unity log or warning remains visible with exact missing path and preference file to update. CLI reads existing BepInEx and Unity logs in place; it does not create persistent log copies.
 
-`launched`, `ready`, and `mod_loaded` are startup states. They MUST NOT be used to verify visual, input, combat, menu, save, or other gameplay behavior. After startup evidence is collected, the agent MUST ask the player to operate the game and report the observed behavior in natural language; the agent MUST treat that report as the manual gameplay evidence.
+`launched`, `ready`, and `mod_loaded` are startup states. They MUST NOT be used to verify visual, input, combat, menu, save, or other gameplay behavior. After startup evidence is collected, agent MUST ask player to operate game and report observed behavior in natural language; agent MUST treat that report as manual gameplay evidence.
 
 ## Completion criteria
 
-The agent MUST mark log analysis complete only when the report contains all of the following:
+Agent MUST mark log analysis complete only when report contains all of these:
 
-1. The active preferences file and every log source inspected, or the exact missing path and the required preference-update handoff.
-2. The expected pattern, relevant log evidence, and a conclusion tied to that evidence. If the BepInEx log is sufficient, the agent MUST state that a Unity-log read was not required; otherwise, the Unity-log result MUST be included.
-3. A concrete next action: a code/configuration change, another evidence request, a tracked-session operation, or player Manual verification.
+1. Active preferences file and every log source inspected, or exact missing path and required preference-update handoff.
+2. Expected pattern, relevant log evidence, and conclusion tied to that evidence. If BepInEx log is sufficient, agent MUST state that Unity-log read was not required; otherwise, Unity-log result MUST be included.
+3. Concrete next action: code/configuration change, another evidence request, tracked-session operation, or player Manual verification.
 
-Missing or unreadable evidence is not a successful analysis. The analysis is complete in that case only when the warning names the missing source, the active preferences file, and the next action needed to recover.
+Missing or unreadable evidence is not successful analysis. analysis is complete in that case only when warning names missing source, active preferences file, and next action needed to recover.
 

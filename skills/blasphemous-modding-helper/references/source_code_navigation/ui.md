@@ -1,6 +1,6 @@
 # UI
 
-Complete navigation of the Blasphemous UI System. `UIController.instance` is the global singleton entry point, managing all interface switching, fade transitions, and UI widget references. The `UIScreens` enum defines switchable UI screens.
+Complete navigation of Blasphemous UI System. `UIController.instance` is global singleton entry point, managing all interface switching, fade transitions, and UI widget references. `UIScreens` enum defines switchable UI screens.
 
 ## Core Design Patterns
 
@@ -13,7 +13,7 @@ Complete navigation of the Blasphemous UI System. `UIController.instance` is the
 
 ## Core Entry Point
 
-- **UIController.cs** - Global UI management singleton (`UIController.instance`). Manages the UI stack, screen transitions, fade animations, and event system references. Contains direct reference fields to all UI Widgets and MenuLogic.
+- **UIController.cs** - Global UI management singleton (`UIController.instance`). Manages UI stack, screen transitions, fade animations, and event system references. Contains direct reference fields to all UI Widgets and MenuLogic.
 - **UIScreens.cs** - Enum: `Gameplay`, `Configuration`, `DeadScreen`, `IngameMenu`, `EndScreen`, `Inventory`
 - **FontsByLanguage.cs** - Multi-language font mapping configuration
 - **AttrackMode.cs** - Attract mode / demo mode auto-loop playback logic
@@ -22,7 +22,7 @@ Complete navigation of the Blasphemous UI System. `UIController.instance` is the
 
 ## Widgets
 
-All Widgets inherit from `UIWidget` (which only contains a CanvasGroup component).
+All Widgets inherit from `UIWidget` (which only contains CanvasGroup component).
 
 - **UIWidget.cs** - Base class for all Widgets, only `RequireComponent(typeof(CanvasGroup))`, no additional logic
 - **FadeWidget.cs** - Full-screen fade in/out controller. Events: `OnFadeShowStart/End`, `OnFadeHidedStart/End`
@@ -46,7 +46,7 @@ Menu logic classes, providing full behavioral control for each menu screen.
 - **MainMenu.cs** - Old / original main menu implementation
 - **MainMenuLauncher.cs** - Main menu launcher, points to NewMainMenu
 - **NewMainMenu.cs** - New main menu UI implementation
-- **Landing.cs** - Landing / splash screen before the main menu
+- **Landing.cs** - Landing / splash screen before main menu
 - **PauseWidget.cs** - Pause menu
 - **InGameMenuWidget.cs** - In-game menu (shown when paused)
 - **GameMenu.cs** - Game menu base class
@@ -79,7 +79,7 @@ Menu logic classes, providing full behavioral control for each menu screen.
 - **ChoosePenitenceWidget.cs** - Choose penitence / penance mode screen
 - **AbandonPenitenceWidget.cs** - Abandon penitence confirmation screen
 - **ModeUnlockedWidget.cs** - Mode unlock notification popup
-- **AchievementElementWidget.cs** - Individual achievement entry in the achievement list
+- **AchievementElementWidget.cs** - Individual achievement entry in achievement list
 - **UpgradeFlasksWidget.cs** - Upgrade flasks screen
 - **ExtrasMenuWidget.cs** - Extras menu (artbook, music, etc.)
 - **IntroDemakeWidget.cs** - Demake mode intro cutscene
@@ -100,7 +100,7 @@ Menu logic classes, providing full behavioral control for each menu screen.
 
 ## Others/UIGameLogic/
 
-In-game HUD logic components, displayed on the Gameplay screen.
+In-game HUD logic components, displayed on Gameplay screen.
 
 - **BossHealth.cs** - Boss health bar display
 - **PlayerHealth.cs** - Player health bar (standard mode)
@@ -120,10 +120,10 @@ In-game HUD logic components, displayed on the Gameplay screen.
 
 ## Console/
 
-Development console commands (~40 commands), all inheriting from the `ConsoleCommand` base class. Press a key (usually ~ or F1) in-game to open the console input.
+Development console commands (~40 commands), all inheriting from `ConsoleCommand` base class. Press key (usually ~ or F1) in-game to open console input.
 
 - **ConsoleCommand.cs** - Command base class. Provides virtual methods: `Execute(command, parameters)`, `GetName()`, `Initialize(console)`, `Update()`
-- **Help.cs** - `help` - List all commands or get help for a specific command
+- **Help.cs** - `help` - List all commands or get help for specific command
 - **AchievementCommand.cs** - `achievement` - Achievement-related operations
 - **AlmsCommand.cs** - `alms` - Alms / donation related
 - **AudioCommand.cs** - `audio` - Audio debugging
@@ -146,7 +146,7 @@ Development console commands (~40 commands), all inheriting from the `ConsoleCom
 - **Invincible.cs** - `invincible` - Invincibility toggle
 - **Kill.cs** - `kill` - Kill all/specific enemies
 - **LanguageCommand.cs** - `language` - Language switching
-- **LoadLevel.cs** - `loadlevel` - Directly load a level scene
+- **LoadLevel.cs** - `loadlevel` - Directly load level scene
 - **MapCommand.cs** - `map` - Map related
 - **MaxFervour.cs** - `maxfervour` - Set max fervour
 - **MiriamCommand.cs** - `miriam` - Miriam challenge control
@@ -213,7 +213,7 @@ Disclaimer / opening prompts.
 
 ## Others/UIGameEditor/
 
-UI helper tools in the scene editor.
+UI helper tools in scene editor.
 
 - **ClimbPreview.cs** - Climb detection visual preview (displays wall-climb detection range in editor)
 - **PixelPivot.cs** - Pixel alignment pivot tool

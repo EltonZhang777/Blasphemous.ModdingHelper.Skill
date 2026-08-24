@@ -1,11 +1,11 @@
 # Localization
 
-Localization source code navigation in Blasphemous (I2.Loc + the game's own `LocalizationManager`).
+Localization source code navigation in Blasphemous (I2.Loc + game's own `LocalizationManager`).
 
 ## Core Design Patterns
 
 1. Dual engine: I2.Loc (third-party, `Sources[0]` holds all translation data) + game's own `LocalizationManager` (language switching, fonts, tag parsing) — keep them distinct
-2. Term keys are `prefix/KEY`; `ScriptLocalization` is a compile-time generated type-safe wrapper
+2. Term keys are `prefix/KEY`; `ScriptLocalization` is compile-time generated type-safe wrapper
 3. Tag system: `[ICON:name]` / `[ACT:action]` parsed by `ParseMeshPro()`
 4. Text language and audio language managed independently (`CurrentAudioLanguageIndex` + `OnLocalizeAudioEvent`)
 
@@ -13,7 +13,7 @@ Localization source code navigation in Blasphemous (I2.Loc + the game's own `Loc
 
 ## Architecture Overview
 
-Blasphemous uses **I2 Localization** (a third-party Unity plugin) as its localization engine, while also wrapping the game's own `Framework.Managers.LocalizationManager` as a bridge layer.
+Blasphemous uses **I2 Localization** (third-party Unity plugin) as its localization engine, while also wrapping game's own `Framework.Managers.LocalizationManager` as bridge layer.
 
 ```
 ┌─────────────────────────────────────────────┐
@@ -44,13 +44,13 @@ Blasphemous uses **I2 Localization** (a third-party Unity plugin) as its localiz
 └─────────────────────────────────────────────┘
 ```
 
-> **Note**: `I2.Loc.LocalizationManager` and `Framework.Managers.LocalizationManager` are two completely different classes. The code often uses both simultaneously, so be sure to distinguish between them.
+> **Note**: `I2.Loc.LocalizationManager` and `Framework.Managers.LocalizationManager` are two completely different classes. code often uses both simultaneously, so be sure to distinguish between them.
 
 ---
 
 ## I2.Loc.LocalizationManager (Third-party Library, Compiled to DLL)
 
-**Static class**, from the I2 Localization plugin. Its full implementation is not visible in the Blasphemous source code (only `ScriptLocalization.cs` is compile-time generated).
+**Static class**, from I2 Localization plugin. Its full implementation is not visible in Blasphemous source code (only `ScriptLocalization.cs` is compile-time generated).
 
 Core API:
 
@@ -81,7 +81,7 @@ var source = I2.Loc.LocalizationManager.Sources[0];
 
 ## I2.Loc.Localize (Third-party Library, Compiled to DLL)
 
-`MonoBehaviour`, attached to `Text` / `TextMeshProUGUI` components, automatically updates text based on the current language.
+`MonoBehaviour`, attached to `Text` / `TextMeshProUGUI` components, automatically updates text based on current language.
 
 Key fields:
 
@@ -91,7 +91,7 @@ Key fields:
 | `SecondaryTerm` | Secondary translation term path (e.g., `"UI/FONT_XXX"`, used for font switching) |
 | `mTermSecondary` | Whether `SecondaryTerm` should also update with language changes |
 
-In `CheckFonts.cs`, you can see that the game's UI text carries font information via the `SecondaryTerm` field of `Localize` (with the `"UI/FONT"` prefix).
+In `CheckFonts.cs`, you can see that game's UI text carries font information via `SecondaryTerm` field of `Localize` (with `"UI/FONT"` prefix).
 
 ---
 
@@ -99,7 +99,7 @@ In `CheckFonts.cs`, you can see that the game's UI text carries font information
 
 **File location**: `I2/Loc/ScriptLocalization.cs`
 
-A compile-time generated static wrapper class that provides type-safe access to translated strings. Internally structured as multi-level nested static classes organized by UI module.
+Compile-time generated static wrapper class that provides type-safe access to translated strings. Internally structured as multi-level nested static classes organized by UI module.
 
 ### ScriptLocalization.Get()
 
@@ -140,7 +140,7 @@ Each nested class's properties are `static string` (read-only getter), directly 
 
 **Inherits**: `GameSystem` (Framework core system base class)
 
-Blasphemous's own localization manager. The difference from `I2.Loc.LocalizationManager` is that it handles game-specific logic: Steam language detection, audio language switching, per-language font selection, tag parsing (`[ICON:]` / `[ACT:]`), parameter substitution, etc.
+Blasphemous's own localization manager. difference from `I2.Loc.LocalizationManager` is that it handles game-specific logic: Steam language detection, audio language switching, per-language font selection, tag parsing (`[ICON:]` / `[ACT:]`), parameter substitution, etc.
 
 ### Initialization Flow
 
@@ -150,7 +150,7 @@ Initialize() → WaitForCoreAnContinue()
     → If reading fails, SteamLanguageChange()
 ```
 
-`SteamLanguageChange()` maps Steam's language strings (`"spanish"`, `"schinese"`, etc.) to I2 language codes (`"es"`, `"zh"`, etc.) and sets the language via `Core.Localization`.
+`SteamLanguageChange()` maps Steam's language strings (`"spanish"`, `"schinese"`, etc.) to I2 language codes (`"es"`, `"zh"`, etc.) and sets language via `Core.Localization`.
 
 Supported language mapping:
 | Steam Name | I2 Code |
@@ -191,7 +191,7 @@ Supported language mapping:
 
 ### Text Tag System
 
-Special tags parsed by the `ParseMeshPro()` method:
+Special tags parsed by `ParseMeshPro()` method:
 
 | Tag Format | Description |
 |---------|------|
@@ -249,7 +249,7 @@ public delegate void OnLocalizeCallback(string languageKey);
 
 **File location**: `Gameplay/UI/FontsByLanguage.cs`
 
-`[Serializable]` struct that defines the mapping between language and font:
+`[Serializable]` struct that defines mapping between language and font:
 
 ```csharp
 public struct FontsByLanguage
@@ -259,7 +259,7 @@ public struct FontsByLanguage
 }
 ```
 
-It is included in UIController's `fontsByLanguages` list and is used to switch the global font at runtime based on the language.
+It is included in UIController's `fontsByLanguages` list and is used to switch global font at runtime based on language.
 
 ---
 
@@ -277,7 +277,7 @@ It is included in UIController's `fontsByLanguages` list and is used to switch t
 | `verticalSpacing` | Vertical line spacing |
 | `addCharacterWidth` | Whether to add character width |
 
-The `MyLanguages()` method retrieves all language names from `LocalizationManager.GetAllLanguages(true)` as dropdown options.
+`MyLanguages()` method retrieves all language names from `LocalizationManager.GetAllLanguages(true)` as dropdown options.
 
 ---
 
@@ -287,10 +287,10 @@ The `MyLanguages()` method retrieves all language names from `LocalizationManage
 
 `MonoBehaviour`, attached to UI text objects, automatically adjusts line spacing on language switching.
 
-- In `Start()`, gets the original lineSpacing of the `Text` or `TextMeshProUGUI` component
+- In `Start()`, gets original lineSpacing of `Text` or `TextMeshProUGUI` component
 - Subscribes to `I2.Loc.LocalizationManager.OnLocalizeEvent`
-- In `OnLocalize()`, looks up the spacing factor for the current language from `GameConstants` and applies it
-- In `OnDestroy()`, unsubscribes from the event
+- In `OnLocalize()`, looks up spacing factor for current language from `GameConstants` and applies it
+- In `OnDestroy()`, unsubscribes from event
 
 ---
 
@@ -313,9 +313,9 @@ The `MyLanguages()` method retrieves all language names from `LocalizationManage
 
 `MonoBehaviour` (editor tool), used to automatically generate zone localization keys.
 
-- `source` field: References a `LanguageSource` asset
-- `GenerateLocalization()`: Scans root objects named `D??` and their child `Z??` objects in the scene, automatically creates translation terms in the format `Map/DXX` and `Map/DXX_ZYY`
-- `CreateTermIfNeeded(string key, string cad)`: Adds a term if it doesn't exist, and fills the same text for all languages
+- `source` field: References `LanguageSource` asset
+- `GenerateLocalization()`: Scans root objects named `D??` and their child `Z??` objects in scene, automatically creates translation terms in format `Map/DXX` and `Map/DXX_ZYY`
+- `CreateTermIfNeeded(string key, string cad)`: Adds term if it doesn't exist, and fills same text for all languages
 
 ---
 
@@ -323,7 +323,7 @@ The `MyLanguages()` method retrieves all language names from `LocalizationManage
 
 **File location**: `ILocalizable.cs`
 
-Interface that defines the base method for retrieving a translation ID:
+Interface that defines base method for retrieving translation ID:
 
 ```csharp
 public interface ILocalizable
@@ -340,7 +340,7 @@ public interface ILocalizable
 
 **File location**: `CheckFonts.cs`
 
-`MonoBehaviour` (editor tool), used to inspect and fix font usage issues in the game. Provides the following button methods:
+`MonoBehaviour` (editor tool), used to inspect and fix font usage issues in game. Provides these button methods:
 
 | Method | Description |
 |------|------|
@@ -351,7 +351,7 @@ public interface ILocalizable
 | `CheckLocalizationChild()` | Checks if `Localize` components on child objects are missing the `"UI/FONT"` prefix in their SecondaryTerm |
 | `CheckLocalizationAll()` | Globally checks `Localize`'s SecondaryTerm |
 
-The logic of `CheckLocalizationInternal()` is particularly important: it iterates through `Text` components, checks whether a `Localize` component is attached, and whether `Localize.SecondaryTerm` starts with `"UI/FONT"` (the standard practice for font localization).
+Logic of `CheckLocalizationInternal()` is particularly important: it iterates through `Text` components, checks whether `Localize` component is attached, and whether `Localize.SecondaryTerm` starts with `"UI/FONT"` (standard practice for font localization).
 
 | Field | Description |
 |------|------|
@@ -376,7 +376,7 @@ Console command `language`, inherits `ConsoleCommand`. Provides sub-commands:
 | `language current` | Shows the current language |
 | `language set <CODE>` | Sets the language (e.g., `language set zh`) |
 
-Implemented using the `I2.Loc.LocalizationManager` API.
+Implemented using `I2.Loc.LocalizationManager` API.
 
 ---
 

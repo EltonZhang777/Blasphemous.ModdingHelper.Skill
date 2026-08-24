@@ -5,7 +5,7 @@ Item / inventory / equipment / effect / achievement source code navigation in Bl
 ## Core Design Patterns
 
 1. Three-layer item model: `BaseElement` (ScriptableObject data) → `BaseInventoryObject` (MonoBehaviour behaviour) → concrete type
-2. `ObjectEffect` is the core effect base class; `EffectType` / `ConditionType` enums control trigger timing and conditions
+2. `ObjectEffect` is core effect base class; `EffectType` / `ConditionType` enums control trigger timing and conditions
 3. Achievement progress accumulates automatically via `Add()` and other hooks (fixed percentages per type, e.g. AC16–AC20)
 4. Equippables: `EquipableInventoryObject` (Equip/UnEquip/Use → SendMessage events)
 
@@ -206,7 +206,7 @@ Serializable struct — `id`, `name`, `hasAnotherName`, `otherName`. Used for AC
 `ObjectEffect` subclass — Empty implementation of invulnerability effect (logic driven by parent OnEquip/OnUse events).
 
 ### Tools/Items/ObjectEffect_ChangeItem.cs
-`ObjectEffect` subclass — Swaps current item with a new one (configurable add/auto-equip).
+`ObjectEffect` subclass — Swaps current item with new one (configurable add/auto-equip).
 
 ---
 
@@ -220,4 +220,4 @@ Serializable struct — `id`, `name`, `hasAnotherName`, `otherName`. Used for AC
 ## InventoryIdAttribute
 
 ### Framework/Inventory/InventoryIdAttribute.cs
-`PropertyAttribute` — Unity editor attribute, used in Inspector to filter the item ID list of the specified `InventoryManager.ItemType`. Constructor takes an `InventoryManager.ItemType` parameter.
+`PropertyAttribute` — Unity editor attribute, used in Inspector to filter item ID list of specified `InventoryManager.ItemType`. Constructor takes `InventoryManager.ItemType` parameter.

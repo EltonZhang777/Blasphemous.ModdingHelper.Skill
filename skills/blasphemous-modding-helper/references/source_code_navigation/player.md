@@ -1,19 +1,19 @@
 # Player
 
-Source code navigation for the Player System (Penitent). The active instance is accessible via `Core.Logic.Penitent`.
+Source code navigation for Player System (Penitent). active instance is accessible via `Core.Logic.Penitent`.
 
 ## Core Design Patterns
 
 1. Active instance `Core.Logic.Penitent`; `Penitent.cs` aggregates all subsystems (abilities, attack, movement, input, audio)
-2. One component per ability under `Abilities/`, driven by the state machine
-3. Input wrapped by `PlatformCharacterInput` around Rewired (`Rewired.Player` is the core input component)
+2. One component per ability under `Abilities/`, driven by state machine
+3. Input wrapped by `PlatformCharacterInput` around Rewired (`Rewired.Player` is core input component)
 4. State machine: `States/Driven.cs` (cutscene-forced control) vs `States/Playing.cs` (normal gameplay)
 
 ---
 
 ## Main Class
 
-- `Penitent.cs` - Main class for the player character "Penitent", inherits `Entity`, aggregates all player subsystems (abilities, attack, animation, movement, input, audio, etc.). Active instance: `Core.Logic.Penitent`
+- `Penitent.cs` - Main class for player character "Penitent", inherits `Entity`, aggregates all player subsystems (abilities, attack, animation, movement, input, audio, etc.). Active instance: `Core.Logic.Penitent`
 
 ## Ability System
 
@@ -62,7 +62,7 @@ Source code navigation for the Player System (Penitent). The active instance is 
 ## Input System
 
 - `InputSystem/EntityRumble.cs` - Entity rumble (controller vibration feedback)
-- `InputSystem/PlatformCharacterInput.cs` - Platform character input processing. The `Rewired` property (of type `Rewired.Player`) is the core input component
+- `InputSystem/PlatformCharacterInput.cs` - Platform character input processing. `Rewired` property (of type `Rewired.Player`) is core input component
 
 ## Animation
 
@@ -112,4 +112,4 @@ Source code navigation for the Player System (Penitent). The active instance is 
 
 ## External Dependencies
 
-- `CreativeSpore.SmartColliders.PlatformCharacterController` - Platform character controller, handles player movement, collision and physics. Not in the Penitent/ directory, belongs to the SmartColliders plugin
+- `CreativeSpore.SmartColliders.PlatformCharacterController` - Platform character controller, handles player movement, collision and physics. Not in Penitent/ directory, belongs to SmartColliders plugin

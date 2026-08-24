@@ -14,15 +14,15 @@ Source code navigation for custom tools, PlayMaker FSM Actions/Conditions/Events
 
 ### Action/
 
-- `ActionableActivation.cs` - Forcefully activate/deactivate an interactable object (Actionable)
+- `ActionableActivation.cs` - Forcefully activate/deactivate interactable object (Actionable)
 - `AddAchievementProgress.cs` - Add achievement progress
 - `AddCorpseAchievementProgressAC14.cs` - AC14 corpse achievement progress addition
 - `AmbientSet.cs` - Set ambient audio parameters
 - `AreaEmitterOneShot.cs` - Area audio one-shot trigger
 - `ArrayFindGameObjectsByName.cs` - Find GameObject array by name
 - `BeadUpgrade.cs` - Bead slot upgrade
-- `BehaviourStart.cs` - Start a Behaviour
-- `BehaviourStop.cs` - Stop a Behaviour
+- `BehaviourStart.cs` - Start Behaviour
+- `BehaviourStop.cs` - Stop Behaviour
 - `BossKeyCheck.cs` - Boss key check
 - `BossKeySet.cs` - Set Boss key state
 - `CameraFade.cs` - Camera fade in/out
@@ -145,7 +145,7 @@ Source code navigation for custom tools, PlayMaker FSM Actions/Conditions/Events
 
 ## PlayMaker Conditions
 
-- `EntityIsPenitent.cs` - Whether entity is the player (Penitent)
+- `EntityIsPenitent.cs` - Whether entity is player (Penitent)
 - `FlagExists.cs` - Whether flag exists
 - `InteractableIsConsumed.cs` - Whether interactable is consumed
 - `InteractableIsLocked.cs` - Whether interactable is locked

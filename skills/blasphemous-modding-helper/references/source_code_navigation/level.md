@@ -8,8 +8,8 @@ Level-related systems: actionables, interactables, layout building, effects, and
 
 1. **IActionable Chaining** — `TriggerReceiver`, `BreakableInteractor`, `SlashReceiver`, etc. cascade activation of other objects via `IActionable[]` arrays.
 2. **PersistentObject Persistence** — Most interactive objects inherit from `PersistentObject`, saving state via `BasicPersistence` or custom `PersistenceData`.
-3. **Interactable Lifecycle** — Virtual methods `OnUse()` / `OnAwake()` / `OnStart()` / `OnUpdate()` / `PlayerReposition()` form an extensible interactive base class.
-4. **IDamageable Direction Lock** — `BreakableWall` / `PersistentBreakableObject` / `SlashReceiver` use the `DAMAGEABLE_DIRECTION_LOCK` enum to restrict hit direction.
+3. **Interactable Lifecycle** — Virtual methods `OnUse()` / `OnAwake()` / `OnStart()` / `OnUpdate()` / `PlayerReposition()` form extensible interactive base class.
+4. **IDamageable Direction Lock** — `BreakableWall` / `PersistentBreakableObject` / `SlashReceiver` use `DAMAGEABLE_DIRECTION_LOCK` enum to restrict hit direction.
 5. **Material Tag Audio** — `ElusivePlatform` etc. use GameObject tag (e.g., `Material:Stone`) to determine audio prefix.
 6. **DOTween Animation** — Most transitions (doors, platforms, hidden areas) use DOTween for smooth animation.
 7. **PoolManager Object Pooling** — Frequently-created objects like `ShockwaveArea` are reused via PoolManager.
@@ -51,7 +51,7 @@ Destructible object. `PersistentObject` + `IActionable` + `IDamageable`. Persist
 Destructible wall barrier. `PersistentObject` + `IActionable` + `IDamageable`. Directional break (BOTH/LEFT/RIGHT). Health system, `SecretReveal`, `OnDestroy` targets (IActionable chain). Integrates with `LayoutElement` / `Category.Layout` for visual mode.
 
 ### DestroyableBridge (`Actionables/DestroyableBridge.cs`)
-Bridge that moves to a `Destination` transform on Use(). DOTween interpolation with `translationCurve` / `rotationCurve`. FMOD audio. Persistent (alreadyUsed).
+Bridge that moves to `Destination` transform on Use(). DOTween interpolation with `translationCurve` / `rotationCurve`. FMOD audio. Persistent (alreadyUsed).
 
 ### ElusivePlatform (`Actionables/ElusivePlatform.cs`)
 Platform that disappears when entity stands on it, reappears after `RecoverTime`. Supports decorative (animator) and layout-only modes. Material-based audio (stone/wood/glass/demake). Implements `INoSafePosition`.
@@ -60,7 +60,7 @@ Platform that disappears when entity stands on it, reappears after `RecoverTime`
 Simple `SpriteRenderer` fade-out via `DOFade`. `IActionable`. Configurable `time`.
 
 ### FaithPlatform (`Actionables/FaithPlatform.cs`)
-Revealable platforms triggered by flag `REVEAL_FAITH_PLATFORMS`. First platform in chain is the entry point. DOTween color transition, FMOD sounds. `INoSafePosition`.
+Revealable platforms triggered by flag `REVEAL_FAITH_PLATFORMS`. First platform in chain is entry point. DOTween color transition, FMOD sounds. `INoSafePosition`.
 
 ### GameobjectActivator (`Actionables/GameobjectActivator.cs`)
 Toggles `GameObject.SetActive()` on target array. `PersistentObject` + `IActionable`. Supports `persistState`.
@@ -131,7 +131,7 @@ Loot chest. Extends `Interactable`. `ChestMode` enum (likely `Interactive`/`Auto
 Enum defining chest activation mode (Interactable — player presses button; alternative mode for auto-open).
 
 ### DemakeAltar (`Interactables/DemakeAltar.cs`)
-8-bit demake version of the Altar. Likely simplified interaction for the retro mini-game.
+8-bit demake version of Altar. Likely simplified interaction for retro mini-game.
 
 ### Door (`Interactables/Door.cs`)
 Scene transition door. Extends `Interactable`. Features:
@@ -181,7 +181,7 @@ Miriam (Bloodstained crossover) exit transition handler.
 Miriam portal — entry point for Bloodstained crossover event.
 
 ### MiriamStart (`Interactables/MiriamStart.cs`)
-Miriam appearance trigger — starts the crossover sequence.
+Miriam appearance trigger — starts crossover sequence.
 
 ### PrieDieu (`Interactables/PrieDieu.cs`)
 Save point / fast-travel shrine. Extends `Interactable`. 3 visual levels via `Core.Alms.GetPrieDieuLevel()`. Player kneels → kneel menu (save, teleport, etc). Lights up on first use (`Ligthed`). Fires `OnUsePrieDieu` event (triggers breakable restoration worldwide).
@@ -202,13 +202,13 @@ Enum: `Layout`, `Audio`, `Decoration`, `Gameplay`. Used by `LayoutElement` and `
 Debug spawn point configuration for testing.
 
 ### EnemySpawnPoint (`Layout/EnemySpawnPoint.cs`)
-Defines enemy spawn position and parameters within a level layout.
+Defines enemy spawn position and parameters within level layout.
 
 ### LadderLayout (`Layout/LadderLayout.cs`)
 Layout-specific ladder configuration (separate from ActionableLadder).
 
 ### LayoutElement (`Layout/LayoutElement.cs`)
-Core element for level geometry. Each room piece has a `LayoutElement` with a `Category` and `SpriteRenderer` reference. Used by `BreakableWall`, `PersistentBreakableObject`, `ElusivePlatform` for layout mode toggling.
+Core element for level geometry. Each room piece has `LayoutElement` with `Category` and `SpriteRenderer` reference. Used by `BreakableWall`, `PersistentBreakableObject`, `ElusivePlatform` for layout mode toggling.
 
 ### LevelBuilder (`Layout/LevelBuilder.cs`)
 `ExecuteInEditMode`. `Category Mode` property — switches level building modes. Shortcut: Ctrl+E.
@@ -233,7 +233,7 @@ Handles penitent being pushed out of geometry when stuck.
 `Tools/Level/Effects/` — Level-wide color grading and visual effects.
 
 ### LevelColorEffectData (`Effects/LevelColorEffectData.cs`)
-Struct: `colorizeColor`, `colorizeAmount`, `colorizeMultColor`. Defines color grading for a level.
+Struct: `colorizeColor`, `colorizeAmount`, `colorizeMultColor`. Defines color grading for level.
 
 ### ScriptableLevelEffects (`Effects/ScriptableLevelEffects.cs`)
 `[CreateAssetMenu]` ScriptableObject. `Dictionary<LEVEL_COLOR_CONFIGS, LevelColorEffectData>`. Database mapping level enum to color effect data.
