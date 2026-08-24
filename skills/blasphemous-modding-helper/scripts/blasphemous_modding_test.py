@@ -31,7 +31,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from pathlib import PurePosixPath
-from typing import Dict, Iterator, List, Optional, Sequence, Tuple
+from typing import ContextManager, Dict, Iterator, List, Optional, Sequence, Tuple
 
 
 EXIT_SUCCESS = 0
@@ -174,6 +174,257 @@ class DeploymentTransaction:
     records: List[Dict[str, object]]
     created_directories: List[Path]
     created_at: str
+
+
+class ProcessAdapter:
+    """Public seam for process identity, launch, and process-tree lifecycle."""
+
+    def find_conflict(self, launcher: Path) -> Optional[ProcessIdentity]:
+        try:
+            return _find_conflicting_process(launcher)
+        except OSError as error:
+            raise CliError(
+                EXIT_LAUNCH,
+                "launch",
+                f"Could not inspect running processes before launch: {error}",
+            ) from error
+
+    def start(self, launcher: Path, working_directory: Path) -> object:
+        options: Dict[str, object] = {
+            "cwd": str(working_directory),
+            "shell": False,
+        }
+        if os.name == "nt":
+            options["creationflags"] = getattr(
+                subprocess,
+                "CREATE_NEW_PROCESS_GROUP",
+                0,
+            )
+        else:
+            options["start_new_session"] = True
+        return subprocess.Popen([str(launcher)], **options)
+
+    def identify(
+        self,
+        pid: int,
+        *,
+        strict: bool = False,
+    ) -> Optional[ProcessIdentity]:
+        return _process_identity(pid, strict=strict)
+
+    def wait_for_alive(
+        self,
+        identity: ProcessIdentity,
+        *,
+        timeout: float = LAUNCH_GRACE_PERIOD_SECONDS,
+    ) -> Tuple[bool, Optional[ProcessIdentity]]:
+        return _wait_for_process_alive(identity, timeout=timeout)
+
+    def is_alive(self, identity: ProcessIdentity) -> bool:
+        return _tracked_process_is_alive(identity)
+
+    def snapshot_tree(self, identity: ProcessIdentity) -> Tuple[ProcessIdentity, ...]:
+        return _snapshot_process_tree(identity)
+
+    def terminate_tree(self, identity: ProcessIdentity, *, force: bool = False) -> None:
+        _terminate_process_tree(identity, force=force)
+
+    def wait_for_exit(
+        self,
+        identity: ProcessIdentity,
+        *,
+        timeout: float = 1.0,
+    ) -> bool:
+        return _wait_for_process_exit(identity, timeout=timeout)
+
+
+class FileAdapter:
+    """Public seam for file copies and removals used by lifecycle cleanup."""
+
+    def copy(self, source: Path, destination: Path) -> None:
+        shutil.copy2(source, destination)
+
+    def remove(self, destination: Path) -> None:
+        destination.unlink()
+
+
+class SessionStore:
+    """Public seam for temporary Test session state and ordering."""
+
+    def __init__(self, root: Optional[Path] = None):
+        self.root = (root or _deployment_state_root()).resolve(strict=False)
+
+    def manifest_path(
+        self,
+        session_id: str,
+        *,
+        code: int = EXIT_CLEAN,
+        category: str = "stop/clean",
+        allow_missing: bool = False,
+    ) -> Path:
+        return _session_manifest_path(
+            session_id,
+            code=code,
+            category=category,
+            allow_missing=allow_missing,
+            state_root=self.root,
+        )
+
+    def entries(
+        self,
+        profile: Optional[Path] = None,
+    ) -> Tuple[Tuple[Path, Dict[str, object]], ...]:
+        return _session_entries(profile, state_root=self.root)
+
+
+class TestSession:
+    """Deep public lifecycle seam for one coherent mod-testing workflow."""
+
+    def __init__(
+        self,
+        state_root: Optional[Path] = None,
+        process_adapter: Optional[ProcessAdapter] = None,
+        file_adapter: Optional[FileAdapter] = None,
+    ):
+        self.store = SessionStore(state_root)
+        self.process_adapter = process_adapter or ProcessAdapter()
+        self.file_adapter = file_adapter or FileAdapter()
+
+    def prepare_artifact(
+        self,
+        project: Path,
+        configuration: str,
+        explicit_artifact: Optional[str] = None,
+        cwd: Optional[Path] = None,
+    ) -> ContextManager[ArtifactPlan]:
+        return prepare_artifact(
+            project,
+            configuration,
+            explicit_artifact=explicit_artifact,
+            cwd=cwd,
+        )
+
+    def deploy(
+        self,
+        plan: ArtifactPlan,
+        profile: ProfilePreflight,
+    ) -> DeploymentResult:
+        return deploy_artifact(
+            plan,
+            profile,
+            state_root=self.store.root,
+            file_adapter=self.file_adapter,
+        )
+
+    def find_conflict(self, launcher: Path) -> Optional[ProcessIdentity]:
+        return self.process_adapter.find_conflict(launcher)
+
+    def entries(
+        self,
+        profile: Optional[Path] = None,
+    ) -> Tuple[Tuple[Path, Dict[str, object]], ...]:
+        return self.store.entries(profile)
+
+    def manifest_path(
+        self,
+        session_id: str,
+        *,
+        code: int = EXIT_CLEAN,
+        category: str = "stop/clean",
+        allow_missing: bool = False,
+    ) -> Path:
+        return self.store.manifest_path(
+            session_id,
+            code=code,
+            category=category,
+            allow_missing=allow_missing,
+        )
+
+    def archive_previous(
+        self,
+        profile: Path,
+        current_session_id: str,
+    ) -> Tuple[str, ...]:
+        return _archive_previous_sessions(
+            profile,
+            current_session_id,
+            state_root=self.store.root,
+            process_adapter=self.process_adapter,
+        )
+
+    def launch(
+        self,
+        deployment: DeploymentResult,
+        profile: ProfilePreflight,
+        log_paths: Optional[Sequence[Path]] = None,
+    ) -> LaunchResult:
+        return launch_session(
+            deployment,
+            profile,
+            log_paths=log_paths,
+            process_adapter=self.process_adapter,
+        )
+
+    def collect_log_evidence(
+        self,
+        state_path: Path,
+        profile: ProfilePreflight,
+        preferences: Preferences,
+        environment: str,
+        *,
+        full: bool = False,
+        explicit_unity_log_dir: Optional[str] = None,
+    ) -> EvidenceReport:
+        return collect_log_evidence(
+            state_path,
+            profile,
+            preferences,
+            environment,
+            full=full,
+            explicit_unity_log_dir=explicit_unity_log_dir,
+        )
+
+    def wait_for_startup_evidence(
+        self,
+        state_path: Path,
+        profile: ProfilePreflight,
+        preferences: Preferences,
+        environment: str,
+        timeout: float,
+        *,
+        explicit_unity_log_dir: Optional[str] = None,
+    ) -> EvidenceReport:
+        return wait_for_startup_evidence(
+            state_path,
+            profile,
+            preferences,
+            environment,
+            timeout,
+            explicit_unity_log_dir=explicit_unity_log_dir,
+        )
+
+    def stop(self, session_id: str, force: bool = False) -> StopResult:
+        return stop_session(
+            session_id,
+            force=force,
+            state_root=self.store.root,
+            process_adapter=self.process_adapter,
+        )
+
+    def clean(
+        self,
+        session_id: str,
+        remove_new_files: bool = False,
+        expected_profile: Optional[Path] = None,
+    ) -> CleanResult:
+        return clean_session(
+            session_id,
+            remove_new_files=remove_new_files,
+            expected_profile=expected_profile,
+            state_root=self.store.root,
+            process_adapter=self.process_adapter,
+            file_adapter=self.file_adapter,
+        )
 
 
 def _preference_paths(cwd: Path, home: Path) -> Tuple[Tuple[str, Path], ...]:
@@ -1037,8 +1288,10 @@ def _session_sort_key(entry: Tuple[Path, Dict[str, object]]) -> Tuple[str, int, 
 
 def _session_entries(
     profile: Optional[Path] = None,
+    *,
+    state_root: Optional[Path] = None,
 ) -> Tuple[Tuple[Path, Dict[str, object]], ...]:
-    state_root = _deployment_state_root()
+    state_root = state_root or _deployment_state_root()
     if not state_root.is_dir():
         return ()
     entries: List[Tuple[Path, Dict[str, object]]] = []
@@ -1076,9 +1329,16 @@ def _session_role(
     return "active" if newest else "archived"
 
 
-def _archive_previous_sessions(profile: Path, current_session_id: str) -> Tuple[str, ...]:
+def _archive_previous_sessions(
+    profile: Path,
+    current_session_id: str,
+    *,
+    state_root: Optional[Path] = None,
+    process_adapter: Optional[ProcessAdapter] = None,
+) -> Tuple[str, ...]:
+    adapter = process_adapter or ProcessAdapter()
     changes: List[Tuple[Path, str, Dict[str, object], str]] = []
-    for state_path, payload in _session_entries(profile):
+    for state_path, payload in _session_entries(profile, state_root=state_root):
         session_id = str(payload.get("session_id", state_path.parent.name))
         if session_id == current_session_id or not _session_is_cleanable(payload):
             continue
@@ -1097,7 +1357,7 @@ def _archive_previous_sessions(profile: Path, current_session_id: str) -> Tuple[
                     "launch",
                     f"Could not archive session {session_id}; its tracked process state is incomplete: {error}",
                 ) from error
-            if _tracked_process_is_alive(identity):
+            if adapter.is_alive(identity):
                 raise CliError(
                     EXIT_LAUNCH,
                     "launch",
@@ -1415,6 +1675,8 @@ def _session_manifest_path(
     code: int = EXIT_CLEAN,
     category: str = "stop/clean",
     allow_missing: bool = False,
+    *,
+    state_root: Optional[Path] = None,
 ) -> Path:
     if re.fullmatch(r"[0-9a-f]{32}", session_id) is None:
         raise CliError(
@@ -1422,7 +1684,7 @@ def _session_manifest_path(
             category,
             "Session ID must be a 32-character hexadecimal identifier.",
         )
-    state_path = _deployment_state_root() / session_id / "manifest.json"
+    state_path = (state_root or _deployment_state_root()) / session_id / "manifest.json"
     if not state_path.is_file():
         if allow_missing:
             return state_path
@@ -1703,17 +1965,6 @@ def _find_conflicting_process(launcher: Path) -> Optional[ProcessIdentity]:
     return None
 
 
-def _inspect_conflicting_process(profile: ProfilePreflight) -> Optional[ProcessIdentity]:
-    try:
-        return _find_conflicting_process(profile.launcher)
-    except OSError as error:
-        raise CliError(
-            EXIT_LAUNCH,
-            "launch",
-            f"Could not inspect running processes before launch: {error}",
-        ) from error
-
-
 def _tracked_process_is_alive(identity: ProcessIdentity) -> bool:
     try:
         current = _process_identity(identity.pid, strict=True)
@@ -1943,9 +2194,12 @@ def launch_session(
     deployment: DeploymentResult,
     profile: ProfilePreflight,
     log_paths: Optional[Sequence[Path]] = None,
+    *,
+    process_adapter: Optional[ProcessAdapter] = None,
 ) -> LaunchResult:
     """Launch the selected profile and persist identity for a later stop."""
 
+    adapter = process_adapter or ProcessAdapter()
     manifest = _read_session_manifest(deployment.state_path)
     if manifest.get("session_id") != deployment.session_id:
         raise CliError(
@@ -1953,14 +2207,8 @@ def launch_session(
             "launch",
             f"Deployment state does not match session {deployment.session_id}.",
         )
-    conflict = _inspect_conflicting_process(profile)
+    conflict = adapter.find_conflict(profile.launcher)
     if conflict is not None:
-        process_state = _launch_failure_state(
-            profile,
-            "blocked",
-            f"A matching launcher is already running with process ID {conflict.pid}.",
-        )
-        _update_process_state(deployment.state_path, process_state)
         raise CliError(
             EXIT_LAUNCH,
             "launch",
@@ -1973,21 +2221,8 @@ def launch_session(
     )
     started_at_epoch_ns = time.time_ns()
     log_baseline = _capture_log_baselines(tracked_log_paths)
-    options: Dict[str, object] = {
-        "cwd": str(profile.profile),
-        "shell": False,
-    }
-    if os.name == "nt":
-        options["creationflags"] = getattr(
-            subprocess,
-            "CREATE_NEW_PROCESS_GROUP",
-            0,
-        )
-    else:
-        options["start_new_session"] = True
-
     try:
-        process = subprocess.Popen([str(profile.launcher)], **options)
+        process = adapter.start(profile.launcher, profile.profile)
     except OSError as error:
         process_state = _launch_failure_state(profile, "failed", str(error))
         _update_process_state(deployment.state_path, process_state)
@@ -2014,7 +2249,7 @@ def launch_session(
         )
 
     try:
-        identity = _process_identity(process.pid, strict=True)
+        identity = adapter.identify(process.pid, strict=True)
     except OSError as error:
         identity = None
         identity_error = error
@@ -2040,7 +2275,10 @@ def launch_session(
         )
 
     try:
-        alive, current = _wait_for_process_alive(identity)
+        alive, current = adapter.wait_for_alive(
+            identity,
+            timeout=LAUNCH_GRACE_PERIOD_SECONDS,
+        )
     except OSError as error:
         alive = False
         current = None
@@ -2091,7 +2329,7 @@ def launch_session(
         )
     except (CliError, OSError) as error:
         try:
-            _terminate_process_tree(identity, force=True)
+            adapter.terminate_tree(identity, force=True)
         except OSError:
             pass
         raise CliError(
@@ -2102,10 +2340,21 @@ def launch_session(
     return LaunchResult(deployment.session_id, deployment.state_path, identity.pid)
 
 
-def stop_session(session_id: str, force: bool = False) -> StopResult:
+def stop_session(
+    session_id: str,
+    force: bool = False,
+    *,
+    state_root: Optional[Path] = None,
+    process_adapter: Optional[ProcessAdapter] = None,
+) -> StopResult:
     """Stop only the process identity recorded for one test session."""
 
-    state_path = _session_manifest_path(session_id, allow_missing=True)
+    adapter = process_adapter or ProcessAdapter()
+    state_path = _session_manifest_path(
+        session_id,
+        allow_missing=True,
+        state_root=state_root,
+    )
     if not state_path.is_file():
         return StopResult(session_id, "gone")
     manifest = _read_session_manifest(state_path)
@@ -2137,26 +2386,26 @@ def stop_session(session_id: str, force: bool = False) -> StopResult:
             f"Session {session_id} has incomplete tracked process state: {error}",
         ) from error
     identity = ProcessIdentity(pid, start_token, launcher)
-    if not _tracked_process_is_alive(identity):
+    if not adapter.is_alive(identity):
         process_state["state"] = "exited"
         process_state["recorded_at"] = datetime.now(timezone.utc).isoformat()
         _update_process_state(state_path, process_state)
         return StopResult(session_id, "exited")
 
     try:
-        tracked_tree = _snapshot_process_tree(identity)
+        tracked_tree = adapter.snapshot_tree(identity)
         if not tracked_tree:
             process_state["state"] = "exited"
             process_state["recorded_at"] = datetime.now(timezone.utc).isoformat()
             _update_process_state(state_path, process_state)
             return StopResult(session_id, "exited")
-        _terminate_process_tree(identity, force=force)
-        if not _wait_for_process_exit(identity):
+        adapter.terminate_tree(identity, force=force)
+        if not adapter.wait_for_exit(identity):
             raise OSError(
                 f"process {pid} is still running after stop; retry with --force"
             )
         for child in tracked_tree[1:]:
-            if not _wait_for_process_exit(child):
+            if not adapter.wait_for_exit(child):
                 raise OSError(
                     f"child process {child.pid} is still running after stop; retry with --force"
                 )
@@ -2179,7 +2428,10 @@ def stop_session(session_id: str, force: bool = False) -> StopResult:
 def _ensure_session_process_stopped(
     session_id: str,
     manifest: Dict[str, object],
+    *,
+    process_adapter: Optional[ProcessAdapter] = None,
 ) -> bool:
+    adapter = process_adapter or ProcessAdapter()
     process_value = manifest.get("process")
     if not isinstance(process_value, dict):
         return False
@@ -2204,7 +2456,7 @@ def _ensure_session_process_stopped(
             "stop/clean",
             f"Session {session_id} has incomplete tracked process state: {error}",
         ) from error
-    if _tracked_process_is_alive(identity):
+    if adapter.is_alive(identity):
         raise CliError(
             EXIT_CLEAN,
             "stop/clean",
@@ -2254,6 +2506,10 @@ def clean_session(
     session_id: str,
     remove_new_files: bool = False,
     expected_profile: Optional[Path] = None,
+    *,
+    state_root: Optional[Path] = None,
+    process_adapter: Optional[ProcessAdapter] = None,
+    file_adapter: Optional[FileAdapter] = None,
 ) -> CleanResult:
     """Safely roll back one stopped deployment session.
 
@@ -2264,7 +2520,12 @@ def clean_session(
     removing them.
     """
 
-    state_path = _session_manifest_path(session_id, allow_missing=True)
+    adapter = file_adapter or FileAdapter()
+    state_path = _session_manifest_path(
+        session_id,
+        allow_missing=True,
+        state_root=state_root,
+    )
     if not state_path.is_file():
         return CleanResult(
             session_id,
@@ -2293,14 +2554,18 @@ def clean_session(
             f"Session {session_id} belongs to profile {profile}, but the selected profile is {expected_profile.resolve(strict=False)}.",
         )
 
-    process_changed = _ensure_session_process_stopped(session_id, manifest)
+    process_changed = _ensure_session_process_stopped(
+        session_id,
+        manifest,
+        process_adapter=process_adapter,
+    )
     cleanup_state = _session_cleanup_state(manifest)
     if cleanup_state == "cleaned" and not remove_new_files:
         if process_changed:
             _atomic_write_json(state_path, manifest)
         return CleanResult(session_id, "already-cleaned", (), (), (), ())
 
-    entries = _session_entries(profile)
+    entries = _session_entries(profile, state_root=state_root)
     current_entry: Optional[Tuple[Path, Dict[str, object]]] = None
     for entry in entries:
         if entry[0] == state_path:
@@ -2445,7 +2710,7 @@ def clean_session(
                     raise OSError(
                         f"overwritten deployment target changed during testing; protected from restoration: {destination}"
                     )
-                shutil.copy2(backup, destination)
+                adapter.copy(backup, destination)
                 original_hash = str(record.get("original_sha256", ""))
                 if not original_hash or _sha256(destination) != original_hash:
                     raise OSError(f"restored file hash mismatch: {destination}")
@@ -2457,7 +2722,7 @@ def clean_session(
                     raise OSError(
                         f"new deployment target changed during testing; protected from removal: {destination}"
                     )
-                destination.unlink()
+                adapter.remove(destination)
                 record["removed"] = True
                 removed_files.append(destination)
             _atomic_write_json(state_path, manifest)
@@ -2530,8 +2795,10 @@ def _create_deployment_transaction(
     plan: ArtifactPlan,
     operations: Tuple[DeploymentOperation, ...],
     planned_directories: Tuple[Path, ...],
+    *,
+    state_root: Optional[Path] = None,
 ) -> DeploymentTransaction:
-    state_root = _deployment_state_root()
+    state_root = state_root or _deployment_state_root()
     session_directory: Optional[Path] = None
     try:
         state_root.mkdir(parents=True, exist_ok=True)
@@ -2592,13 +2859,18 @@ def _create_deployment_transaction(
         ) from error
 
 
-def _rollback_deployment(transaction: DeploymentTransaction) -> Tuple[str, ...]:
+def _rollback_deployment(
+    transaction: DeploymentTransaction,
+    *,
+    file_adapter: Optional[FileAdapter] = None,
+) -> Tuple[str, ...]:
     """Undo an incomplete deployment so no partial package remains.
 
     This failure-path compensation is distinct from the later safe-clean
     operation, which preserves new files from a successful test by default.
     """
 
+    adapter = file_adapter or FileAdapter()
     errors: List[str] = []
     for record in reversed(transaction.records):
         if not record["started"]:
@@ -2620,7 +2892,7 @@ def _rollback_deployment(transaction: DeploymentTransaction) -> Tuple[str, ...]:
                 if record["completed"] and record["deployed_sha256"]:
                     if _sha256(destination) != str(record["deployed_sha256"]):
                         raise OSError(f"deployed file changed before rollback: {destination}")
-                shutil.copy2(backup, destination)
+                adapter.copy(backup, destination)
                 expected = record["original_sha256"]
                 if expected and _sha256(destination) != expected:
                     raise OSError(f"restored file hash mismatch: {destination}")
@@ -2650,6 +2922,9 @@ def _rollback_deployment(transaction: DeploymentTransaction) -> Tuple[str, ...]:
 def deploy_artifact(
     plan: ArtifactPlan,
     profile: ProfilePreflight,
+    *,
+    state_root: Optional[Path] = None,
+    file_adapter: Optional[FileAdapter] = None,
 ) -> DeploymentResult:
     """Deploy one validated artifact with a recoverable transaction manifest."""
 
@@ -2661,11 +2936,13 @@ def deploy_artifact(
             "deployment",
             f"Deployment preflight failed before profile mutation; rollback not required: {error}",
         ) from error
+    adapter = file_adapter or FileAdapter()
     transaction = _create_deployment_transaction(
         profile,
         plan,
         operations,
         missing_directories,
+        state_root=state_root,
     )
     try:
         _write_manifest(transaction, "deploying")
@@ -2693,7 +2970,7 @@ def deploy_artifact(
                     raise OSError(f"backup path is missing: {operation.destination}")
                 backup = transaction.session_directory / str(backup_value)
                 backup.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(operation.destination, backup)
+                adapter.copy(operation.destination, backup)
                 record["backup_created"] = True
                 record["original_sha256"] = _sha256(backup)
                 _write_manifest(transaction, "deploying")
@@ -2701,7 +2978,7 @@ def deploy_artifact(
             source_hash = _sha256(operation.source)
             record["deployed_sha256"] = source_hash
             _reject_unsafe_deployment_destination(operation.destination)
-            shutil.copy2(operation.source, operation.destination)
+            adapter.copy(operation.source, operation.destination)
             if (
                 not operation.destination.is_file()
                 or _sha256(operation.destination) != source_hash
@@ -2717,7 +2994,10 @@ def deploy_artifact(
             tuple(operation.relative_path for operation in operations),
         )
     except Exception as error:
-        rollback_errors = _rollback_deployment(transaction)
+        rollback_errors = _rollback_deployment(
+            transaction,
+            file_adapter=adapter,
+        )
         if rollback_errors:
             rollback_message = "; ".join(rollback_errors)
             try:
@@ -3117,7 +3397,10 @@ def _print_evidence_report(
         print(f"Warning: {warning}", file=sys.stderr)
 
 
-def _run_command(args: argparse.Namespace) -> int:
+def run_command(
+    args: argparse.Namespace,
+    session: TestSession,
+) -> int:
     if args.startup_timeout is not None and (
         not math.isfinite(args.startup_timeout) or args.startup_timeout < 0
     ):
@@ -3127,7 +3410,7 @@ def _run_command(args: argparse.Namespace) -> int:
             "--startup-timeout must be zero or greater.",
         )
     context = _resolve_context(args, require_project=True)
-    with prepare_artifact(
+    with session.prepare_artifact(
         context.project,
         args.configuration,
         explicit_artifact=args.artifact,
@@ -3138,22 +3421,22 @@ def _run_command(args: argparse.Namespace) -> int:
         if args.dry_run:
             print("Dry run: no profile files copied; no process launched.")
         else:
-            conflict = _inspect_conflicting_process(context.profile)
+            conflict = session.find_conflict(context.profile.launcher)
             if conflict is not None:
                 raise CliError(
                     EXIT_LAUNCH,
                     "launch",
                     f"A matching game instance is already running with process ID {conflict.pid}; refusing to deploy or attach.",
                 )
-            result = deploy_artifact(plan, context.profile)
+            result = session.deploy(plan, context.profile)
             try:
-                archived_sessions = _archive_previous_sessions(
+                archived_sessions = session.archive_previous(
                     context.profile.profile,
                     result.session_id,
                 )
             except CliError as archive_error:
                 try:
-                    clean_session(
+                    session.clean(
                         result.session_id,
                         remove_new_files=True,
                         expected_profile=context.profile.profile,
@@ -3185,12 +3468,12 @@ def _run_command(args: argparse.Namespace) -> int:
             log_paths = [context.profile.bepinex_root / "LogOutput.log"]
             if unity_log_path is not None:
                 log_paths.append(unity_log_path)
-            launch = launch_session(result, context.profile, log_paths=log_paths)
+            launch = session.launch(result, context.profile, log_paths=log_paths)
             print(f"Launch session: {launch.session_id}")
             print("Launch state: launched")
             print(f"Process ID: {launch.pid}")
             if args.startup_timeout is not None:
-                report = wait_for_startup_evidence(
+                report = session.wait_for_startup_evidence(
                     result.state_path,
                     context.profile,
                     context.preferences,
@@ -3211,10 +3494,13 @@ def _run_command(args: argparse.Namespace) -> int:
     return EXIT_SUCCESS
 
 
-def _status_command(args: argparse.Namespace) -> int:
+def status_command(
+    args: argparse.Namespace,
+    session: TestSession,
+) -> int:
     context = _resolve_context(args, require_project=False)
     _print_context(context)
-    entries = _session_entries(context.profile.profile)
+    entries = session.entries(context.profile.profile)
     print("Test sessions (newest first):")
     if not entries:
         print("  none")
@@ -3244,9 +3530,12 @@ def _status_command(args: argparse.Namespace) -> int:
     return EXIT_SUCCESS
 
 
-def _logs_command(args: argparse.Namespace) -> int:
+def logs_command(
+    args: argparse.Namespace,
+    session: TestSession,
+) -> int:
     context = _resolve_context(args, require_project=False)
-    state_path = _session_manifest_path(
+    state_path = session.manifest_path(
         args.session_id,
         code=EXIT_LOGS,
         category="logs/readiness",
@@ -3262,7 +3551,7 @@ def _logs_command(args: argparse.Namespace) -> int:
                 f"Session {args.session_id} belongs to profile {recorded_path}, "
                 f"but the selected profile is {context.profile.profile}. Pass --profile for the session profile.",
             )
-    report = collect_log_evidence(
+    report = session.collect_log_evidence(
         state_path,
         context.profile,
         context.preferences,
@@ -3281,9 +3570,12 @@ def _logs_command(args: argparse.Namespace) -> int:
     return EXIT_SUCCESS
 
 
-def _stop_command(args: argparse.Namespace) -> int:
+def stop_command(
+    args: argparse.Namespace,
+    session: TestSession,
+) -> int:
     detect_supported_environment()
-    result = stop_session(args.session_id, force=args.force)
+    result = session.stop(args.session_id, force=args.force)
     print(f"Stop session: {result.session_id}")
     print(f"Stop state: {result.state}")
     if result.state == "gone":
@@ -3297,9 +3589,12 @@ def _stop_command(args: argparse.Namespace) -> int:
     return EXIT_SUCCESS
 
 
-def _clean_command(args: argparse.Namespace) -> int:
+def clean_command(
+    args: argparse.Namespace,
+    session: TestSession,
+) -> int:
     context = _resolve_context(args, require_project=False)
-    result = clean_session(
+    result = session.clean(
         args.session_id,
         remove_new_files=args.remove_new_files,
         expected_profile=context.profile.profile,
@@ -3314,21 +3609,34 @@ def _clean_command(args: argparse.Namespace) -> int:
     return EXIT_SUCCESS
 
 
-def main(argv: Optional[Sequence[str]] = None) -> int:
+def dispatch_command(
+    args: argparse.Namespace,
+    session: Optional[TestSession] = None,
+) -> int:
+    """Dispatch parsed arguments through one injectable Test session seam."""
+
+    active_session = session or TestSession()
+    if args.command == "run":
+        return run_command(args, active_session)
+    if args.command == "logs":
+        return logs_command(args, active_session)
+    if args.command == "stop":
+        return stop_command(args, active_session)
+    if args.command == "clean":
+        return clean_command(args, active_session)
+    if args.command == "status":
+        return status_command(args, active_session)
+    raise CliError(EXIT_USAGE, "usage/configuration", f"Unknown command: {args.command}")
+
+
+def main(
+    argv: Optional[Sequence[str]] = None,
+    session: Optional[TestSession] = None,
+) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     try:
-        if args.command == "run":
-            return _run_command(args)
-        if args.command == "logs":
-            return _logs_command(args)
-        if args.command == "stop":
-            return _stop_command(args)
-        if args.command == "clean":
-            return _clean_command(args)
-        if args.command == "status":
-            return _status_command(args)
-        raise CliError(EXIT_USAGE, "usage/configuration", f"Unknown command: {args.command}")
+        return dispatch_command(args, session=session)
     except CliError as error:
         print(f"Error [{error.category}]: {error}", file=sys.stderr)
         return error.code

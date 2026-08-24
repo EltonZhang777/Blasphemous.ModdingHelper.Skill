@@ -68,12 +68,12 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
             check=False,
         )
 
-    def run_module_cli(self, module, *arguments):
+    def run_module_cli(self, module, *arguments, session=None):
         stdout = io.StringIO()
         stderr = io.StringIO()
         with mock.patch.object(module.Path, "cwd", return_value=self.root.resolve()):
             with redirect_stdout(stdout), redirect_stderr(stderr):
-                returncode = module.main(arguments)
+                returncode = module.main(arguments, session=session)
         return SimpleNamespace(
             returncode=returncode,
             stdout=stdout.getvalue(),
@@ -191,6 +191,13 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
         spec.loader.exec_module(module)
         return module
 
+    def create_session(self, module, process_adapter=None, file_adapter=None):
+        return module.TestSession(
+            state_root=self.temp_root / "sessions",
+            process_adapter=process_adapter,
+            file_adapter=file_adapter,
+        )
+
     def create_launched_session(self, prelaunch_bepinex_log=None):
         module = self.load_cli_module()
         profile = self.create_profile()
@@ -224,24 +231,22 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
             "start-token",
             launcher.resolve(),
         )
+        process_adapter = mock.Mock(spec=module.ProcessAdapter)
+        process_adapter.find_conflict.return_value = None
+        process_adapter.start.return_value = process
+        process_adapter.identify.return_value = identity
+        process_adapter.wait_for_alive.return_value = (True, identity)
+        session = self.create_session(module, process_adapter)
 
-        with mock.patch.object(
-            module,
-            "_deployment_state_root",
-            return_value=self.temp_root / "sessions",
-        ):
-            with module.prepare_artifact(
-                project,
-                "Debug",
-                explicit_artifact=str(artifact),
-                cwd=self.root,
-            ) as plan:
-                deployment = module.deploy_artifact(plan, profile_preflight)
-            with mock.patch.object(module, "_find_conflicting_process", return_value=None):
-                with mock.patch.object(module, "_process_identity", return_value=identity):
-                    with mock.patch.object(module.subprocess, "Popen", return_value=process):
-                        module.launch_session(deployment, profile_preflight)
-        return module, deployment, profile_preflight, process, identity
+        with session.prepare_artifact(
+            project,
+            "Debug",
+            explicit_artifact=str(artifact),
+            cwd=self.root,
+        ) as plan:
+            deployment = session.deploy(plan, profile_preflight)
+        session.launch(deployment, profile_preflight)
+        return module, session, deployment, profile_preflight, process, identity
 
     def live_process_double(self, module, launcher, pid=4321):
         process = mock.Mock()
@@ -296,6 +301,17 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
         self.assertIn("status", result.stdout)
         self.assertIn("--dry-run", result.stdout)
 
+    def test_dispatch_command_routes_through_injected_session(self):
+        module = self.load_cli_module()
+        args = module.build_parser().parse_args(["status"])
+        session = mock.Mock(spec=module.TestSession)
+
+        with mock.patch.object(module, "status_command", return_value=17) as command:
+            result = module.dispatch_command(args, session=session)
+
+        self.assertEqual(result, 17)
+        command.assert_called_once_with(args, session)
+
     def test_logs_help_exposes_full_output(self):
         result = self.run_cli("logs", "--help")
 
@@ -304,7 +320,7 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
         self.assertIn("--full", result.stdout)
 
     def test_logs_reports_bounded_current_evidence_without_persisting_logs(self):
-        module, deployment, profile_preflight, process, identity = self.create_launched_session()
+        module, session, deployment, profile_preflight, process, identity = self.create_launched_session()
         unity_log_dir = self.root / "unity-logs"
         unity_log_dir.mkdir()
         self.write_project_preferences(profile_preflight.profile, unity_log_dir)
@@ -320,12 +336,12 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
         unity_log.write_text("unity-start\nunity-tail\n", encoding="utf-8")
         before = self.snapshot()
 
-        with mock.patch.object(
+        result = self.run_module_cli(
             module,
-            "_deployment_state_root",
-            return_value=self.temp_root / "sessions",
-        ):
-            result = self.run_module_cli(module, "logs", deployment.session_id)
+            "logs",
+            deployment.session_id,
+            session=session,
+        )
 
         self.assert_success(result)
         self.assertIn("Startup state: mod_loaded", result.stdout)
@@ -338,7 +354,7 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
         self.assertFalse(any(path.suffix.lower() == ".log" for path in deployment.state_path.parent.rglob("*")))
 
     def test_logs_full_output_includes_the_complete_current_log(self):
-        module, deployment, profile_preflight, process, identity = self.create_launched_session()
+        module, session, deployment, profile_preflight, process, identity = self.create_launched_session()
         unity_log_dir = self.root / "unity-logs"
         unity_log_dir.mkdir()
         self.write_project_preferences(profile_preflight.profile, unity_log_dir)
@@ -352,19 +368,20 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
             encoding="utf-8",
         )
 
-        with mock.patch.object(
+        result = self.run_module_cli(
             module,
-            "_deployment_state_root",
-            return_value=self.temp_root / "sessions",
-        ):
-            result = self.run_module_cli(module, "logs", deployment.session_id, "--full")
+            "logs",
+            deployment.session_id,
+            "--full",
+            session=session,
+        )
 
         self.assert_success(result)
         self.assertIn("first-bepinex", result.stdout)
         self.assertIn("first-unity", result.stdout)
 
     def test_logs_requires_current_chainloader_evidence_for_ready_and_mod_loaded(self):
-        module, deployment, profile_preflight, process, identity = self.create_launched_session()
+        module, session, deployment, profile_preflight, process, identity = self.create_launched_session()
         unity_log_dir = self.root / "unity-logs"
         unity_log_dir.mkdir()
         self.write_project_preferences(profile_preflight.profile, unity_log_dir)
@@ -377,12 +394,12 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
             encoding="utf-8",
         )
 
-        with mock.patch.object(
+        result = self.run_module_cli(
             module,
-            "_deployment_state_root",
-            return_value=self.temp_root / "sessions",
-        ):
-            result = self.run_module_cli(module, "logs", deployment.session_id)
+            "logs",
+            deployment.session_id,
+            session=session,
+        )
 
         self.assert_success(result)
         self.assertIn("Startup state: ready", result.stdout)
@@ -390,17 +407,17 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
         self.assertIn("Mod-loaded state: not-loaded", result.stdout)
 
     def test_logs_ignores_prelaunch_bepinex_evidence_as_stale(self):
-        module, deployment, profile_preflight, process, identity = self.create_launched_session(
+        module, session, deployment, profile_preflight, process, identity = self.create_launched_session(
             "[Info : BepInEx] Chainloader initialized\n"
             "[Info : BepInEx] Loading [ExampleMod 1.0.0]\n"
         )
 
-        with mock.patch.object(
+        result = self.run_module_cli(
             module,
-            "_deployment_state_root",
-            return_value=self.temp_root / "sessions",
-        ):
-            result = self.run_module_cli(module, "logs", deployment.session_id)
+            "logs",
+            deployment.session_id,
+            session=session,
+        )
 
         self.assert_success(result)
         self.assertIn("Startup state: launched", result.stdout)
@@ -408,7 +425,7 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
         self.assertIn("not current", result.stderr)
 
     def test_missing_unity_log_warns_with_preference_update_handoff(self):
-        module, deployment, profile_preflight, process, identity = self.create_launched_session()
+        module, session, deployment, profile_preflight, process, identity = self.create_launched_session()
         missing_unity_dir = self.root / "missing-unity-logs"
         preferences = self.write_project_preferences(profile_preflight.profile, missing_unity_dir)
         (profile_preflight.bepinex_root / "LogOutput.log").write_text(
@@ -417,12 +434,12 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
             encoding="utf-8",
         )
 
-        with mock.patch.object(
+        result = self.run_module_cli(
             module,
-            "_deployment_state_root",
-            return_value=self.temp_root / "sessions",
-        ):
-            result = self.run_module_cli(module, "logs", deployment.session_id)
+            "logs",
+            deployment.session_id,
+            session=session,
+        )
 
         self.assert_success(result)
         self.assertIn("Warning", result.stderr)
@@ -452,27 +469,21 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
             )
             return process
 
-        with mock.patch.object(
+        process_adapter = mock.Mock(spec=module.ProcessAdapter)
+        process_adapter.find_conflict.return_value = None
+        process_adapter.start.side_effect = start_process
+        process_adapter.identify.return_value = identity
+        process_adapter.wait_for_alive.return_value = (True, identity)
+        session = self.create_session(module, process_adapter)
+        result = self.run_module_cli(
             module,
-            "_deployment_state_root",
-            return_value=self.temp_root / "sessions",
-        ):
-            with mock.patch.object(module, "_find_conflicting_process", return_value=None):
-                with mock.patch.object(module, "_process_identity", return_value=identity):
-                    with mock.patch.object(
-                        module,
-                        "_wait_for_process_alive",
-                        return_value=(True, identity),
-                    ):
-                        with mock.patch.object(module.subprocess, "Popen", side_effect=start_process):
-                            result = self.run_module_cli(
-                                module,
-                                "run",
-                                "--artifact",
-                                str(artifact),
-                                "--startup-timeout",
-                                "0.1",
-                            )
+            "run",
+            "--artifact",
+            str(artifact),
+            "--startup-timeout",
+            "0.1",
+            session=session,
+        )
 
         self.assert_success(result)
         self.assertIn("Launch state: launched", result.stdout)
@@ -488,33 +499,26 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
         self.write_project_preferences(profile)
         process, identity = self.live_process_double(module, self.launcher_path(profile))
 
-        with mock.patch.object(
+        process_adapter = mock.Mock(spec=module.ProcessAdapter)
+        process_adapter.find_conflict.return_value = None
+        process_adapter.start.return_value = process
+        process_adapter.identify.return_value = identity
+        process_adapter.wait_for_alive.return_value = (True, identity)
+        session = self.create_session(module, process_adapter)
+        result = self.run_module_cli(
             module,
-            "_deployment_state_root",
-            return_value=self.temp_root / "sessions",
-        ):
-            with mock.patch.object(module, "_find_conflicting_process", return_value=None):
-                with mock.patch.object(module, "_process_identity", return_value=identity):
-                    with mock.patch.object(
-                        module,
-                        "_wait_for_process_alive",
-                        return_value=(True, identity),
-                    ):
-                        with mock.patch.object(module.subprocess, "Popen", return_value=process):
-                            with mock.patch.object(module, "_terminate_process_tree") as terminate:
-                                result = self.run_module_cli(
-                                    module,
-                                    "run",
-                                    "--artifact",
-                                    str(artifact),
-                                    "--startup-timeout",
-                                    "0",
-                                )
+            "run",
+            "--artifact",
+            str(artifact),
+            "--startup-timeout",
+            "0",
+            session=session,
+        )
 
         self.assertEqual(result.returncode, 60)
         self.assertIn("Startup state: timeout", result.stdout)
         self.assertIn("remain available", result.stderr)
-        terminate.assert_not_called()
+        process_adapter.terminate_tree.assert_not_called()
         manifests = self.deployment_manifests()
         self.assertEqual(len(manifests), 1)
         payload = json.loads(manifests[0].read_text(encoding="utf-8"))
@@ -557,29 +561,27 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
             launcher.resolve(),
         )
 
-        with mock.patch.object(
-            module,
-            "_deployment_state_root",
-            return_value=self.temp_root / "sessions",
-        ):
-            with module.prepare_artifact(
-                project,
-                "Debug",
-                explicit_artifact=str(artifact),
-                cwd=self.root,
-            ) as plan:
-                deployment = module.deploy_artifact(plan, profile_preflight)
-            with mock.patch.object(module, "_find_conflicting_process", return_value=None):
-                with mock.patch.object(module, "_process_identity", return_value=identity):
-                    with mock.patch.object(module.subprocess, "Popen", return_value=process) as popen:
-                        launch = module.launch_session(deployment, profile_preflight)
+        process_adapter = mock.Mock(spec=module.ProcessAdapter)
+        process_adapter.find_conflict.return_value = None
+        process_adapter.start.return_value = process
+        process_adapter.identify.return_value = identity
+        process_adapter.wait_for_alive.return_value = (True, identity)
+        session = self.create_session(module, process_adapter)
+        with session.prepare_artifact(
+            project,
+            "Debug",
+            explicit_artifact=str(artifact),
+            cwd=self.root,
+        ) as plan:
+            deployment = session.deploy(plan, profile_preflight)
+        launch = session.launch(deployment, profile_preflight)
 
         self.assertEqual(launch.session_id, deployment.session_id)
         self.assertEqual(launch.pid, process.pid)
-        command, options = popen.call_args
-        self.assertEqual(command[0], [str(launcher.resolve())])
-        self.assertEqual(options["cwd"], str(profile.resolve()))
-        self.assertFalse(options["shell"])
+        process_adapter.start.assert_called_once_with(
+            launcher.resolve(),
+            profile.resolve(),
+        )
         payload = json.loads(
             deployment.state_path.read_text(encoding="utf-8")
         )
@@ -587,7 +589,60 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
         self.assertEqual(payload["process"]["pid"], process.pid)
         self.assertEqual(payload["process"]["start_token"], "start-token")
 
-    def test_launch_refuses_conflicting_running_launcher(self):
+    def test_test_session_launch_uses_public_process_lifecycle_seam(self):
+        module = self.load_cli_module()
+        profile = self.create_profile()
+        project = self.create_project()
+        artifact = self.create_package(root=self.root, target_name="known-artifact")
+        self.write_project_preferences(profile)
+        process = mock.Mock()
+        process.pid = 1234
+        process.poll.return_value = None
+        identity = module.ProcessIdentity(
+            process.pid,
+            "start-token",
+            self.launcher_path(profile).resolve(),
+        )
+        process_adapter = mock.Mock(spec=module.ProcessAdapter)
+        process_adapter.find_conflict.return_value = None
+        process_adapter.start.return_value = process
+        process_adapter.identify.return_value = identity
+        process_adapter.wait_for_alive.return_value = (True, identity)
+        session = module.TestSession(
+            state_root=self.temp_root / "sessions",
+            process_adapter=process_adapter,
+        )
+        environment = {
+            "Windows": "Windows",
+            "Linux": "Linux",
+            "Darwin": "macOS",
+        }[platform.system()]
+        profile_preflight = module.preflight_profile(
+            profile,
+            environment,
+        )
+
+        with session.prepare_artifact(
+            project,
+            "Debug",
+            explicit_artifact=str(artifact),
+            cwd=self.root,
+        ) as plan:
+            deployment = session.deploy(plan, profile_preflight)
+        launch = session.launch(deployment, profile_preflight)
+
+        self.assertEqual(launch.pid, process.pid)
+        process_adapter.start.assert_called_once_with(
+            profile_preflight.launcher,
+            profile_preflight.profile,
+        )
+        process_adapter.identify.assert_called_once_with(process.pid, strict=True)
+        process_adapter.wait_for_alive.assert_called_once_with(
+            identity,
+            timeout=module.LAUNCH_GRACE_PERIOD_SECONDS,
+        )
+
+    def test_launch_race_refuses_conflict_without_mutating_session_state(self):
         module = self.load_cli_module()
         profile = self.create_profile()
         launcher = profile / "custom-launcher"
@@ -609,30 +664,31 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
         )
         conflict = module.ProcessIdentity(4321, "other-token", launcher.resolve())
 
-        with mock.patch.object(
-            module,
-            "_deployment_state_root",
-            return_value=self.temp_root / "sessions",
-        ):
-            with module.prepare_artifact(
-                project,
-                "Debug",
-                explicit_artifact=str(artifact),
-                cwd=self.root,
-            ) as plan:
-                deployment = module.deploy_artifact(plan, profile_preflight)
-            with mock.patch.object(
-                module,
-                "_find_conflicting_process",
-                return_value=conflict,
-            ):
-                with mock.patch.object(module.subprocess, "Popen") as popen:
-                    with self.assertRaises(module.CliError) as failure:
-                        module.launch_session(deployment, profile_preflight)
+        process_adapter = mock.Mock(spec=module.ProcessAdapter)
+        process_adapter.find_conflict.side_effect = [None, conflict]
+        process_adapter.start.return_value = mock.Mock()
+        session = self.create_session(module, process_adapter)
+        self.assertIsNone(session.find_conflict(profile_preflight.launcher))
+        with session.prepare_artifact(
+            project,
+            "Debug",
+            explicit_artifact=str(artifact),
+            cwd=self.root,
+        ) as plan:
+            deployment = session.deploy(plan, profile_preflight)
+        manifest_before_launch = json.loads(
+            deployment.state_path.read_text(encoding="utf-8")
+        )
+        with self.assertRaises(module.CliError) as failure:
+            session.launch(deployment, profile_preflight)
 
         self.assertEqual(failure.exception.code, 50)
         self.assertIn("already running", str(failure.exception))
-        popen.assert_not_called()
+        process_adapter.start.assert_not_called()
+        self.assertEqual(
+            json.loads(deployment.state_path.read_text(encoding="utf-8")),
+            manifest_before_launch,
+        )
 
     def test_launch_does_not_report_exited_process_as_launched(self):
         module = self.load_cli_module()
@@ -658,22 +714,19 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
         process.pid = 1234
         process.poll.return_value = 7
 
-        with mock.patch.object(
-            module,
-            "_deployment_state_root",
-            return_value=self.temp_root / "sessions",
-        ):
-            with module.prepare_artifact(
-                project,
-                "Debug",
-                explicit_artifact=str(artifact),
-                cwd=self.root,
-            ) as plan:
-                deployment = module.deploy_artifact(plan, profile_preflight)
-            with mock.patch.object(module, "_find_conflicting_process", return_value=None):
-                with mock.patch.object(module.subprocess, "Popen", return_value=process):
-                    with self.assertRaises(module.CliError) as failure:
-                        module.launch_session(deployment, profile_preflight)
+        process_adapter = mock.Mock(spec=module.ProcessAdapter)
+        process_adapter.find_conflict.return_value = None
+        process_adapter.start.return_value = process
+        session = self.create_session(module, process_adapter)
+        with session.prepare_artifact(
+            project,
+            "Debug",
+            explicit_artifact=str(artifact),
+            cwd=self.root,
+        ) as plan:
+            deployment = session.deploy(plan, profile_preflight)
+        with self.assertRaises(module.CliError) as failure:
+            session.launch(deployment, profile_preflight)
 
         self.assertEqual(failure.exception.code, 50)
         self.assertIn("exited", str(failure.exception))
@@ -683,35 +736,26 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
         self.assertEqual(payload["process"]["state"], "exited")
 
     def test_stop_terminates_tracked_process_and_is_idempotent(self):
-        module, deployment, profile_preflight, process, identity = self.create_launched_session()
-
-        with mock.patch.object(
-            module,
-            "_deployment_state_root",
-            return_value=self.temp_root / "sessions",
-        ):
-            with mock.patch.object(module, "_process_identity", return_value=identity):
-                with mock.patch.object(module, "_terminate_process_tree") as terminate:
-                    with mock.patch.object(module, "_wait_for_process_exit", return_value=True):
-                        result = module.stop_session(deployment.session_id, force=True)
+        module, session, deployment, profile_preflight, process, identity = self.create_launched_session()
+        session.process_adapter.is_alive.return_value = True
+        session.process_adapter.snapshot_tree.return_value = (identity,)
+        session.process_adapter.wait_for_exit.return_value = True
+        result = session.stop(deployment.session_id, force=True)
 
         self.assertEqual(result.session_id, deployment.session_id)
         self.assertEqual(result.state, "stopped")
-        terminate.assert_called_once_with(identity, force=True)
+        session.process_adapter.terminate_tree.assert_called_once_with(
+            identity,
+            force=True,
+        )
         payload = json.loads(
             deployment.state_path.read_text(encoding="utf-8")
         )
         self.assertEqual(payload["process"]["state"], "stopped")
 
-        with mock.patch.object(
-            module,
-            "_deployment_state_root",
-            return_value=self.temp_root / "sessions",
-        ):
-            with mock.patch.object(module, "_terminate_process_tree") as terminate_again:
-                repeated = module.stop_session(deployment.session_id)
+        repeated = session.stop(deployment.session_id)
         self.assertEqual(repeated.state, "stopped")
-        terminate_again.assert_not_called()
+        self.assertEqual(session.process_adapter.terminate_tree.call_count, 1)
 
     def test_stop_and_clean_are_idempotent_when_session_state_is_gone(self):
         module = self.load_cli_module()
@@ -719,13 +763,9 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
         self.write_project_preferences(profile)
         missing_session = "a" * 32
 
-        with mock.patch.object(
-            module,
-            "_deployment_state_root",
-            return_value=self.temp_root / "sessions",
-        ):
-            stopped = self.run_module_cli(module, "stop", missing_session)
-            cleaned = self.run_module_cli(module, "clean", missing_session)
+        session = self.create_session(module)
+        stopped = self.run_module_cli(module, "stop", missing_session, session=session)
+        cleaned = self.run_module_cli(module, "clean", missing_session, session=session)
 
         self.assert_success(stopped)
         self.assertIn("Stop state: gone", stopped.stdout)
@@ -734,45 +774,31 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
         self.assertIn("already gone", cleaned.stderr)
 
     def test_stop_marks_an_already_exited_process_without_termination(self):
-        module, deployment, profile_preflight, process, identity = self.create_launched_session()
-
-        with mock.patch.object(
-            module,
-            "_deployment_state_root",
-            return_value=self.temp_root / "sessions",
-        ):
-            with mock.patch.object(module, "_process_identity", return_value=None):
-                with mock.patch.object(module, "_terminate_process_tree") as terminate:
-                    result = module.stop_session(deployment.session_id)
+        module, session, deployment, profile_preflight, process, identity = self.create_launched_session()
+        session.process_adapter.is_alive.return_value = False
+        result = session.stop(deployment.session_id)
 
         self.assertEqual(result.state, "exited")
-        terminate.assert_not_called()
+        session.process_adapter.terminate_tree.assert_not_called()
         payload = json.loads(
             deployment.state_path.read_text(encoding="utf-8")
         )
         self.assertEqual(payload["process"]["state"], "exited")
 
     def test_stop_refuses_a_reused_pid_without_termination(self):
-        module, deployment, profile_preflight, process, identity = self.create_launched_session()
-        replacement = module.ProcessIdentity(
-            identity.pid,
-            "replacement-start-token",
-            identity.executable,
-        )
+        module, session, deployment, profile_preflight, process, identity = self.create_launched_session()
 
-        with mock.patch.object(
-            module,
-            "_deployment_state_root",
-            return_value=self.temp_root / "sessions",
-        ):
-            with mock.patch.object(module, "_process_identity", return_value=replacement):
-                with mock.patch.object(module, "_terminate_process_tree") as terminate:
-                    with self.assertRaises(module.CliError) as failure:
-                        module.stop_session(deployment.session_id)
+        session.process_adapter.is_alive.side_effect = module.CliError(
+            module.EXIT_CLEAN,
+            "stop/clean",
+            f"Tracked process ID {identity.pid} was reused by another process; refusing to stop it.",
+        )
+        with self.assertRaises(module.CliError) as failure:
+            session.stop(deployment.session_id)
 
         self.assertEqual(failure.exception.code, 70)
         self.assertIn("reused", str(failure.exception))
-        terminate.assert_not_called()
+        session.process_adapter.terminate_tree.assert_not_called()
         payload = json.loads(
             deployment.state_path.read_text(encoding="utf-8")
         )
@@ -1096,26 +1122,13 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
         self.create_buildable_project()
         self.write_project_preferences(profile)
         process, identity = self.live_process_double(module, self.launcher_path(profile))
-        real_popen = module.subprocess.Popen
-
-        def popen_side_effect(command, *arguments, **keywords):
-            if command[0] == str(self.launcher_path(profile)):
-                return process
-            return real_popen(command, *arguments, **keywords)
-
-        with mock.patch.object(
-            module,
-            "_deployment_state_root",
-            return_value=self.temp_root / "sessions",
-        ):
-            with mock.patch.object(module, "_find_conflicting_process", return_value=None):
-                with mock.patch.object(module, "_process_identity", return_value=identity):
-                    with mock.patch.object(
-                        module.subprocess,
-                        "Popen",
-                        side_effect=popen_side_effect,
-                    ):
-                        result = self.run_module_cli(module, "run")
+        process_adapter = mock.Mock(spec=module.ProcessAdapter)
+        process_adapter.find_conflict.return_value = None
+        process_adapter.start.return_value = process
+        process_adapter.identify.return_value = identity
+        process_adapter.wait_for_alive.return_value = (True, identity)
+        session = self.create_session(module, process_adapter)
+        result = self.run_module_cli(module, "run", session=session)
 
         self.assert_success(result)
         self.assertEqual(
@@ -1249,21 +1262,19 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
         )
         self.write_project_preferences(profile)
         process, identity = self.live_process_double(module, self.launcher_path(profile))
-
-        with mock.patch.object(
+        process_adapter = mock.Mock(spec=module.ProcessAdapter)
+        process_adapter.find_conflict.return_value = None
+        process_adapter.start.return_value = process
+        process_adapter.identify.return_value = identity
+        process_adapter.wait_for_alive.return_value = (True, identity)
+        session = self.create_session(module, process_adapter)
+        result = self.run_module_cli(
             module,
-            "_deployment_state_root",
-            return_value=self.temp_root / "sessions",
-        ):
-            with mock.patch.object(module, "_find_conflicting_process", return_value=None):
-                with mock.patch.object(module, "_process_identity", return_value=identity):
-                    with mock.patch.object(module.subprocess, "Popen", return_value=process):
-                        result = self.run_module_cli(
-                            module,
-                            "run",
-                            "--artifact",
-                            str(artifact),
-                        )
+            "run",
+            "--artifact",
+            str(artifact),
+            session=session,
+        )
 
         self.assert_success(result)
         for relative_path in (
@@ -1309,21 +1320,19 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
         existing.write_bytes(b"pre-test-plugin")
         self.write_project_preferences(profile)
         process, identity = self.live_process_double(module, self.launcher_path(profile))
-
-        with mock.patch.object(
+        process_adapter = mock.Mock(spec=module.ProcessAdapter)
+        process_adapter.find_conflict.return_value = None
+        process_adapter.start.return_value = process
+        process_adapter.identify.return_value = identity
+        process_adapter.wait_for_alive.return_value = (True, identity)
+        session = self.create_session(module, process_adapter)
+        result = self.run_module_cli(
             module,
-            "_deployment_state_root",
-            return_value=self.temp_root / "sessions",
-        ):
-            with mock.patch.object(module, "_find_conflicting_process", return_value=None):
-                with mock.patch.object(module, "_process_identity", return_value=identity):
-                    with mock.patch.object(module.subprocess, "Popen", return_value=process):
-                        result = self.run_module_cli(
-                            module,
-                            "run",
-                            "--artifact",
-                            str(artifact),
-                        )
+            "run",
+            "--artifact",
+            str(artifact),
+            session=session,
+        )
 
         self.assert_success(result)
         manifests = self.deployment_manifests()
@@ -1366,29 +1375,28 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
             module,
             self.launcher_path(profile),
         )
-
-        with mock.patch.object(
+        process_adapter = mock.Mock(spec=module.ProcessAdapter)
+        process_adapter.find_conflict.return_value = None
+        process_adapter.start.return_value = process
+        process_adapter.identify.return_value = identity
+        process_adapter.wait_for_alive.return_value = (True, identity)
+        process_adapter.is_alive.return_value = False
+        session = self.create_session(module, process_adapter)
+        first = self.run_module_cli(
             module,
-            "_deployment_state_root",
-            return_value=self.temp_root / "sessions",
-        ):
-            with mock.patch.object(module, "_find_conflicting_process", return_value=None):
-                with mock.patch.object(module, "_tracked_process_is_alive", return_value=False):
-                    with mock.patch.object(module, "_process_identity", return_value=identity):
-                        with mock.patch.object(module.subprocess, "Popen", return_value=process):
-                            first = self.run_module_cli(
-                                module,
-                                "run",
-                                "--artifact",
-                                str(artifact),
-                            )
-                            second = self.run_module_cli(
-                                module,
-                                "run",
-                                "--artifact",
-                                str(artifact),
-                            )
-                    status = self.run_module_cli(module, "status")
+            "run",
+            "--artifact",
+            str(artifact),
+            session=session,
+        )
+        second = self.run_module_cli(
+            module,
+            "run",
+            "--artifact",
+            str(artifact),
+            session=session,
+        )
+        status = self.run_module_cli(module, "status", session=session)
 
         self.assert_success(first)
         self.assert_success(second)
@@ -1412,24 +1420,15 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
         existing.write_bytes(b"pre-test-plugin")
         self.write_project_preferences(profile)
         failure = module.CliError(40, "deployment", "archive state failed")
-
-        with mock.patch.object(
-            module,
-            "_deployment_state_root",
-            return_value=self.temp_root / "sessions",
-        ):
-            with mock.patch.object(module, "_find_conflicting_process", return_value=None):
-                with mock.patch.object(
-                    module,
-                    "_archive_previous_sessions",
-                    side_effect=failure,
-                ):
-                    result = self.run_module_cli(
-                        module,
-                        "run",
-                        "--artifact",
-                        str(artifact),
-                    )
+        session = self.create_session(module)
+        with mock.patch.object(session, "archive_previous", side_effect=failure):
+            result = self.run_module_cli(
+                module,
+                "run",
+                "--artifact",
+                str(artifact),
+                session=session,
+            )
 
         self.assertEqual(result.returncode, 40)
         self.assertIn("rolled back safely", result.stderr)
@@ -1451,21 +1450,26 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
             "Darwin": "macOS",
         }[platform.system()]
         profile_preflight = module.preflight_profile(profile, environment)
-
-        with mock.patch.object(
+        session = self.create_session(module)
+        with session.prepare_artifact(
+            project,
+            "Debug",
+            explicit_artifact=str(artifact),
+            cwd=self.root,
+        ) as plan:
+            deployment = session.deploy(plan, profile_preflight)
+        result = self.run_module_cli(
             module,
-            "_deployment_state_root",
-            return_value=self.temp_root / "sessions",
-        ):
-            with module.prepare_artifact(
-                project,
-                "Debug",
-                explicit_artifact=str(artifact),
-                cwd=self.root,
-            ) as plan:
-                deployment = module.deploy_artifact(plan, profile_preflight)
-            result = self.run_module_cli(module, "clean", deployment.session_id)
-            repeated = self.run_module_cli(module, "clean", deployment.session_id)
+            "clean",
+            deployment.session_id,
+            session=session,
+        )
+        repeated = self.run_module_cli(
+            module,
+            "clean",
+            deployment.session_id,
+            session=session,
+        )
 
         self.assert_success(result)
         self.assertIn("Clean state: cleaned", result.stdout)
@@ -1480,6 +1484,57 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
         )
         payload = json.loads(deployment.state_path.read_text(encoding="utf-8"))
         self.assertEqual(payload["cleanup_state"], "cleaned")
+
+    def test_clean_uses_injected_file_adapter_for_restore_and_remove(self):
+        module = self.load_cli_module()
+        profile = self.create_profile()
+        project = self.create_project()
+        artifact = self.create_package(root=self.root, target_name="known-artifact")
+        existing = profile / "Modding" / "plugins" / "Example.dll"
+        existing.parent.mkdir(parents=True)
+        existing.write_bytes(b"pre-test-plugin")
+        self.write_project_preferences(profile)
+        environment = {
+            "Windows": "Windows",
+            "Linux": "Linux",
+            "Darwin": "macOS",
+        }[platform.system()]
+        profile_preflight = module.preflight_profile(profile, environment)
+        file_adapter = mock.Mock(spec=module.FileAdapter)
+        adapter_events = set()
+
+        def copy_with_event(source, destination):
+            adapter_events.add("copy")
+            shutil.copy2(source, destination)
+
+        def remove_with_event(destination):
+            adapter_events.add("remove")
+            destination.unlink()
+
+        file_adapter.copy.side_effect = copy_with_event
+        file_adapter.remove.side_effect = remove_with_event
+        session = self.create_session(module)
+        with session.prepare_artifact(
+            project,
+            "Debug",
+            explicit_artifact=str(artifact),
+            cwd=self.root,
+        ) as plan:
+            deployment = session.deploy(plan, profile_preflight)
+        session.file_adapter = file_adapter
+
+        result = self.run_module_cli(
+            module,
+            "clean",
+            deployment.session_id,
+            "--remove-new-files",
+            session=session,
+        )
+
+        self.assert_success(result)
+        self.assertEqual(adapter_events, {"copy", "remove"})
+        self.assertEqual(existing.read_bytes(), b"pre-test-plugin")
+        self.assertFalse((profile / "Modding" / "data" / "settings.json").exists())
 
     def test_clean_protects_an_overwritten_file_changed_during_testing(self):
         module = self.load_cli_module()
@@ -1496,21 +1551,21 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
             "Darwin": "macOS",
         }[platform.system()]
         profile_preflight = module.preflight_profile(profile, environment)
-
-        with mock.patch.object(
+        session = self.create_session(module)
+        with session.prepare_artifact(
+            project,
+            "Debug",
+            explicit_artifact=str(artifact),
+            cwd=self.root,
+        ) as plan:
+            deployment = session.deploy(plan, profile_preflight)
+        existing.write_bytes(b"user-change-during-test")
+        result = self.run_module_cli(
             module,
-            "_deployment_state_root",
-            return_value=self.temp_root / "sessions",
-        ):
-            with module.prepare_artifact(
-                project,
-                "Debug",
-                explicit_artifact=str(artifact),
-                cwd=self.root,
-            ) as plan:
-                deployment = module.deploy_artifact(plan, profile_preflight)
-            existing.write_bytes(b"user-change-during-test")
-            result = self.run_module_cli(module, "clean", deployment.session_id)
+            "clean",
+            deployment.session_id,
+            session=session,
+        )
 
         self.assertEqual(result.returncode, 70)
         self.assertIn("changed", result.stderr.casefold())
@@ -1531,28 +1586,29 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
             "Darwin": "macOS",
         }[platform.system()]
         profile_preflight = module.preflight_profile(profile, environment)
-
-        with mock.patch.object(
+        session = self.create_session(module)
+        with session.prepare_artifact(
+            project,
+            "Debug",
+            explicit_artifact=str(artifact),
+            cwd=self.root,
+        ) as plan:
+            deployment = session.deploy(plan, profile_preflight)
+        default_clean = self.run_module_cli(
             module,
-            "_deployment_state_root",
-            return_value=self.temp_root / "sessions",
-        ):
-            with module.prepare_artifact(
-                project,
-                "Debug",
-                explicit_artifact=str(artifact),
-                cwd=self.root,
-            ) as plan:
-                deployment = module.deploy_artifact(plan, profile_preflight)
-            default_clean = self.run_module_cli(module, "clean", deployment.session_id)
-            self.assert_success(default_clean)
-            self.assertTrue(profile.joinpath("Modding", "data", "settings.json").is_file())
-            approved_clean = self.run_module_cli(
-                module,
-                "clean",
-                deployment.session_id,
-                "--remove-new-files",
-            )
+            "clean",
+            deployment.session_id,
+            session=session,
+        )
+        self.assert_success(default_clean)
+        self.assertTrue(profile.joinpath("Modding", "data", "settings.json").is_file())
+        approved_clean = self.run_module_cli(
+            module,
+            "clean",
+            deployment.session_id,
+            "--remove-new-files",
+            session=session,
+        )
 
         self.assert_success(approved_clean)
         self.assertIn("Removed new files", approved_clean.stdout)
@@ -1570,27 +1626,23 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
             "Darwin": "macOS",
         }[platform.system()]
         profile_preflight = module.preflight_profile(profile, environment)
-
-        with mock.patch.object(
+        session = self.create_session(module)
+        with session.prepare_artifact(
+            project,
+            "Debug",
+            explicit_artifact=str(artifact),
+            cwd=self.root,
+        ) as plan:
+            deployment = session.deploy(plan, profile_preflight)
+        new_file = profile / "Modding" / "data" / "settings.json"
+        new_file.write_text("user-settings\n", encoding="utf-8")
+        result = self.run_module_cli(
             module,
-            "_deployment_state_root",
-            return_value=self.temp_root / "sessions",
-        ):
-            with module.prepare_artifact(
-                project,
-                "Debug",
-                explicit_artifact=str(artifact),
-                cwd=self.root,
-            ) as plan:
-                deployment = module.deploy_artifact(plan, profile_preflight)
-            new_file = profile / "Modding" / "data" / "settings.json"
-            new_file.write_text("user-settings\n", encoding="utf-8")
-            result = self.run_module_cli(
-                module,
-                "clean",
-                deployment.session_id,
-                "--remove-new-files",
-            )
+            "clean",
+            deployment.session_id,
+            "--remove-new-files",
+            session=session,
+        )
 
         self.assertEqual(result.returncode, 70)
         self.assertIn("protected", result.stderr.casefold())
@@ -1611,31 +1663,41 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
             "Darwin": "macOS",
         }[platform.system()]
         profile_preflight = module.preflight_profile(profile, environment)
+        session = self.create_session(module)
+        with session.prepare_artifact(
+            project,
+            "Debug",
+            explicit_artifact=str(artifact),
+            cwd=self.root,
+        ) as plan:
+            first = session.deploy(plan, profile_preflight)
+        (artifact / "plugins" / "Example.dll").write_bytes(b"second-build")
+        with session.prepare_artifact(
+            project,
+            "Debug",
+            explicit_artifact=str(artifact),
+            cwd=self.root,
+        ) as plan:
+            second = session.deploy(plan, profile_preflight)
 
-        with mock.patch.object(
+        blocked = self.run_module_cli(
             module,
-            "_deployment_state_root",
-            return_value=self.temp_root / "sessions",
-        ):
-            with module.prepare_artifact(
-                project,
-                "Debug",
-                explicit_artifact=str(artifact),
-                cwd=self.root,
-            ) as plan:
-                first = module.deploy_artifact(plan, profile_preflight)
-            (artifact / "plugins" / "Example.dll").write_bytes(b"second-build")
-            with module.prepare_artifact(
-                project,
-                "Debug",
-                explicit_artifact=str(artifact),
-                cwd=self.root,
-            ) as plan:
-                second = module.deploy_artifact(plan, profile_preflight)
-
-            blocked = self.run_module_cli(module, "clean", first.session_id)
-            newest = self.run_module_cli(module, "clean", second.session_id)
-            older = self.run_module_cli(module, "clean", first.session_id)
+            "clean",
+            first.session_id,
+            session=session,
+        )
+        newest = self.run_module_cli(
+            module,
+            "clean",
+            second.session_id,
+            session=session,
+        )
+        older = self.run_module_cli(
+            module,
+            "clean",
+            first.session_id,
+            session=session,
+        )
 
         self.assertEqual(blocked.returncode, 70)
         self.assertIn("newer", blocked.stderr.casefold())
@@ -1644,15 +1706,14 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
         self.assertEqual(existing.read_bytes(), b"pre-test-plugin")
 
     def test_clean_refuses_while_the_tracked_game_process_is_running(self):
-        module, deployment, profile_preflight, process, identity = self.create_launched_session()
-
-        with mock.patch.object(
+        module, session, deployment, profile_preflight, process, identity = self.create_launched_session()
+        session.process_adapter.is_alive.return_value = True
+        result = self.run_module_cli(
             module,
-            "_deployment_state_root",
-            return_value=self.temp_root / "sessions",
-        ):
-            with mock.patch.object(module, "_tracked_process_is_alive", return_value=True):
-                result = self.run_module_cli(module, "clean", deployment.session_id)
+            "clean",
+            deployment.session_id,
+            session=session,
+        )
 
         self.assertEqual(result.returncode, 70)
         self.assertIn("still running", result.stderr.casefold())
@@ -1698,7 +1759,7 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
         }[platform.system()]
         profile_preflight = module.preflight_profile(profile, environment)
 
-        real_copy2 = module.shutil.copy2
+        real_copy2 = shutil.copy2
         copy_calls = 0
 
         def fail_on_third_copy(source, destination, *arguments, **keywords):
@@ -1708,16 +1769,17 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
                 raise OSError("injected copy failure")
             return real_copy2(source, destination, *arguments, **keywords)
 
-        with module.prepare_artifact(
+        file_adapter = mock.Mock(spec=module.FileAdapter)
+        file_adapter.copy.side_effect = fail_on_third_copy
+        session = self.create_session(module, file_adapter=file_adapter)
+        with session.prepare_artifact(
             project,
             "Debug",
             explicit_artifact=str(artifact),
             cwd=self.root,
         ) as plan:
-            with mock.patch.object(module, "_deployment_state_root", return_value=self.temp_root / "sessions"):
-                with mock.patch.object(module.shutil, "copy2", side_effect=fail_on_third_copy):
-                    with self.assertRaises(module.CliError) as failure:
-                        module.deploy_artifact(plan, profile_preflight)
+            with self.assertRaises(module.CliError) as failure:
+                session.deploy(plan, profile_preflight)
 
         self.assertEqual(failure.exception.code, 40)
         self.assertIn("rollback succeeded", str(failure.exception))
