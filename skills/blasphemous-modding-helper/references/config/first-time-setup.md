@@ -19,53 +19,40 @@ On success, the agent MUST return the validated preferences file to the Invocati
 
 ## Setup Flow
 
-```text
-1. No `preferences.md` found
+```mermaid
+flowchart TD
+    Start["No preferences.md found"] --> Q1["Q1: Ask save location first"]
+    Q1 --> Q2{"Q2: Decompiled source available?"}
 
-2. The agent MUST ask the save-location AskUserQuestion (see Q1).
-   ─── Asked first to avoid "auto-write" destination conflict ───
+    Q2 -->|Yes| Q3["Q3: Ask lightweight source path"]
+    Q2 -->|No| Decompile["Run decompiler synchronously"]
 
-3. The agent MUST ask: "Do you have decompiled Blasphemous source code?" (see Q2).
-   │
-   ├─ Yes → the agent MUST enter the manual path flow:
-   │   4. The agent MUST ask for the lightweight source code path (see Q3; REQUIRED).
-   │      ├─ Validate fail → the agent MUST retry Q3
-   │      └─ OK → the agent MUST continue
-   │   5. The agent MUST ask: "Do you also have full source code?" (see Q4).
-   │      ├─ Yes → the agent MUST ask for the full source code path (see Q4b)
-   │      └─ No  → the agent MAY skip Q4b
-   │   6. The agent MUST ask for the modding profile path (see Q5).
-    │   7. The agent MUST ask whether to configure a local ModdingAPI reference (see Q6).
-    │      ├─ Yes → the agent MUST use the selected preferences scope, choose a selector, and run the fresh-clone command.
-    │      │        ├─ Success → the agent MUST record the normalized path and selector.
-    │      │        └─ Failure → the agent MUST show the terminal error report and MUST NOT add the fields.
-    │      └─ Skip → the agent MUST leave local reference fields absent; remote fallback remains available.
-    │   8. The agent MUST validate all paths (lightweight MUST exist).
-    │      ├─ Fail → the agent MUST retry the corresponding single question.
-    │      └─ OK → the agent MAY continue.
-    │   9. The agent MUST create or update `preferences.md`.
-    │   10. The agent MUST continue.
-   │
-   └─ No (run decompiler) → the agent MUST run the decompile script synchronously
-       (Windows: `& (Join-Path $SkillRoot 'scripts\decompile_source.ps1')` ; macOS/Linux: `bash "$SKILL_ROOT/scripts/decompile_source.sh"`)
-       ├─ Success →
-       │   lightweight_source_code_path = <skill-root>/source_code/ (auto-set)
-       │   5. The agent MUST ask: "Do you also have full source code?" (see Q4).
-       │      ├─ Yes → the agent MUST ask for the full source code path (see Q4b)
-       │      └─ No  → the agent MUST skip Q4b
-       │   6. The agent MUST ask for the modding profile path (see Q5).
-       │   7. The agent MUST ask whether to configure a local ModdingAPI reference (see Q6).
-       │      ├─ Yes → the agent MUST use the selected preferences scope, choose a selector, and run the fresh-clone command.
-       │      └─ Skip → the agent MUST leave local reference fields absent; remote fallback remains available.
-       │   8. The agent MUST validate all paths (lightweight MUST exist).
-       │   9. The agent MUST create or update `preferences.md`.
-       │   10. The agent MUST continue.
-       │
-       └─ Failed (exit code != 0) →
-           The agent MUST report error details to the user.
-           The agent MUST ask: "Decompilation failed. Provide source paths manually?"
-           ├─ Yes → the agent MUST enter manual path flow at step 4 (Q3).
-           └─ No  → the agent MUST abort setup and instruct the user to fix the error and retry.
+    Decompile -->|Success| AutoLight["Set lightweight path to skill-root/source_code/"]
+    Decompile -->|Failure| DecompileError["Report error and ask whether to provide paths manually"]
+    DecompileError -->|Yes| Q3
+    DecompileError -->|No| Abort["Abort setup; fix the error and retry"]
+
+    Q3 --> Q4{"Q4: Full source available?"}
+    AutoLight --> Q4
+    Q4 -->|Yes| Q4b["Q4b: Ask full source path"]
+    Q4 -->|No| Q5["Q5: Ask modding profile path"]
+    Q4b --> Q5
+
+    Q5 --> Q6{"Q6: Configure local ModdingAPI reference?"}
+    Q6 -->|Yes| Clone["Use selected scope and selector; run fresh clone"]
+    Q6 -->|Skip| Validate["Validate all paths"]
+    Clone --> CloneResult{"Clone succeeded?"}
+    CloneResult -->|Yes| Record["Record normalized path and selector"]
+    CloneResult -->|No| CloneError["Show terminal error; leave local reference fields absent"]
+    CloneError -->|Retry| Clone
+    CloneError -->|Skip| Validate
+    Record --> Validate
+
+    Validate -->|Failure: lightweight| Q3
+    Validate -->|Failure: full source| Q4b
+    Validate -->|Failure: modding profile| Q5
+    Validate -->|OK| Save["Create or update preferences.md"]
+    Save --> Continue["Continue main workflow"]
 ```
 
 ## AskUserQuestion Questions
