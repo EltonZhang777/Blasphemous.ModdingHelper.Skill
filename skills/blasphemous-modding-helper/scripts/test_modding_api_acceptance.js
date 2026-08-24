@@ -498,6 +498,11 @@ function run() {
     runCloneLifecycleParity(bash, powerShell, env);
     return { status: 0, output: "" };
   });
+  runSuite("lifecycle JS semantic seams", () =>
+    support.runCommand("node", [
+      path.join(scriptDirectory, "test_modding_api_lifecycle.js"),
+    ]),
+  );
 
   const suites = [
     ["resolver Bash", "bash", "test_resolve_modding_api.sh"],

@@ -6,9 +6,10 @@ const os = require('os');
 const path = require('path');
 const lockState = require('./modding_api_lock');
 const runtime = require('./modding_api_runtime');
+const lifecycle = require('./modding_api_lifecycle');
 
 const SCRIPT_DIR = __dirname;
-const OFFICIAL_REPOSITORY = 'https://github.com/BrandenEK/Blasphemous.ModdingAPI.git';
+const OFFICIAL_REPOSITORY = lifecycle.OFFICIAL_REPOSITORY;
 const state = {
     scope: '',
     targetPath: '',
@@ -174,21 +175,6 @@ function parseArgs(argv) {
     return true;
 }
 
-function readKeyValue(file, key) {
-    if (!file || !fs.existsSync(file)) {
-        return '';
-    }
-    const escapedKey = key.replace(/[|\\{}()[\]^$+*?.-]/g, '\\$&');
-    const pattern = new RegExp('^[ \\t]*' + escapedKey + '[ \\t]*:[ \\t]*(.*)$');
-    for (const line of fs.readFileSync(file, 'utf8').split(/\r?\n/)) {
-        const match = line.match(pattern);
-        if (match) {
-            return match[1].trim();
-        }
-    }
-    return '';
-}
-
 function isTestMode() {
     return state.testMode || process.env.MODDING_API_TEST_MODE === '1';
 }
@@ -228,100 +214,58 @@ function runGitChecked(cwd, args) {
 function selectDefaultPaths() {
     const cwd = process.cwd();
     const home = isTestMode() && testHome() ? testHome() : os.homedir();
-    const projectTarget = path.join(cwd, '.skills', 'blasphemous-modding-helper', 'references', 'modding-api');
-    const projectPreferences = path.join(cwd, '.skills', 'blasphemous-modding-helper', 'preferences.md');
-    const userTarget = path.join(home, '.skills', 'blasphemous-modding-helper', 'references', 'modding-api');
-    const userPreferences = path.join(home, '.skills', 'blasphemous-modding-helper', 'preferences.md');
-    let defaultTarget = '';
-    let defaultPreferences = '';
-    if (state.scope) {
-        if (state.scope === 'project') {
-            defaultTarget = projectTarget;
-            defaultPreferences = projectPreferences;
-        }
-        else {
-            defaultTarget = userTarget;
-            defaultPreferences = userPreferences;
-        }
-        if (!state.preferencesFile) {
-            state.preferencesFile = defaultPreferences;
-        }
+    const context = lifecycle.selectPreferenceContext({
+        cwd: cwd,
+        home: home,
+        scope: state.scope,
+        preferencesFile: state.preferencesFile,
+        targetExplicit: state.targetExplicit,
+        preferencesExplicit: state.preferencesExplicit,
+        pathModule: path,
+        normalizePath: lockState.normalizePath
+    });
+    if (!context.ok) {
+        fail(context.code, context.cause, context.nextStep);
     }
-    else if (!state.preferencesFile && !state.targetExplicit) {
-        if (fs.existsSync(projectPreferences)) {
-            defaultTarget = projectTarget;
-            defaultPreferences = projectPreferences;
-            state.preferencesFile = projectPreferences;
-        }
-        else if (fs.existsSync(userPreferences)) {
-            defaultTarget = userTarget;
-            defaultPreferences = userPreferences;
-            state.preferencesFile = userPreferences;
-        }
-    }
-    if (state.preferencesFile) {
-        state.preferencesFile = lockState.normalizePath(state.preferencesFile);
-        if (state.scope && state.preferencesExplicit && state.preferencesFile !== lockState.normalizePath(defaultPreferences)) {
-            fail(2, 'preferences file scope does not match --scope ' + state.scope, 'Use the preferences path belonging to the selected scope.');
-        }
-    }
-    return { defaultTarget, defaultPreferences };
+    state.preferencesFile = context.preferencesFile;
+    return context;
 }
 
 function selectTarget(defaultTarget) {
-    if (!state.targetExplicit && state.preferencesFile) {
-        const configuredTarget = readKeyValue(state.preferencesFile, 'modding_api_reference_path');
-        if (configuredTarget) {
-            state.targetPath = configuredTarget;
-        }
+    const target = lifecycle.resolveTarget({
+        targetPath: state.targetPath,
+        targetExplicit: state.targetExplicit,
+        preferencesFile: state.preferencesFile,
+        defaultTarget: defaultTarget,
+        normalizePath: lockState.normalizePath
+    });
+    if (!target.ok) {
+        fail(target.code, target.cause, target.nextStep);
     }
-    if (!state.targetPath) {
-        if (defaultTarget) {
-            state.targetPath = defaultTarget;
-        }
-        else {
-            fail(2, 'no local reference path was provided', 'Use --target-path, --scope, or configure modding_api_reference_path in preferences.md.');
-        }
-    }
-    state.targetPath = lockState.normalizePath(state.targetPath);
-    state.lockFile = state.targetPath + '.lock';
+    state.targetPath = target.targetPath;
+    state.lockFile = target.lockFile;
 }
 
 function selectSelector() {
-    if (!state.selectorExplicit) {
-        const configuredSelector = readKeyValue(state.preferencesFile, 'modding_api_reference_selector');
-        state.selector = configuredSelector || 'latest';
+    const selector = lifecycle.resolveSelector({
+        selector: state.selector,
+        selectorExplicit: state.selectorExplicit,
+        preferencesFile: state.preferencesFile,
+        parseSelectorOptions: { commitError: false }
+    });
+    if (!selector.ok) {
+        fail(selector.code, selector.cause, selector.nextStep);
     }
-    if (!state.selector) {
-        fail(2, 'no selector was configured', 'Use --selector or add modding_api_reference_selector to preferences.md.');
-    }
+    state.selector = selector.selector;
 }
 
 function validateSelector() {
-    if (state.selector === 'latest') {
-        state.selectorKind = 'release';
-        state.resolvedRef = '';
-        return;
+    const selector = lifecycle.parseSelector(state.selector, { commitError: false });
+    if (!selector.ok) {
+        fail(selector.code, selector.cause, selector.nextStep);
     }
-    let match = state.selector.match(/^tag:(.+)$/);
-    if (match) {
-        state.selectorKind = 'tag';
-        state.resolvedRef = match[1];
-        return;
-    }
-    match = state.selector.match(/^branch:(.+)$/);
-    if (match) {
-        state.selectorKind = 'branch';
-        state.resolvedRef = match[1];
-        return;
-    }
-    match = state.selector.match(/^commit:(.+)$/);
-    if (match && /^[0-9a-fA-F]{40}$/.test(match[1])) {
-        state.selectorKind = 'commit';
-        state.resolvedRef = match[1];
-        return;
-    }
-    fail(2, 'invalid selector: ' + state.selector, 'Use latest, tag:REF, branch:REF, or commit:SHA.');
+    state.selectorKind = selector.selectorKind;
+    state.resolvedRef = selector.resolvedRef;
 }
 
 function localRepositoryPath(repository) {
@@ -630,12 +574,12 @@ function main(argv) {
             process.stderr.write(resolved.output + (resolved.output.endsWith('\n') ? '' : '\n'));
             fail(1, 'selector resolution failed', 'Fix the selector or network/Release metadata problem, then retry.');
         }
-        const values = runtime.resolverValues(resolved.output);
-        const repositoryFromResolver = values.MODDING_API_REPOSITORY || '';
-        selectorKind = values.MODDING_API_SELECTOR_KIND || '';
-        resolvedRef = values.MODDING_API_RESOLVED_REF || '';
-        resolvedTag = values.MODDING_API_RESOLVED_TAG || '';
-        resolvedCommit = values.MODDING_API_RESOLVED_COMMIT || '';
+        const values = lifecycle.parseResolverMetadata(runtime.resolverValues(resolved.output));
+        const repositoryFromResolver = values.repository;
+        selectorKind = values.selectorKind;
+        resolvedRef = values.resolvedRef;
+        resolvedTag = values.resolvedTag;
+        resolvedCommit = values.resolvedCommit;
         if (!repositoryFromResolver || !selectorKind || !resolvedRef || !resolvedCommit) {
             fail(1, 'resolver returned incomplete reference metadata', 'Retry the selector resolution and inspect its error report.');
         }
@@ -669,14 +613,18 @@ function main(argv) {
         if (!pathExists(path.join(stagingPath, '.git', 'shallow'))) {
             fail(1, 'clone is not shallow', 'Retry with a Git installation that supports shallow fetches.');
         }
-        if (selectorKind === 'branch') {
-            const upstream = runGitChecked(stagingPath, ['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{upstream}']).output.trim();
-            if (upstream !== 'origin/' + resolvedRef) {
-                fail(1, 'branch does not track origin/' + resolvedRef, 'Retry the fresh clone with the requested branch selector.');
-            }
-        }
-        else if (runtime.runGit(stagingPath, ['symbolic-ref', '--quiet', '--short', 'HEAD']).code === 0) {
-            fail(1, 'fixed reference is not detached', 'Retry the fresh clone with the requested tag or commit selector.');
+        const checkoutShape = lifecycle.validateCheckoutShape({
+            targetPath: stagingPath,
+            selectorKind: selectorKind,
+            resolvedRef: resolvedRef,
+            runGit: runtime.runGit,
+            branchTrackingCause: 'branch does not track origin/' + resolvedRef,
+            branchTrackingNextStep: 'Retry the fresh clone with the requested branch selector.',
+            fixedDetachedCause: 'fixed reference is not detached',
+            fixedDetachedNextStep: 'Retry the fresh clone with the requested tag or commit selector.'
+        });
+        if (!checkoutShape.ok) {
+            fail(checkoutShape.code, checkoutShape.cause, checkoutShape.nextStep);
         }
         checkedAt = lockState.utcNow();
         lockState.writeLockState(lockStagingPath, state.selector, resolvedTag, resolvedCommit, state.repository, checkedAt);

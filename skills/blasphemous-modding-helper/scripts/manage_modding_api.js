@@ -6,9 +6,10 @@ const os = require('os');
 const path = require('path');
 const lockState = require('./modding_api_lock');
 const runtime = require('./modding_api_runtime');
+const lifecycle = require('./modding_api_lifecycle');
 
 const SCRIPT_DIR = __dirname;
-const OFFICIAL_REPOSITORY = 'https://github.com/BrandenEK/Blasphemous.ModdingAPI.git';
+const OFFICIAL_REPOSITORY = lifecycle.OFFICIAL_REPOSITORY;
 const state = {
     operation: '',
     scope: '',
@@ -143,91 +144,33 @@ function parseArgs(argv) {
     return true;
 }
 
-function escapeRegExp(value) {
-    return value.replace(/[|\\{}()[\]^$+*?.-]/g, '\\$&');
-}
-
-function readKeyValue(file, key) {
-    if (!file || !fs.existsSync(file)) {
-        return '';
+function reportCheckout() {
+    try {
+        const inspection = lifecycle.inspectCheckout({
+            fileSystem: fs,
+            targetPath: state.targetPath,
+            runGit: runtime.runGit,
+            repository: state.repository
+        });
+        return {
+            currentHead: inspection.currentHead || '<unavailable>',
+            worktreeState: inspection.worktreeState || 'unknown'
+        };
     }
-    const content = fs.readFileSync(file, 'utf8');
-    const pattern = new RegExp('^[ \\t]*' + escapeRegExp(key) + '[ \\t]*:[ \\t]*(.*)$');
-    for (const line of content.split(/\r?\n/)) {
-        const match = line.match(pattern);
-        if (match) {
-            return match[1].trim();
-        }
+    catch (error) {
+        return { currentHead: '<unavailable>', worktreeState: 'unknown' };
     }
-    return '';
-}
-
-function hasKey(file, key) {
-    if (!file || !fs.existsSync(file)) {
-        return false;
-    }
-    const content = fs.readFileSync(file, 'utf8');
-    const pattern = new RegExp('^[ \\t]*' + escapeRegExp(key) + '[ \\t]*:');
-    return content.split(/\r?\n/).some(line => pattern.test(line));
-}
-
-function canonicalRepository(value) {
-    let result = text(value).trim().replace(/\/+$/, '');
-    const wslPath = result.match(/^\/(?:mnt\/)?([A-Za-z])\/(.*)$/);
-    if (wslPath) {
-        result = wslPath[1].toUpperCase() + ':/' + wslPath[2];
-    }
-    result = result.replace(/\\/g, '/');
-    const sshRepository = result.match(/^git@([^:]+):(.+)$/i);
-    if (sshRepository) {
-        result = 'https://' + sshRepository[1] + '/' + sshRepository[2];
-    }
-    const sshUrl = result.match(/^ssh:\/\/git@([^/]+)\/(.+)$/i);
-    if (sshUrl) {
-        result = 'https://' + sshUrl[1] + '/' + sshUrl[2];
-    }
-    result = result.replace(/^https?:\/\/(?:www\.)?github\.com\//i, 'https://github.com/');
-    if (result.toLowerCase().endsWith('.git')) {
-        result = result.slice(0, -4);
-    }
-    return result.toLowerCase();
-}
-
-function validCheckedAt(value) {
-    return /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/.test(text(value)) && !Number.isNaN(Date.parse(value));
-}
-
-function currentHead() {
-    if (!state.targetPath || !fs.existsSync(state.targetPath)) {
-        return '<unavailable>';
-    }
-    const result = runtime.runGit(state.targetPath, ['rev-parse', 'HEAD']);
-    return result.code === 0 ? result.output.trim().split(/\r?\n/)[0] : '<unavailable>';
-}
-
-function worktreeState() {
-    if (!state.targetPath || !fs.existsSync(state.targetPath)) {
-        return 'missing';
-    }
-    const inside = runtime.runGit(state.targetPath, ['rev-parse', '--is-inside-work-tree']);
-    if (inside.code !== 0 || inside.output.trim() !== 'true') {
-        return 'invalid';
-    }
-    const status = runtime.runGit(state.targetPath, ['status', '--porcelain', '--untracked-files=all']);
-    if (status.code !== 0) {
-        return 'invalid';
-    }
-    return status.output.trim().length > 0 ? 'dirty' : 'clean';
 }
 
 function printErrorReport(code, cause, nextStep) {
+    const checkout = reportCheckout();
     process.stderr.write(
         '[ERROR REPORT]\n' +
         'operation: ' + (state.operation || '<unset>') + '\n' +
         'target_path: ' + (state.targetPath || '<unset>') + '\n' +
         'selector: ' + (state.selector || '<unset>') + '\n' +
-        'current_head: ' + currentHead() + '\n' +
-        'worktree_state: ' + worktreeState() + '\n' +
+        'current_head: ' + checkout.currentHead + '\n' +
+        'worktree_state: ' + checkout.worktreeState + '\n' +
         'network_state: ' + (state.networkState || 'unknown') + '\n' +
         'cause: ' + cause + '\n' +
         'next_step: ' + nextStep + '\n'
@@ -269,214 +212,95 @@ function selectDefaultPaths() {
     const home = isTestMode() && testHome()
         ? testHome()
         : os.homedir();
-    const projectTarget = path.join(cwd, '.skills', 'blasphemous-modding-helper', 'references', 'modding-api');
-    const projectPreferences = path.join(cwd, '.skills', 'blasphemous-modding-helper', 'preferences.md');
-    const userTarget = path.join(home, '.skills', 'blasphemous-modding-helper', 'references', 'modding-api');
-    const userPreferences = path.join(home, '.skills', 'blasphemous-modding-helper', 'preferences.md');
-
-    let defaultTarget = '';
-    let defaultPreferences = '';
-    if (state.scope) {
-        if (state.scope === 'project') {
-            defaultTarget = projectTarget;
-            defaultPreferences = projectPreferences;
-        }
-        else {
-            defaultTarget = userTarget;
-            defaultPreferences = userPreferences;
-        }
-        if (!state.preferencesFile) {
-            state.preferencesFile = defaultPreferences;
-        }
+    const context = lifecycle.selectPreferenceContext({
+        cwd: cwd,
+        home: home,
+        scope: state.scope,
+        preferencesFile: state.preferencesFile,
+        targetExplicit: state.targetExplicit,
+        preferencesExplicit: state.preferencesExplicit,
+        pathModule: path,
+        fileSystem: fs,
+        normalizePath: lockState.normalizePath
+    });
+    if (!context.ok) {
+        fail(context.code, context.cause, context.nextStep);
     }
-    else if (!state.preferencesFile && !state.targetExplicit) {
-        if (fs.existsSync(projectPreferences)) {
-            defaultTarget = projectTarget;
-            defaultPreferences = projectPreferences;
-            state.preferencesFile = projectPreferences;
-        }
-        else if (fs.existsSync(userPreferences)) {
-            defaultTarget = userTarget;
-            defaultPreferences = userPreferences;
-            state.preferencesFile = userPreferences;
-        }
-    }
-    if (state.preferencesFile) {
-        state.preferencesFile = lockState.normalizePath(state.preferencesFile);
-        if (state.scope && state.preferencesExplicit && state.preferencesFile !== lockState.normalizePath(defaultPreferences)) {
-            fail(2, 'preferences file scope does not match --scope ' + state.scope, 'Use the preferences path belonging to the selected scope.');
-        }
-    }
-    return { defaultTarget, defaultPreferences };
+    state.preferencesFile = context.preferencesFile;
+    return context;
 }
 
 function readPreferencePath(defaultTarget) {
-    if (!state.targetExplicit && state.preferencesFile) {
-        const configuredTarget = readKeyValue(state.preferencesFile, 'modding_api_reference_path');
-        if (configuredTarget) {
-            state.targetPath = configuredTarget;
-        }
+    const target = lifecycle.resolveTarget({
+        targetPath: state.targetPath,
+        targetExplicit: state.targetExplicit,
+        preferencesFile: state.preferencesFile,
+        defaultTarget: defaultTarget,
+        fileSystem: fs,
+        normalizePath: lockState.normalizePath
+    });
+    if (!target.ok) {
+        fail(target.code, target.cause, target.nextStep);
     }
-    if (!state.targetPath) {
-        if (defaultTarget) {
-            state.targetPath = defaultTarget;
-        }
-        else {
-            fail(2, 'no local reference path was provided', 'Use --target-path, --scope, or configure modding_api_reference_path in preferences.md.');
-        }
-    }
-    state.targetPath = lockState.normalizePath(state.targetPath);
-    state.lockFile = state.targetPath + '.lock';
+    state.targetPath = target.targetPath;
+    state.lockFile = target.lockFile;
 }
 
 function readSelector() {
-    if (state.selectorExplicit) {
-        return;
+    const selector = lifecycle.resolveSelector({
+        selector: state.selector,
+        selectorExplicit: state.selectorExplicit,
+        preferencesFile: state.preferencesFile,
+        fileSystem: fs
+    });
+    if (!selector.ok) {
+        fail(selector.code, selector.cause, selector.nextStep);
     }
-    const configuredSelector = readKeyValue(state.preferencesFile, 'modding_api_reference_selector');
-    if (configuredSelector) {
-        state.selector = configuredSelector;
-    }
-    else {
-        state.selector = 'latest';
-    }
-    if (!state.selector) {
-        fail(2, 'no selector was configured', 'Use --selector or add modding_api_reference_selector to preferences.md.');
-    }
-}
-
-function validateSelectorSyntax() {
-    if (state.selector === 'latest') {
-        state.selectorKind = 'release';
-        state.resolvedRef = '';
-        return;
-    }
-    let match = state.selector.match(/^tag:(.+)$/);
-    if (match) {
-        state.selectorKind = 'tag';
-        state.resolvedRef = match[1];
-        return;
-    }
-    match = state.selector.match(/^branch:(.+)$/);
-    if (match) {
-        state.selectorKind = 'branch';
-        state.resolvedRef = match[1];
-        return;
-    }
-    match = state.selector.match(/^commit:(.+)$/);
-    if (match) {
-        state.resolvedRef = match[1];
-        if (!/^[0-9a-fA-F]{40}$/.test(state.resolvedRef)) {
-            fail(2, 'commit selector must contain a 40-character SHA', 'Use commit:SHA with an exact 40-character commit.');
-        }
-        state.selectorKind = 'commit';
-        return;
-    }
-    fail(2, 'invalid selector: ' + state.selector, 'Use latest, tag:REF, branch:REF, or commit:SHA.');
+    state.selector = selector.selector;
+    state.selectorKind = selector.selectorKind;
+    state.resolvedRef = selector.resolvedRef;
 }
 
 function loadCheckoutState() {
-    if (!fs.existsSync(state.targetPath) || !fs.statSync(state.targetPath).isDirectory()) {
-        state.worktreeState = 'missing';
-        fail(2, 'reference path does not exist: ' + state.targetPath, 'Run the fresh clone command or provide the configured checkout path.');
-    }
-    const inside = runtime.runGit(state.targetPath, ['rev-parse', '--is-inside-work-tree']);
-    if (inside.code !== 0 || inside.output.trim() !== 'true') {
-        state.worktreeState = 'invalid';
-        fail(1, 'reference path is not a Git worktree: ' + state.targetPath, 'Use a valid ModdingAPI checkout or clone a fresh reference into a missing path.');
-    }
-    state.currentHead = currentHead();
-    if (state.currentHead === '<unavailable>') {
-        fail(1, 'reference worktree has no readable HEAD', 'Repair the checkout manually or create a fresh reference in another path.');
-    }
-    const status = runtime.runGit(state.targetPath, ['status', '--porcelain', '--untracked-files=all']);
-    if (status.code !== 0) {
-        fail(1, 'could not inspect reference worktree state', 'Inspect the checkout manually and retry.');
-    }
-    if (status.output.trim().length > 0) {
-        state.worktreeState = 'dirty';
-        fail(1, 'reference worktree contains local changes', 'Commit or remove changes manually, then retry; the manager will not stash, reset, or delete them.');
-    }
-    state.worktreeState = 'clean';
-
-    const origin = runtime.runGit(state.targetPath, ['config', '--get', 'remote.origin.url']);
-    if (origin.code !== 0 || !origin.output.trim()) {
-        fail(1, 'reference checkout has no origin remote', 'Add the official ModdingAPI origin manually or create a fresh reference.');
-    }
-    if (canonicalRepository(origin.output.trim()) !== canonicalRepository(state.repository)) {
-        fail(1, 'reference origin does not match the official ModdingAPI repository: ' + origin.output.trim(), 'Do not use this checkout; configure the official upstream or create a fresh reference.');
+    const inspection = lifecycle.inspectCheckout({
+        fileSystem: fs,
+        targetPath: state.targetPath,
+        runGit: runtime.runGit,
+        repository: state.repository
+    });
+    state.currentHead = inspection.currentHead || '<unavailable>';
+    state.worktreeState = inspection.worktreeState || 'unknown';
+    if (!inspection.ok) {
+        fail(inspection.code, inspection.cause, inspection.nextStep);
     }
 }
 
 function validateCheckoutShape() {
-    if (state.selectorKind === 'branch') {
-        const branch = runtime.runGit(state.targetPath, ['symbolic-ref', '--quiet', '--short', 'HEAD']);
-        const branchName = branch.code === 0 ? branch.output.trim() : '';
-        if (branchName !== state.resolvedRef) {
-            fail(1, 'current branch is ' + branchName + ', but selector requires branch ' + state.resolvedRef, 'Check out the requested branch manually or use a fresh reference; the manager will not replace the current branch.');
-        }
-        const upstream = runtime.runGit(state.targetPath, ['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{upstream}']);
-        let upstreamName = upstream.code === 0 ? upstream.output.trim() : '';
-        if (!upstreamName) {
-            const configuredRemote = runtime.runGit(state.targetPath, ['config', '--get', 'branch.' + state.resolvedRef + '.remote']);
-            const configuredMerge = runtime.runGit(state.targetPath, ['config', '--get', 'branch.' + state.resolvedRef + '.merge']);
-            if (
-                configuredRemote.code === 0 && configuredRemote.output.trim() === 'origin' &&
-                configuredMerge.code === 0 && configuredMerge.output.trim() === 'refs/heads/' + state.resolvedRef
-            ) {
-                upstreamName = 'origin/' + state.resolvedRef;
-            }
-        }
-        if (upstreamName !== 'origin/' + state.resolvedRef) {
-            fail(1, 'current branch does not track origin/' + state.resolvedRef, 'Repair the tracking configuration manually or create a fresh reference; the manager will not rewrite it.');
-        }
-        return;
+    const shape = lifecycle.validateCheckoutShape({
+        targetPath: state.targetPath,
+        selectorKind: state.selectorKind,
+        resolvedRef: state.resolvedRef,
+        runGit: runtime.runGit
+    });
+    if (!shape.ok) {
+        fail(shape.code, shape.cause, shape.nextStep);
     }
-    if (state.selectorKind === 'release' || state.selectorKind === 'tag' || state.selectorKind === 'commit') {
-        const headReference = runtime.runGit(state.targetPath, ['symbolic-ref', '--quiet', '--short', 'HEAD']);
-        if (headReference.code === 0) {
-            fail(1, 'fixed selector requires detached HEAD', 'Detach HEAD manually at the intended reference or create a fresh fixed-reference checkout.');
-        }
-        return;
-    }
-    fail(1, 'unsupported selector kind: ' + state.selectorKind, 'Use latest, tag:REF, branch:REF, or commit:SHA.');
 }
 
 function loadLockState() {
-    if (!fs.existsSync(state.lockFile)) {
-        fail(1, 'offline validation requires the sibling lock state: ' + state.lockFile, 'Run an online check or update once, then retry offline.');
+    const lock = lifecycle.validateLock({
+        fileSystem: fs,
+        lockFile: state.lockFile,
+        selector: state.selector,
+        selectorKind: state.selectorKind,
+        resolvedRef: state.resolvedRef,
+        repository: state.repository
+    });
+    if (!lock.ok) {
+        fail(lock.code, lock.cause, lock.nextStep);
     }
-    const lockSelector = readKeyValue(state.lockFile, 'selector');
-    const lockTag = readKeyValue(state.lockFile, 'resolved_tag');
-    const lockCommit = readKeyValue(state.lockFile, 'resolved_commit');
-    const lockChecked = readKeyValue(state.lockFile, 'checked_at');
-    const lockRepository = readKeyValue(state.lockFile, 'repository');
-    if (!lockSelector || !hasKey(state.lockFile, 'resolved_tag') || !lockCommit || !lockChecked) {
-        fail(1, 'lock state is incomplete: ' + state.lockFile, 'Run an online check to rebuild the lock state after inspecting the checkout.');
-    }
-    if (!validCheckedAt(lockChecked)) {
-        fail(1, 'lock state contains an invalid checked_at value', 'Run an online check to rebuild the lock state.');
-    }
-    if (lockSelector !== state.selector) {
-        fail(1, 'lock selector ' + lockSelector + ' does not match requested selector ' + state.selector, 'Use the locked selector, run an online update for the requested selector, or inspect the lock manually.');
-    }
-    if (!/^[0-9a-fA-F]{40}$/.test(lockCommit)) {
-        fail(1, 'lock state contains an invalid resolved commit', 'Run an online check to rebuild the lock state.');
-    }
-    if (state.selectorKind === 'commit' && lockCommit.toLowerCase() !== state.resolvedRef.toLowerCase()) {
-        fail(1, 'lock commit does not match the commit selector ' + state.selector, 'Run an online check for the requested commit or inspect the lock manually.');
-    }
-    if (lockRepository && canonicalRepository(lockRepository) !== canonicalRepository(state.repository)) {
-        fail(1, 'lock state repository does not match the official ModdingAPI repository', 'Run an online check after correcting the lock state or create a fresh reference.');
-    }
-    if (state.selector === 'latest' && !lockTag) {
-        fail(1, 'latest lock state has no resolved tag', 'Run an online check to rebuild the lock state.');
-    }
-    if (state.selector.startsWith('tag:') && lockTag !== state.selector.slice(4)) {
-        fail(1, 'lock tag ' + lockTag + ' does not match requested selector ' + state.selector, 'Run an online update for the requested tag or inspect the lock manually.');
-    }
-    state.resolvedCommit = lockCommit;
-    state.resolvedTag = lockTag;
+    state.resolvedCommit = lock.resolvedCommit;
+    state.resolvedTag = lock.resolvedTag;
 }
 
 function resolveOnline() {
@@ -492,12 +316,12 @@ function resolveOnline() {
         state.networkState = runtime.networkFailure(result.output) ? 'offline' : 'unavailable';
         return false;
     }
-    const values = runtime.resolverValues(result.output);
-    state.repository = values.MODDING_API_REPOSITORY || '';
-    state.selectorKind = values.MODDING_API_SELECTOR_KIND || '';
-    state.resolvedRef = values.MODDING_API_RESOLVED_REF || '';
-    state.resolvedTag = values.MODDING_API_RESOLVED_TAG || '';
-    state.resolvedCommit = values.MODDING_API_RESOLVED_COMMIT || '';
+    const values = lifecycle.parseResolverMetadata(runtime.resolverValues(result.output));
+    state.repository = values.repository;
+    state.selectorKind = values.selectorKind;
+    state.resolvedRef = values.resolvedRef;
+    state.resolvedTag = values.resolvedTag;
+    state.resolvedCommit = values.resolvedCommit;
     if (!state.repository || !state.selectorKind || !state.resolvedCommit) {
         state.networkState = 'unavailable';
         state.resolverError = 'resolver returned incomplete reference metadata';
@@ -557,7 +381,6 @@ function main(argv) {
     const defaults = selectDefaultPaths();
     readPreferencePath(defaults.defaultTarget);
     readSelector();
-    validateSelectorSyntax();
 
     if (testRepository()) {
         state.repository = testRepository();
@@ -594,7 +417,7 @@ function main(argv) {
         if (state.currentHead !== state.resolvedCommit) {
             fail(1, 'current HEAD ' + state.currentHead + ' does not match locked commit ' + state.resolvedCommit, 'Run an online update or inspect the checkout and lock state manually.');
         }
-        writeResult(true, false, false, readKeyValue(state.lockFile, 'checked_at'));
+        writeResult(true, false, false, lifecycle.readLock(state.lockFile, fs).checkedAt);
         return;
     }
 
@@ -606,17 +429,19 @@ function main(argv) {
         }
         let lockMatch = false;
         if (fs.existsSync(state.lockFile)) {
-            lockMatch =
-                readKeyValue(state.lockFile, 'selector') === state.selector &&
-                hasKey(state.lockFile, 'resolved_tag') &&
-                readKeyValue(state.lockFile, 'resolved_tag') === state.resolvedTag &&
-                readKeyValue(state.lockFile, 'resolved_commit') === state.resolvedCommit &&
-                (state.selectorKind !== 'commit' || state.resolvedCommit.toLowerCase() === state.resolvedRef.toLowerCase()) &&
-                validCheckedAt(readKeyValue(state.lockFile, 'checked_at')) &&
-                canonicalRepository(readKeyValue(state.lockFile, 'repository')) === canonicalRepository(state.repository);
+            lockMatch = lifecycle.lockMatches({
+                fileSystem: fs,
+                lockFile: state.lockFile,
+                selector: state.selector,
+                selectorKind: state.selectorKind,
+                resolvedRef: state.resolvedRef,
+                resolvedTag: state.resolvedTag,
+                resolvedCommit: state.resolvedCommit,
+                repository: state.repository
+            });
         }
         let lockUpdated = false;
-        let checkedAt = readKeyValue(state.lockFile, 'checked_at');
+        let checkedAt = lifecycle.readLock(state.lockFile, fs).checkedAt;
         if (!lockMatch) {
             if (state.dryRun) {
                 checkedAt = '<not-written>';
@@ -696,7 +521,16 @@ function main(argv) {
         checkoutChanged = true;
     }
 
-    state.currentHead = currentHead();
+    const postUpdateInspection = lifecycle.inspectCheckout({
+        fileSystem: fs,
+        targetPath: state.targetPath,
+        runGit: runtime.runGit,
+        repository: state.repository
+    });
+    state.currentHead = postUpdateInspection.currentHead || '<unavailable>';
+    if (!postUpdateInspection.ok) {
+        fail(postUpdateInspection.code, postUpdateInspection.cause, postUpdateInspection.nextStep);
+    }
     if (state.currentHead !== state.resolvedCommit) {
         fail(1, 'update ended at ' + state.currentHead + ' instead of resolved commit ' + state.resolvedCommit, 'Inspect the checkout manually; no destructive recovery was attempted.');
     }
