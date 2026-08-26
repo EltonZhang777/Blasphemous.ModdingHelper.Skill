@@ -20,6 +20,7 @@ irm https://raw.githubusercontent.com/EltonZhang777/Blasphemous.ModdingHelper.Sk
 ```
 
 The installer detects AI coding agents on your machine and installs the skill for each one.
+If any selected agent installation or uninstallation fails, the installer exits with a nonzero status and does not report completion; inspect the provider diagnostic before retrying.
 
 ### Per-agent install
 

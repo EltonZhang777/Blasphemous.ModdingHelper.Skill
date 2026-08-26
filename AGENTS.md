@@ -44,6 +44,7 @@ Use the narrowest authoritative file for each change:
 
   Dry-run keeps checks from writing to the user's home directory or invoking an installation. `--uninstall` and real installation runs are user-authorized operations.
 - `decompile_source.ps1` and `decompile_source.sh` are setup operations with side effects: they remove `Assembly-CSharp.dll` and `Assembly-CSharp-firstpass.dll` from the configured Steam installation to trigger file validation, then decompile them. Resolve and confirm paths before invoking them; they also require elevated privileges, Steam, a .NET SDK, and `ilspycmd`.
+- Failure propagation regression: run `node tests/test_installer.js`. This test intentionally executes a temporary fake provider without `--dry-run` to exercise command failure handling; it does not access real agent directories or install anything.
 - Keep the Windows and Unix decompiler flows conceptually equivalent: validate the game, restore the DLLs through Steam, decompile both assemblies, create `BlasphemousSourceCode.sln` when projects are found, and report the output path for `preferences.md`.
 
 ## Verification matrix

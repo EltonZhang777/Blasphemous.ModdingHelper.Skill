@@ -306,23 +306,25 @@ function detectAgents(onlyIds) {
 // ── Installation handlers ───────────────────────────────────────────────────
 
 function installClaudeCode(action) {
+  let success = true;
   if (action === "install") {
     info("Installing for Claude Code via plugin marketplace...");
-    run(`claude plugin marketplace add ${REPO}`, "Claude Code marketplace add");
-    run(`claude plugin install "${SKILL_NAME}@${REPO}"`, "Claude Code plugin install");
+    success = run(`claude plugin marketplace add ${REPO}`, "Claude Code marketplace add") && success;
+    success = run(`claude plugin install "${SKILL_NAME}@${REPO}"`, "Claude Code plugin install") && success;
   } else {
     info("Uninstalling from Claude Code...");
-    run(`claude plugin uninstall ${SKILL_NAME}`, "Claude Code uninstall");
+    success = run(`claude plugin uninstall ${SKILL_NAME}`, "Claude Code uninstall") && success;
   }
+  return success;
 }
 
 function installGeminiCli(action) {
   if (action === "install") {
     info("Installing for Gemini CLI...");
-    run(`gemini extensions install ${REPO_URL}`, "Gemini CLI install");
+    return run(`gemini extensions install ${REPO_URL}`, "Gemini CLI install");
   } else {
     info("Uninstalling from Gemini CLI...");
-    run(`gemini extensions uninstall ${REPO_URL}`, "Gemini CLI uninstall");
+    return run(`gemini extensions uninstall ${REPO_URL}`, "Gemini CLI uninstall");
   }
 }
 
@@ -336,7 +338,7 @@ function installTraeCn(action) {
 
     if (DRY_RUN) {
       console.log(`  copy "${SKILL_SOURCE_DIR}" → "${targetDir}"`);
-      return;
+      return true;
     }
 
     // Create parent dir if needed
@@ -344,7 +346,7 @@ function installTraeCn(action) {
       fs.mkdirSync(path.dirname(targetDir), { recursive: true });
     } catch (e) {
       warn(`Failed to create target directory: ${e.message}`);
-      return;
+      return false;
     }
 
     // Remove existing if present
@@ -354,26 +356,31 @@ function installTraeCn(action) {
       }
     } catch (e) {
       warn(`Failed to remove existing installation: ${e.message}`);
-      return;
+      return false;
     }
 
     // Copy skill directory recursively
     try {
       copyDirSync(SKILL_SOURCE_DIR, targetDir);
       ok("Installed for Trae IDE (Trae-CN)");
+      return true;
     } catch (e) {
       warn(`Failed to copy skill directory: ${e.message}`);
       warn("Try running as Administrator or copy manually.");
+      return false;
     }
   } else {
     info("Uninstalling from Trae IDE (Trae-CN)...");
-    if (!DRY_RUN && fs.existsSync(targetDir)) {
-      try {
-        fs.rmSync(targetDir, { recursive: true, force: true });
-        ok("Uninstalled from Trae IDE (Trae-CN)");
-      } catch (e) {
-        warn(`Failed to uninstall: ${e.message}`);
-      }
+    if (DRY_RUN || !fs.existsSync(targetDir)) {
+      return true;
+    }
+    try {
+      fs.rmSync(targetDir, { recursive: true, force: true });
+      ok("Uninstalled from Trae IDE (Trae-CN)");
+      return true;
+    } catch (e) {
+      warn(`Failed to uninstall: ${e.message}`);
+      return false;
     }
   }
 }
@@ -382,7 +389,7 @@ function runViaNpx(agent, action) {
   const cmd = action === "install" ? "add" : "remove";
   const noun = action === "install" ? "Installing" : "Uninstalling";
   info(`${noun} for ${agent.label} via npx skills...`);
-  run(`npx skills ${cmd} ${REPO} -a ${agent.profile}`, `${noun} for ${agent.label}`);
+  return run(`npx skills ${cmd} ${REPO} -a ${agent.profile}`, `${noun} for ${agent.label}`);
 }
 
 // ── Utility functions ───────────────────────────────────────────────────────
@@ -423,12 +430,13 @@ function err(msg) {
 function run(cmd, desc) {
   if (DRY_RUN) {
     console.log(`  ${cmd}`);
-    return;
+    return true;
   }
   try {
     // stdio: "pipe" (not "ignore") so child stderr is captured for the
     // failure path below; successful runs stay quiet.
     execSync(cmd, { stdio: "pipe", maxBuffer: 10 * 1024 * 1024 });
+    return true;
   } catch (e) {
     const detail =
       (e && e.stderr && e.stderr.toString().trim()) ||
@@ -440,6 +448,7 @@ function run(cmd, desc) {
     if (lines.length > 0) {
       console.log(`    ${lines.join("\n    ")}`);
     }
+    return false;
   }
 }
 
@@ -693,22 +702,32 @@ async function main() {
   console.log("");
 
   // Execute install/uninstall for each target
+  let allSucceeded = true;
   for (const agent of targets) {
+    let operationSucceeded = false;
     switch (agent.id) {
       case "claude-code":
-        installClaudeCode(action);
+        operationSucceeded = installClaudeCode(action);
         break;
       case "gemini-cli":
-        installGeminiCli(action);
+        operationSucceeded = installGeminiCli(action);
         break;
       case "trae-cn":
-        installTraeCn(action);
+        operationSucceeded = installTraeCn(action);
         break;
       default:
-        runViaNpx(agent, action);
+        operationSucceeded = runViaNpx(agent, action);
         break;
     }
+    allSucceeded = operationSucceeded && allSucceeded;
     console.log("");
+  }
+
+  if (!allSucceeded) {
+    const operation = action === "install" ? "Installation" : "Uninstallation";
+    err(`${operation} failed for one or more targets.`);
+    process.exitCode = 1;
+    return;
   }
 
   // ── Next steps ────────────────────────────────────────────────────────────
