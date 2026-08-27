@@ -226,8 +226,10 @@ class ProcessAdapter:
     def snapshot_tree(self, identity: ProcessIdentity) -> Tuple[ProcessIdentity, ...]:
         return _snapshot_process_tree(identity)
 
-    def terminate_tree(self, identity: ProcessIdentity, *, force: bool = False) -> None:
-        _terminate_process_tree(identity, force=force)
+    def terminate_tree(self, identity: ProcessIdentity, *, force: bool = False) -> bool:
+        """Request termination and report whether the helper found the root."""
+
+        return _terminate_process_tree(identity, force=force)
 
     def wait_for_exit(
         self,
@@ -1363,6 +1365,13 @@ def _archive_previous_sessions(
                     "launch",
                     f"Session {session_id} still tracks a running game process; stop it before starting another run.",
                 )
+            _verify_tracked_children_stopped(
+                session_id,
+                process_value,
+                process_adapter=adapter,
+                code=EXIT_LAUNCH,
+                category="launch",
+            )
             process_value["state"] = "exited"
             process_value["recorded_at"] = datetime.now(timezone.utc).isoformat()
 
@@ -1721,6 +1730,29 @@ def _windows_process_identity(
     from ctypes import wintypes
 
     kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.OpenProcess.argtypes = [
+        wintypes.DWORD,
+        wintypes.BOOL,
+        wintypes.DWORD,
+    ]
+    kernel32.OpenProcess.restype = wintypes.HANDLE
+    kernel32.GetProcessTimes.argtypes = [
+        wintypes.HANDLE,
+        ctypes.POINTER(wintypes.FILETIME),
+        ctypes.POINTER(wintypes.FILETIME),
+        ctypes.POINTER(wintypes.FILETIME),
+        ctypes.POINTER(wintypes.FILETIME),
+    ]
+    kernel32.GetProcessTimes.restype = wintypes.BOOL
+    kernel32.QueryFullProcessImageNameW.argtypes = [
+        wintypes.HANDLE,
+        wintypes.DWORD,
+        wintypes.LPWSTR,
+        ctypes.POINTER(wintypes.DWORD),
+    ]
+    kernel32.QueryFullProcessImageNameW.restype = wintypes.BOOL
+    kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+    kernel32.CloseHandle.restype = wintypes.BOOL
     handle = kernel32.OpenProcess(0x1000, False, pid)
     if not handle:
         error_code = ctypes.get_last_error()
@@ -1750,6 +1782,11 @@ def _windows_process_identity(
                 return None
             if error_code not in {2, 6, 87, 1168}:
                 raise OSError(error_code, "GetProcessTimes failed")
+            return None
+        if (
+            (int(exit_time.dwHighDateTime) << 32)
+            | int(exit_time.dwLowDateTime)
+        ):
             return None
         start_token = (
             f"{creation.dwHighDateTime:08x}{creation.dwLowDateTime:08x}"
@@ -1850,7 +1887,7 @@ def _windows_process_entries() -> Tuple[Tuple[int, int, str], ...]:
             ("dwSize", wintypes.DWORD),
             ("cntUsage", wintypes.DWORD),
             ("th32ProcessID", wintypes.DWORD),
-            ("th32DefaultHeapID", ctypes.POINTER(wintypes.ULONG)),
+            ("th32DefaultHeapID", ctypes.c_size_t),
             ("th32ModuleID", wintypes.DWORD),
             ("cntThreads", wintypes.DWORD),
             ("th32ParentProcessID", wintypes.DWORD),
@@ -1860,8 +1897,25 @@ def _windows_process_entries() -> Tuple[Tuple[int, int, str], ...]:
         ]
 
     kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.CreateToolhelp32Snapshot.argtypes = [
+        wintypes.DWORD,
+        wintypes.DWORD,
+    ]
+    kernel32.CreateToolhelp32Snapshot.restype = wintypes.HANDLE
+    kernel32.Process32FirstW.argtypes = [
+        wintypes.HANDLE,
+        ctypes.POINTER(ProcessEntry32W),
+    ]
+    kernel32.Process32FirstW.restype = wintypes.BOOL
+    kernel32.Process32NextW.argtypes = [
+        wintypes.HANDLE,
+        ctypes.POINTER(ProcessEntry32W),
+    ]
+    kernel32.Process32NextW.restype = wintypes.BOOL
+    kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+    kernel32.CloseHandle.restype = wintypes.BOOL
     snapshot = kernel32.CreateToolhelp32Snapshot(0x00000002, 0)
-    if snapshot == -1:
+    if snapshot in (None, ctypes.c_void_p(-1).value):
         raise OSError(ctypes.get_last_error(), "CreateToolhelp32Snapshot failed")
     try:
         entry = ProcessEntry32W()
@@ -2060,8 +2114,12 @@ def _wait_for_process_exit(identity: ProcessIdentity, timeout: float = 1.0) -> b
     deadline = time.monotonic() + timeout
     while True:
         current = _process_identity(identity.pid, strict=True)
-        if current is None or current.start_token != identity.start_token:
+        if current is None:
             return True
+        if not _same_process_identity(identity, current):
+            raise OSError(
+                f"tracked process ID {identity.pid} changed before termination"
+            )
         if time.monotonic() >= deadline:
             return False
         time.sleep(PROCESS_POLL_INTERVAL_SECONDS)
@@ -2071,7 +2129,11 @@ def _same_process_identity(
     expected: ProcessIdentity,
     current: Optional[ProcessIdentity],
 ) -> bool:
-    if current is None or current.start_token != expected.start_token:
+    if (
+        current is None
+        or current.pid != expected.pid
+        or current.start_token != expected.start_token
+    ):
         return False
     if expected.executable and current.executable and not _same_executable(
         current.executable,
@@ -2079,6 +2141,93 @@ def _same_process_identity(
     ):
         return False
     return True
+
+
+def _serialise_process_identity(identity: ProcessIdentity) -> Dict[str, object]:
+    return {
+        "pid": identity.pid,
+        "start_token": identity.start_token,
+        "executable": str(identity.executable) if identity.executable else None,
+    }
+
+
+def _tracked_child_identities(
+    process_state: Dict[str, object],
+    session_id: str,
+    *,
+    code: int = EXIT_CLEAN,
+    category: str = "stop/clean",
+) -> Tuple[ProcessIdentity, ...]:
+    value = process_state.get("children")
+    if not isinstance(value, list):
+        raise CliError(
+            code,
+            category,
+            f"Session {session_id} cannot safely verify tracked child processes; refusing to mark it exited or clean it.",
+        )
+    children: List[ProcessIdentity] = []
+    for index, child_value in enumerate(value):
+        if not isinstance(child_value, dict):
+            raise CliError(
+                code,
+                category,
+                f"Session {session_id} has invalid tracked child identity {index}; refusing to mark it exited or clean it.",
+            )
+        try:
+            pid = int(child_value["pid"])
+            start_token = str(child_value["start_token"])
+            raw_executable = child_value.get("executable")
+            executable = (
+                Path(str(raw_executable))
+                if raw_executable is not None and str(raw_executable).strip()
+                else None
+            )
+        except (KeyError, TypeError, ValueError) as error:
+            raise CliError(
+                code,
+                category,
+                f"Session {session_id} has incomplete tracked child identity {index}: {error}",
+            ) from error
+        if pid <= 0 or not start_token:
+            raise CliError(
+                code,
+                category,
+                f"Session {session_id} has invalid tracked child identity {index}; refusing to mark it exited or clean it.",
+            )
+        children.append(ProcessIdentity(pid, start_token, executable))
+    return tuple(children)
+
+
+def _verify_tracked_children_stopped(
+    session_id: str,
+    process_state: Dict[str, object],
+    *,
+    process_adapter: ProcessAdapter,
+    code: int = EXIT_CLEAN,
+    category: str = "stop/clean",
+) -> Tuple[ProcessIdentity, ...]:
+    children = _tracked_child_identities(
+        process_state,
+        session_id,
+        code=code,
+        category=category,
+    )
+    for child in children:
+        try:
+            alive = process_adapter.is_alive(child)
+        except CliError as error:
+            if error.code == code and error.category == category:
+                raise
+            raise CliError(code, category, str(error)) from error
+        except OSError as error:
+            raise CliError(code, category, str(error)) from error
+        if alive:
+            raise CliError(
+                code,
+                category,
+                f"Session {session_id} tracks child process {child.pid} that is still running; refusing to mark the session exited or clean it.",
+            )
+    return children
 
 
 def _wait_for_process_alive(
@@ -2113,10 +2262,10 @@ def _snapshot_process_tree(identity: ProcessIdentity) -> Tuple[ProcessIdentity, 
     return tuple(tree)
 
 
-def _terminate_process_tree(identity: ProcessIdentity, force: bool = False) -> None:
+def _terminate_process_tree(identity: ProcessIdentity, force: bool = False) -> bool:
     tree = _snapshot_process_tree(identity)
     if not tree:
-        return
+        return False
     if os.name == "nt":
         if not _same_process_identity(
             identity,
@@ -2134,14 +2283,19 @@ def _terminate_process_tree(identity: ProcessIdentity, force: bool = False) -> N
             text=True,
             check=False,
         )
-        if result.returncode != 0 and _same_process_identity(
-            identity,
-            _process_identity(identity.pid, strict=True),
-        ):
-            raise OSError(result.stderr.strip() or result.stdout.strip() or "taskkill failed")
-        return
+        if result.returncode == 0:
+            return True
+        current = _process_identity(identity.pid, strict=True)
+        if current is None:
+            return False
+        if not _same_process_identity(identity, current):
+            raise OSError(
+                f"tracked process ID {identity.pid} changed before taskkill"
+            )
+        raise OSError(result.stderr.strip() or result.stdout.strip() or "taskkill failed")
 
     termination_signal = signal.SIGKILL if force else signal.SIGTERM
+    root_requested = False
     for process in reversed(tree):
         current = _process_identity(process.pid, strict=True)
         if current is None:
@@ -2152,12 +2306,15 @@ def _terminate_process_tree(identity: ProcessIdentity, force: bool = False) -> N
             )
         try:
             os.kill(current.pid, termination_signal)
+            if process.pid == identity.pid:
+                root_requested = True
         except ProcessLookupError:
             continue
         except PermissionError as error:
             raise OSError(
                 f"could not stop process {current.pid}: {error}"
             ) from error
+    return root_requested
 
 
 def _update_process_state(
@@ -2256,6 +2413,25 @@ def launch_session(
     else:
         identity_error = None
     if identity is None:
+        exit_code = process.poll()
+        if exit_code is not None:
+            reason = (
+                "The launcher exited before its process identity could be inspected "
+                f"(exit code {exit_code})."
+            )
+            process_state = _launch_failure_state(
+                profile,
+                "exited",
+                reason,
+                pid=process.pid,
+                exit_code=exit_code,
+            )
+            _update_process_state(deployment.state_path, process_state)
+            raise CliError(
+                EXIT_LAUNCH,
+                "launch",
+                f"The game launcher exited before launch completed (exit code {exit_code}).",
+            )
         try:
             process.terminate()
         except OSError:
@@ -2310,6 +2486,46 @@ def launch_session(
         _update_process_state(deployment.state_path, process_state)
         raise CliError(EXIT_LAUNCH, "launch", reason)
 
+    try:
+        tracked_tree = adapter.snapshot_tree(identity)
+    except OSError as error:
+        try:
+            adapter.terminate_tree(identity, force=True)
+        except OSError:
+            pass
+        process_state = _launch_failure_state(
+            profile,
+            "failed",
+            f"Could not safely snapshot child processes: {error}",
+            pid=process.pid,
+        )
+        _update_process_state(deployment.state_path, process_state)
+        raise CliError(
+            EXIT_LAUNCH,
+            "launch",
+            f"The launcher started but its child processes could not be safely tracked: {error}",
+        ) from error
+    if not isinstance(tracked_tree, tuple):
+        tracked_tree = (identity,)
+    if tracked_tree and not _same_process_identity(identity, tracked_tree[0]):
+        reason = (
+            "The launched process identity changed while child processes were "
+            "being tracked; refusing to stop an unrelated process."
+        )
+        process_state = _launch_failure_state(
+            profile,
+            "failed",
+            reason,
+            pid=process.pid,
+        )
+        _update_process_state(deployment.state_path, process_state)
+        raise CliError(
+            EXIT_LAUNCH,
+            "launch",
+            reason,
+        )
+    tracked_children = tracked_tree[1:] if tracked_tree else ()
+
     process_state = {
         "state": "launched",
         "session_id": deployment.session_id,
@@ -2320,6 +2536,10 @@ def launch_session(
         "started_at": datetime.now(timezone.utc).isoformat(),
         "started_at_epoch_ns": started_at_epoch_ns,
         "log_baseline": log_baseline,
+        "children": [
+            _serialise_process_identity(child)
+            for child in tracked_children
+        ],
     }
     try:
         _update_process_state(deployment.state_path, process_state)
@@ -2367,7 +2587,15 @@ def stop_session(
         )
     process_state = dict(process_value)
     state = str(process_state.get("state", ""))
-    if state in {"stopped", "exited"}:
+    if state == "stopped":
+        return StopResult(session_id, state)
+    if state == "exited":
+        if "children" in process_state:
+            _verify_tracked_children_stopped(
+                session_id,
+                process_state,
+                process_adapter=adapter,
+            )
         return StopResult(session_id, state)
     if state != "launched":
         raise CliError(
@@ -2387,24 +2615,24 @@ def stop_session(
         ) from error
     identity = ProcessIdentity(pid, start_token, launcher)
     if not adapter.is_alive(identity):
+        _verify_tracked_children_stopped(
+            session_id,
+            process_state,
+            process_adapter=adapter,
+        )
         process_state["state"] = "exited"
         process_state["recorded_at"] = datetime.now(timezone.utc).isoformat()
         _update_process_state(state_path, process_state)
         return StopResult(session_id, "exited")
 
     try:
-        tracked_tree = adapter.snapshot_tree(identity)
-        if not tracked_tree:
-            process_state["state"] = "exited"
-            process_state["recorded_at"] = datetime.now(timezone.utc).isoformat()
-            _update_process_state(state_path, process_state)
-            return StopResult(session_id, "exited")
-        adapter.terminate_tree(identity, force=force)
+        tracked_children = _tracked_child_identities(process_state, session_id)
+        termination_requested = adapter.terminate_tree(identity, force=force)
         if not adapter.wait_for_exit(identity):
             raise OSError(
                 f"process {pid} is still running after stop; retry with --force"
             )
-        for child in tracked_tree[1:]:
+        for child in tracked_children:
             if not adapter.wait_for_exit(child):
                 raise OSError(
                     f"child process {child.pid} is still running after stop; retry with --force"
@@ -2418,11 +2646,15 @@ def stop_session(
             f"Could not stop tracked process tree for session {session_id}: {error}",
         ) from error
 
-    process_state["state"] = "stopped"
-    process_state["force"] = force
-    process_state["stopped_at"] = datetime.now(timezone.utc).isoformat()
+    stop_state = "stopped" if termination_requested else "exited"
+    process_state["state"] = stop_state
+    if termination_requested:
+        process_state["force"] = force
+        process_state["stopped_at"] = datetime.now(timezone.utc).isoformat()
+    else:
+        process_state["recorded_at"] = datetime.now(timezone.utc).isoformat()
     _update_process_state(state_path, process_state)
-    return StopResult(session_id, "stopped")
+    return StopResult(session_id, stop_state)
 
 
 def _ensure_session_process_stopped(
@@ -2436,7 +2668,15 @@ def _ensure_session_process_stopped(
     if not isinstance(process_value, dict):
         return False
     state = str(process_value.get("state", ""))
-    if state in {"stopped", "exited", "failed", "blocked"}:
+    if state in {"stopped", "failed", "blocked"}:
+        return False
+    if state == "exited":
+        if "children" in process_value:
+            _verify_tracked_children_stopped(
+                session_id,
+                process_value,
+                process_adapter=adapter,
+            )
         return False
     if state != "launched":
         raise CliError(
@@ -2462,6 +2702,11 @@ def _ensure_session_process_stopped(
             "stop/clean",
             f"Session {session_id} tracks a game process that is still running; stop it before cleaning.",
         )
+    _verify_tracked_children_stopped(
+        session_id,
+        process_value,
+        process_adapter=adapter,
+    )
     process_value["state"] = "exited"
     process_value["recorded_at"] = datetime.now(timezone.utc).isoformat()
     return True
@@ -3516,6 +3761,24 @@ def status_command(
                 if isinstance(process_value, dict)
                 else "not-launched"
             )
+            if process_state == "launched" and isinstance(process_value, dict):
+                try:
+                    identity = ProcessIdentity(
+                        int(process_value["pid"]),
+                        str(process_value["start_token"]),
+                        Path(str(process_value["launcher"])),
+                    )
+                    process_state = (
+                        "launched"
+                        if session.process_adapter.is_alive(identity)
+                        else "exited"
+                    )
+                except (CliError, OSError, KeyError, TypeError, ValueError) as error:
+                    process_state = "uninspectable"
+                    print(
+                        f"Warning: could not derive process state for {session_id}: {error}",
+                        file=sys.stderr,
+                    )
             evidence_value = payload.get("evidence")
             evidence_state = (
                 str(evidence_value.get("state", "unknown"))
