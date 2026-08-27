@@ -212,6 +212,7 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
         self,
         prelaunch_bepinex_log=None,
         project_kwargs=None,
+        tracked_child_pids=(),
     ):
         module = self.load_cli_module()
         profile = self.create_profile()
@@ -250,6 +251,18 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
         process_adapter.start.return_value = process
         process_adapter.identify.return_value = identity
         process_adapter.wait_for_alive.return_value = (True, identity)
+        tracked_children = tuple(
+            module.ProcessIdentity(
+                child_pid,
+                f"child-start-token-{child_pid}",
+                identity.executable,
+            )
+            for child_pid in tracked_child_pids
+        )
+        process_adapter.snapshot_tree.return_value = (
+            identity,
+            *tracked_children,
+        )
         session = self.create_session(module, process_adapter)
 
         with session.prepare_artifact(
@@ -919,6 +932,56 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
         )
         self.assertEqual(payload["process"]["state"], "exited")
 
+    def test_launch_race_records_process_that_exits_before_identity_inspection(self):
+        module = self.load_cli_module()
+        profile = self.create_profile()
+        project = self.create_project()
+        artifact = self.create_package(root=self.root, target_name="known-artifact")
+        self.write_project_preferences(profile)
+        process, identity = self.live_process_double(
+            module,
+            self.launcher_path(profile),
+        )
+        process.poll.side_effect = [None, 7]
+        process_adapter = mock.Mock(spec=module.ProcessAdapter)
+        process_adapter.find_conflict.return_value = None
+        process_adapter.start.return_value = process
+        process_adapter.identify.return_value = None
+        session = self.create_session(module, process_adapter)
+
+        result = self.run_module_cli(
+            module,
+            "run",
+            "--artifact",
+            str(artifact),
+            session=session,
+        )
+
+        self.assertEqual(result.returncode, module.EXIT_LAUNCH)
+        self.assertIn("exited", result.stderr)
+        payload = json.loads(self.deployment_manifests()[0].read_text(encoding="utf-8"))
+        self.assertEqual(payload["process"]["state"], "exited")
+        self.assertEqual(payload["process"]["exit_code"], 7)
+        process.terminate.assert_not_called()
+
+    def test_launch_persists_safely_tracked_child_identities(self):
+        module, session, deployment, profile_preflight, process, identity = self.create_launched_session(
+            tracked_child_pids=(1235,)
+        )
+
+        payload = json.loads(deployment.state_path.read_text(encoding="utf-8"))
+
+        self.assertEqual(
+            payload["process"]["children"],
+            [
+                {
+                    "executable": str(identity.executable),
+                    "pid": 1235,
+                    "start_token": "child-start-token-1235",
+                }
+            ],
+        )
+
     def test_stop_terminates_tracked_process_and_is_idempotent(self):
         module, session, deployment, profile_preflight, process, identity = self.create_launched_session()
         session.process_adapter.is_alive.return_value = True
@@ -968,6 +1031,273 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
             deployment.state_path.read_text(encoding="utf-8")
         )
         self.assertEqual(payload["process"]["state"], "exited")
+
+    def test_windows_taskkill_not_found_race_records_exited(self):
+        module, session, deployment, profile_preflight, process, identity = self.create_launched_session()
+        session.process_adapter = module.ProcessAdapter()
+        observed_identities = iter(
+            (identity, identity, identity, None, None)
+        )
+
+        with mock.patch.object(module.os, "name", "nt"):
+            with mock.patch.object(
+                module,
+                "_windows_process_entries",
+                return_value=(),
+            ):
+                with mock.patch.object(
+                    module,
+                    "_process_identity",
+                    side_effect=lambda pid, strict=False: next(observed_identities),
+                ):
+                    with mock.patch.object(
+                        module.subprocess,
+                        "run",
+                        return_value=SimpleNamespace(
+                            returncode=1281,
+                            stdout="",
+                            stderr="The process was not found.",
+                        ),
+                    ) as taskkill:
+                        result = session.stop(deployment.session_id)
+
+        self.assertEqual(result.state, "exited")
+        taskkill.assert_called_once_with(
+            ["taskkill", "/PID", str(identity.pid), "/T"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        payload = json.loads(deployment.state_path.read_text(encoding="utf-8"))
+        self.assertEqual(payload["process"]["state"], "exited")
+        cleaned = session.clean(deployment.session_id)
+        self.assertEqual(cleaned.state, "cleaned")
+
+    def test_windows_taskkill_race_refuses_reused_pid(self):
+        module, session, deployment, profile_preflight, process, identity = self.create_launched_session()
+        session.process_adapter = module.ProcessAdapter()
+        reused = module.ProcessIdentity(
+            identity.pid,
+            "reused-start-token",
+            identity.executable,
+        )
+        observed_identities = iter(
+            (identity, identity, identity, reused)
+        )
+
+        with mock.patch.object(module.os, "name", "nt"):
+            with mock.patch.object(
+                module,
+                "_windows_process_entries",
+                return_value=(),
+            ):
+                with mock.patch.object(
+                    module,
+                    "_process_identity",
+                    side_effect=lambda pid, strict=False: next(observed_identities),
+                ):
+                    with mock.patch.object(
+                        module.subprocess,
+                        "run",
+                        return_value=SimpleNamespace(
+                            returncode=1281,
+                            stdout="",
+                            stderr="The process was not found.",
+                        ),
+                    ) as taskkill:
+                        with self.assertRaises(module.CliError) as failure:
+                            session.stop(deployment.session_id)
+
+        self.assertEqual(failure.exception.code, module.EXIT_CLEAN)
+        self.assertIn("changed", str(failure.exception))
+        taskkill.assert_called_once()
+        payload = json.loads(deployment.state_path.read_text(encoding="utf-8"))
+        self.assertEqual(payload["process"]["state"], "launched")
+
+    def test_windows_process_adapter_does_not_report_exited_process_as_live(self):
+        import ctypes
+        from ctypes import wintypes
+
+        module = self.load_cli_module()
+        kernel32 = SimpleNamespace(
+            OpenProcess=mock.Mock(return_value=1234),
+            GetProcessTimes=mock.Mock(),
+            QueryFullProcessImageNameW=mock.Mock(),
+            CloseHandle=mock.Mock(return_value=1),
+        )
+
+        def fill_process_times(handle, creation, exit_time, kernel, user):
+            creation_value = ctypes.cast(
+                creation,
+                ctypes.POINTER(wintypes.FILETIME),
+            ).contents
+            exit_value = ctypes.cast(
+                exit_time,
+                ctypes.POINTER(wintypes.FILETIME),
+            ).contents
+            creation_value.dwHighDateTime = 0x12
+            creation_value.dwLowDateTime = 0x34
+            exit_value.dwHighDateTime = 0
+            exit_value.dwLowDateTime = 1
+            return 1
+
+        kernel32.GetProcessTimes.side_effect = fill_process_times
+        with mock.patch.object(module.os, "name", "nt"):
+            with mock.patch.object(ctypes, "WinDLL", return_value=kernel32):
+                identity = module.ProcessAdapter().identify(1234, strict=True)
+
+        self.assertIsNone(identity)
+        self.assertEqual(
+            kernel32.OpenProcess.argtypes,
+            [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD],
+        )
+        self.assertEqual(kernel32.OpenProcess.restype, wintypes.HANDLE)
+        self.assertEqual(kernel32.GetProcessTimes.restype, wintypes.BOOL)
+
+    def test_status_derives_live_process_observation_without_mutating_state(self):
+        module, session, deployment, profile_preflight, process, identity = self.create_launched_session()
+        session.process_adapter.is_alive.return_value = False
+        before = deployment.state_path.read_text(encoding="utf-8")
+
+        result = self.run_module_cli(
+            module,
+            "status",
+            session=session,
+        )
+
+        self.assert_success(result)
+        self.assertIn("process=exited", result.stdout)
+        session.process_adapter.is_alive.assert_called_once_with(identity)
+        self.assertEqual(
+            deployment.state_path.read_text(encoding="utf-8"),
+            before,
+        )
+
+    def test_stop_does_not_declare_exit_until_every_tracked_child_is_gone(self):
+        module, session, deployment, profile_preflight, process, identity = self.create_launched_session(
+            tracked_child_pids=(1235,)
+        )
+        child = module.ProcessIdentity(
+            identity.pid + 1,
+            "child-start-token",
+            identity.executable,
+        )
+        session.process_adapter.is_alive.return_value = True
+        session.process_adapter.terminate_tree.return_value = False
+        session.process_adapter.wait_for_exit.side_effect = [True, False]
+
+        with self.assertRaises(module.CliError) as failure:
+            session.stop(deployment.session_id)
+
+        self.assertEqual(failure.exception.code, module.EXIT_CLEAN)
+        self.assertIn("child process", str(failure.exception))
+        payload = json.loads(deployment.state_path.read_text(encoding="utf-8"))
+        self.assertEqual(payload["process"]["state"], "launched")
+
+    def test_stop_refuses_when_root_exited_but_tracked_child_is_live(self):
+        module, session, deployment, profile_preflight, process, identity = self.create_launched_session(
+            tracked_child_pids=(1235,)
+        )
+        session.process_adapter.is_alive.side_effect = [False, True]
+
+        with self.assertRaises(module.CliError) as failure:
+            session.stop(deployment.session_id)
+
+        self.assertEqual(failure.exception.code, module.EXIT_CLEAN)
+        self.assertIn("child", str(failure.exception).casefold())
+        payload = json.loads(deployment.state_path.read_text(encoding="utf-8"))
+        self.assertEqual(payload["process"]["state"], "launched")
+
+    def test_stop_records_exited_after_root_and_all_tracked_children_are_gone(self):
+        module, session, deployment, profile_preflight, process, identity = self.create_launched_session(
+            tracked_child_pids=(1235,)
+        )
+        session.process_adapter.is_alive.side_effect = [False, False, False]
+
+        result = session.stop(deployment.session_id)
+
+        self.assertEqual(result.state, "exited")
+        payload = json.loads(deployment.state_path.read_text(encoding="utf-8"))
+        self.assertEqual(payload["process"]["state"], "exited")
+        self.assertEqual(session.clean(deployment.session_id).state, "cleaned")
+
+    def test_stop_refuses_when_root_exited_but_tracked_child_pid_was_reused(self):
+        module, session, deployment, profile_preflight, process, identity = self.create_launched_session(
+            tracked_child_pids=(1235,)
+        )
+        session.process_adapter.is_alive.side_effect = [
+            False,
+            module.CliError(
+                module.EXIT_CLEAN,
+                "stop/clean",
+                "Tracked process ID 1235 was reused by another process; refusing to stop it.",
+            ),
+        ]
+
+        with self.assertRaises(module.CliError) as failure:
+            session.stop(deployment.session_id)
+
+        self.assertEqual(failure.exception.code, module.EXIT_CLEAN)
+        self.assertIn("reused", str(failure.exception))
+        payload = json.loads(deployment.state_path.read_text(encoding="utf-8"))
+        self.assertEqual(payload["process"]["state"], "launched")
+
+    def test_stop_refuses_when_root_exited_without_persisted_child_identities(self):
+        module, session, deployment, profile_preflight, process, identity = self.create_launched_session()
+        payload = json.loads(deployment.state_path.read_text(encoding="utf-8"))
+        del payload["process"]["children"]
+        deployment.state_path.write_text(json.dumps(payload), encoding="utf-8")
+        session.process_adapter.is_alive.return_value = False
+
+        with self.assertRaises(module.CliError) as failure:
+            session.stop(deployment.session_id)
+
+        self.assertEqual(failure.exception.code, module.EXIT_CLEAN)
+        self.assertIn("child", str(failure.exception).casefold())
+        payload = json.loads(deployment.state_path.read_text(encoding="utf-8"))
+        self.assertEqual(payload["process"]["state"], "launched")
+
+    def test_clean_refuses_when_root_exited_but_tracked_child_is_uninspectable(self):
+        module, session, deployment, profile_preflight, process, identity = self.create_launched_session(
+            tracked_child_pids=(1235,)
+        )
+        session.process_adapter.is_alive.side_effect = [
+            False,
+            module.CliError(
+                module.EXIT_CLEAN,
+                "stop/clean",
+                "Tracked child process ID 1235 could not be inspected; refusing to clean it.",
+            ),
+        ]
+
+        result = self.run_module_cli(
+            module,
+            "clean",
+            deployment.session_id,
+            session=session,
+        )
+
+        self.assertEqual(result.returncode, module.EXIT_CLEAN)
+        self.assertIn("could not be inspected", result.stderr)
+        payload = json.loads(deployment.state_path.read_text(encoding="utf-8"))
+        self.assertEqual(payload["process"]["state"], "launched")
+
+    def test_stop_refuses_an_uninspectable_live_process(self):
+        module, session, deployment, profile_preflight, process, identity = self.create_launched_session()
+        session.process_adapter = module.ProcessAdapter()
+
+        with mock.patch.object(
+            module,
+            "_process_identity",
+            side_effect=PermissionError(5, "access denied"),
+        ):
+            with self.assertRaises(module.CliError) as failure:
+                session.stop(deployment.session_id)
+
+        self.assertEqual(failure.exception.code, module.EXIT_CLEAN)
+        self.assertIn("refusing", str(failure.exception))
+        payload = json.loads(deployment.state_path.read_text(encoding="utf-8"))
+        self.assertEqual(payload["process"]["state"], "launched")
 
     def test_stop_refuses_a_reused_pid_without_termination(self):
         module, session, deployment, profile_preflight, process, identity = self.create_launched_session()
