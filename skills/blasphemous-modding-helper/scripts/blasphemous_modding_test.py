@@ -47,6 +47,8 @@ LAUNCH_GRACE_PERIOD_SECONDS = 0.5
 PROCESS_POLL_INTERVAL_SECONDS = 0.05
 DEFAULT_LOG_LINES = 200
 STARTUP_POLL_INTERVAL_SECONDS = 0.25
+MAX_EVIDENCE_HITS = 20
+MAX_EVIDENCE_TEXT = 240
 
 
 class CliError(Exception):
@@ -92,6 +94,7 @@ class ArtifactPlan:
     artifact_kind: str
     package_root: Path
     relative_files: Tuple[Path, ...]
+    runtime_aliases: Tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -152,6 +155,15 @@ class LogEvidenceSource:
 
 
 @dataclass(frozen=True)
+class EvidenceHit:
+    source: str
+    line_number: int
+    reason: str
+    text: str
+    kind: str = "positive"
+
+
+@dataclass(frozen=True)
 class EvidenceReport:
     state: str
     ready: bool
@@ -159,6 +171,7 @@ class EvidenceReport:
     timed_out: bool
     sources: Tuple[LogEvidenceSource, ...]
     warnings: Tuple[str, ...]
+    hits: Tuple[EvidenceHit, ...] = ()
 
 
 @dataclass
@@ -659,9 +672,11 @@ def _xml_local_name(tag: str) -> str:
     return tag.rsplit("}", 1)[-1]
 
 
-def read_project_target_name(project: Path, configuration: str) -> str:
-    """Read the deterministic package name declared by a project file."""
-
+def _read_project_properties(
+    project: Path,
+    configuration: str,
+) -> Dict[str, str]:
+    """Read selected simple project properties without evaluating MSBuild."""
     try:
         root = ET.parse(project).getroot()
     except (OSError, ET.ParseError, UnicodeError) as error:
@@ -671,44 +686,81 @@ def read_project_target_name(project: Path, configuration: str) -> str:
             f"Could not parse project file {project}: {error}",
         ) from error
 
-    fallback: Optional[str] = None
+    properties: Dict[str, str] = {}
     for property_group in root.iter():
         if _xml_local_name(property_group.tag) != "PropertyGroup":
             continue
         condition = property_group.attrib.get("Condition", "")
         for property_node in property_group:
-            if _xml_local_name(property_node.tag) != "TargetName":
+            property_name = _xml_local_name(property_node.tag)
+            if property_name not in {"TargetName", "AssemblyName"}:
                 continue
             value = (property_node.text or "").strip()
             if not value:
                 continue
             if configuration.lower() in condition.lower():
-                fallback = value
-                break
-            if not condition and fallback is None:
-                fallback = value
+                properties[property_name] = value
+            elif not condition and property_name not in properties:
+                properties[property_name] = value
 
-    if not fallback:
+    return properties
+
+
+def _validate_package_name(value: str, project: Path) -> str:
+    if (
+        value in {".", ".."}
+        or any(
+            character in value
+            for character in ("/", "\\", ":", "*", "?", '"', "<", ">", "|")
+        )
+        or value.rstrip(" .") != value
+        or "$(" in value
+    ):
+        raise CliError(
+            EXIT_PACKAGE,
+            "package artifact",
+            f"Project TargetName is not a safe package name: {value}",
+        )
+    return value
+
+
+def read_project_metadata(
+    project: Path,
+    configuration: str,
+) -> Tuple[str, Tuple[str, ...]]:
+    """Read package TargetName and derived runtime Mod identity aliases."""
+
+    properties = _read_project_properties(project, configuration)
+    target_name = properties.get("TargetName", "")
+
+    if not target_name:
         raise CliError(
             EXIT_PACKAGE,
             "package artifact",
             f"Project does not declare a TargetName: {project}",
         )
-    if (
-        fallback in {".", ".."}
-        or any(
-            character in fallback
-            for character in ("/", "\\", ":", "*", "?", '"', "<", ">", "|")
-        )
-        or fallback.rstrip(" .") != fallback
-        or "$(" in fallback
-    ):
-        raise CliError(
-            EXIT_PACKAGE,
-            "package artifact",
-            f"Project TargetName is not a safe package name: {fallback}",
-        )
-    return fallback
+    target_name = _validate_package_name(target_name, project)
+
+    aliases: List[str] = [target_name]
+    assembly_name = properties.get("AssemblyName", "")
+    if assembly_name and "$(" not in assembly_name:
+        aliases.append(assembly_name)
+    aliases.append(project.stem)
+    unique_aliases: List[str] = []
+    seen = set()
+    for alias in aliases:
+        normalized = alias.strip()
+        key = normalized.casefold()
+        if normalized and key not in seen:
+            seen.add(key)
+            unique_aliases.append(normalized)
+    return target_name, tuple(unique_aliases)
+
+
+def read_project_target_name(project: Path, configuration: str) -> str:
+    """Read the deterministic package name declared by a project file."""
+
+    return read_project_metadata(project, configuration)[0]
 
 
 def find_solution_root(project: Path) -> Path:
@@ -955,7 +1007,7 @@ def prepare_artifact(
 ) -> Iterator[ArtifactPlan]:
     """Build or select one package and validate its complete file plan."""
 
-    target_name = read_project_target_name(project, configuration)
+    target_name, runtime_aliases = read_project_metadata(project, configuration)
     solution_root = find_solution_root(project)
     publish_directory = solution_root / "publish"
     artifact_value = None
@@ -982,6 +1034,7 @@ def prepare_artifact(
             "directory",
             package_root,
             relative_files,
+            runtime_aliases,
         )
         return
 
@@ -1002,6 +1055,7 @@ def prepare_artifact(
             "directory",
             artifact_value,
             relative_files,
+            runtime_aliases,
         )
         return
     if artifact_value.suffix.lower() != ".zip" or not artifact_value.is_file():
@@ -1024,6 +1078,7 @@ def prepare_artifact(
             "archive",
             extraction_root,
             relative_files,
+            runtime_aliases,
         )
 
 
@@ -1191,6 +1246,7 @@ def _manifest_payload(
         "modding_root": str(transaction.modding_root),
         "configuration": transaction.plan.configuration,
         "target_name": transaction.plan.target_name,
+        "runtime_aliases": list(transaction.plan.runtime_aliases),
         "artifact": str(transaction.plan.artifact),
         "artifact_kind": transaction.plan.artifact_kind,
         "package_root": str(transaction.plan.package_root),
@@ -1517,23 +1573,129 @@ def _chainloader_ready(lines: Sequence[str]) -> bool:
     return False
 
 
-def _target_mod_loaded(lines: Sequence[str], target_name: str) -> bool:
-    target = target_name.strip().casefold()
-    if not target:
-        return False
-    load_words = (
-        "loading",
-        "loaded",
-        "initialized",
-        "initialised",
-        "plugin",
-        "ready",
+_BEPINEX_LOAD_RECORD = re.compile(
+    r"^\s*\[(?P<level>[^:\]]+):\s*BepInEx\s*\]\s+"
+    r"(?:Loading|Loaded)\s+\[(?P<identity>[^\]\r\n]+)\]",
+    re.IGNORECASE,
+)
+_MODDING_API_REGISTRATION_RECORD = re.compile(
+    r"^\s*\[(?P<level>[^:\]]+):\s*ModdingAPI\s*\]\s+"
+    r"(?:Registered|Registering)\s+Mod\s*(?::|=)?\s*"
+    r"(?:['\"](?P<quoted_identity>[^'\"]+)['\"]|"
+    r"(?P<identity>[A-Za-z0-9][A-Za-z0-9_.-]*))",
+    re.IGNORECASE,
+)
+_STRUCTURED_ERROR_RECORD = re.compile(
+    r"^\s*\[(?P<level>[^:\]]+):\s*(?P<source>[^\]]+)\]\s*",
+    re.IGNORECASE,
+)
+
+
+def _alias_matches_record(record: str, aliases: Sequence[str]) -> bool:
+    normalized_record = record.strip().casefold()
+    return any(
+        normalized_record == alias.casefold()
+        or normalized_record.startswith(alias.casefold() + " ")
+        for alias in aliases
     )
-    for line in lines:
-        lowered = line.casefold()
-        if target in lowered and any(word in lowered for word in load_words):
-            return True
-    return False
+
+
+def _line_mentions_alias(line: str, aliases: Sequence[str]) -> bool:
+    return any(
+        re.search(
+            rf"(?<![A-Za-z0-9_]){re.escape(alias)}(?![A-Za-z0-9_])",
+            line,
+            re.IGNORECASE,
+        )
+        for alias in aliases
+    )
+
+
+def _target_mod_evidence(
+    lines: Sequence[str],
+    aliases: Sequence[str],
+    source: str = "BepInEx",
+) -> Tuple[EvidenceHit, ...]:
+    """Match only framework log records whose identity exactly matches an alias."""
+
+    normalized_aliases = tuple(alias.strip() for alias in aliases if alias.strip())
+    hits: List[EvidenceHit] = []
+    for line_number, line in enumerate(lines, start=1):
+        registration = _MODDING_API_REGISTRATION_RECORD.match(line)
+        registration_level = (
+            registration.group("level").strip().casefold()
+            if registration
+            else ""
+        )
+        if registration and registration_level not in {"error", "warning", "warn", "fatal"}:
+            identity = (
+                registration.group("quoted_identity")
+                or registration.group("identity")
+                or ""
+            )
+            if _alias_matches_record(identity, normalized_aliases):
+                hits.append(
+                    EvidenceHit(
+                        source,
+                        line_number,
+                        "ModdingAPI registration",
+                        line[:MAX_EVIDENCE_TEXT],
+                    )
+                )
+                continue
+
+        loading = _BEPINEX_LOAD_RECORD.match(line)
+        loading_level = (
+            loading.group("level").strip().casefold() if loading else ""
+        )
+        if (
+            loading
+            and loading_level not in {"error", "warning", "warn", "fatal"}
+            and _alias_matches_record(
+                loading.group("identity"), normalized_aliases
+            )
+        ):
+            hits.append(
+                EvidenceHit(
+                    source,
+                    line_number,
+                    "BepInEx loading record",
+                    line[:MAX_EVIDENCE_TEXT],
+                )
+            )
+    return tuple(hits[:MAX_EVIDENCE_HITS])
+
+
+def _target_error_evidence(
+    lines: Sequence[str],
+    aliases: Sequence[str],
+    source: str = "BepInEx",
+) -> Tuple[EvidenceHit, ...]:
+    hits: List[EvidenceHit] = []
+    for line_number, line in enumerate(lines, start=1):
+        record = _STRUCTURED_ERROR_RECORD.match(line)
+        if (
+            record
+            and record.group("level").strip().casefold()
+            in {"error", "exception", "fatal"}
+            and _line_mentions_alias(line[record.end() :], aliases)
+        ):
+            hits.append(
+                EvidenceHit(
+                    source,
+                    line_number,
+                    "target error",
+                    line[:MAX_EVIDENCE_TEXT],
+                    "error",
+                )
+            )
+    return tuple(hits[:MAX_EVIDENCE_HITS])
+
+
+def _target_mod_loaded(lines: Sequence[str], target_name: str) -> bool:
+    """Compatibility wrapper for callers that provide one package alias."""
+
+    return bool(_target_mod_evidence(lines, (target_name,)))
 
 
 def collect_log_evidence(
@@ -1562,6 +1724,17 @@ def collect_log_evidence(
             "logs/readiness",
             f"Session state has no target mod name: {state_path}",
         )
+    alias_value = manifest.get("runtime_aliases")
+    if isinstance(alias_value, list):
+        runtime_aliases = tuple(
+            str(alias).strip()
+            for alias in alias_value
+            if str(alias).strip()
+        )
+    else:
+        runtime_aliases = (target_name,)
+    if not runtime_aliases:
+        runtime_aliases = (target_name,)
 
     unity_path, unity_warning = resolve_unity_log_path(
         preferences,
@@ -1590,18 +1763,38 @@ def collect_log_evidence(
         source.warning for source in sources if source.warning is not None
     )
     bepinex_source = sources[0]
-    current_lines = tuple(
-        line
-        for source in sources
-        if source.exists and source.current
-        for line in source.evidence_lines
-    )
     ready = (
         bepinex_source.exists
         and bepinex_source.current
         and _chainloader_ready(bepinex_source.evidence_lines)
     )
-    mod_loaded = ready and _target_mod_loaded(current_lines, target_name)
+    positive_hits = (
+        _target_mod_evidence(bepinex_source.evidence_lines, runtime_aliases)
+        if bepinex_source.exists and bepinex_source.current
+        else ()
+    )
+    error_hits = (
+        _target_error_evidence(bepinex_source.evidence_lines, runtime_aliases)
+        if bepinex_source.exists and bepinex_source.current
+        else ()
+    )
+    hits = tuple(
+        sorted(
+            positive_hits + error_hits,
+            key=lambda hit: hit.line_number,
+        )[:MAX_EVIDENCE_HITS]
+    )
+    first_positive_line = (
+        min(hit.line_number for hit in positive_hits)
+        if positive_hits
+        else None
+    )
+    first_error_line = (
+        min(hit.line_number for hit in error_hits) if error_hits else None
+    )
+    mod_loaded = ready and first_positive_line is not None and (
+        first_error_line is None or first_positive_line < first_error_line
+    )
     state = "mod_loaded" if mod_loaded else "ready" if ready else "launched"
     return EvidenceReport(
         state,
@@ -1610,6 +1803,7 @@ def collect_log_evidence(
         False,
         sources,
         warnings,
+        hits,
     )
 
 
@@ -1621,6 +1815,16 @@ def _update_evidence_state(state_path: Path, report: EvidenceReport) -> None:
         "mod_loaded": report.mod_loaded,
         "timed_out": report.timed_out,
         "recorded_at": datetime.now(timezone.utc).isoformat(),
+        "hits": [
+            {
+                "source": hit.source,
+                "line": hit.line_number,
+                "reason": hit.reason,
+                "kind": hit.kind,
+                "text": hit.text,
+            }
+            for hit in report.hits[:MAX_EVIDENCE_HITS]
+        ],
         "sources": {
             source.label: {
                 "exists": source.exists,
@@ -1657,13 +1861,26 @@ def wait_for_startup_evidence(
             _update_evidence_state(state_path, report)
             return report
         if time.monotonic() >= deadline:
+            # Re-read once at the boundary. The game can append its registration
+            # line between the poll and the timeout check.
+            final_report = collect_log_evidence(
+                state_path,
+                profile,
+                preferences,
+                environment,
+                explicit_unity_log_dir=explicit_unity_log_dir,
+            )
+            if final_report.mod_loaded:
+                _update_evidence_state(state_path, final_report)
+                return final_report
             timed_out = EvidenceReport(
                 "timeout",
-                report.ready,
-                report.mod_loaded,
+                final_report.ready,
+                final_report.mod_loaded,
                 True,
-                report.sources,
-                report.warnings,
+                final_report.sources,
+                final_report.warnings,
+                final_report.hits,
             )
             _update_evidence_state(state_path, timed_out)
             return timed_out
@@ -3361,6 +3578,7 @@ def _print_context(context: InvocationContext) -> None:
 def _print_artifact_plan(plan: ArtifactPlan) -> None:
     print(f"Configuration: {plan.configuration}")
     print(f"Target name: {plan.target_name}")
+    print(f"Runtime aliases: {', '.join(plan.runtime_aliases)}")
     print(f"Publish directory: {plan.publish_directory}")
     print(f"Artifact: {plan.artifact}")
     print(f"Artifact kind: {plan.artifact_kind}")
@@ -3378,6 +3596,13 @@ def _print_evidence_report(
     print(f"Startup state: {report.state}")
     print(f"Ready state: {'ready' if report.ready else 'not-ready'}")
     print(f"Mod-loaded state: {'loaded' if report.mod_loaded else 'not-loaded'}")
+    if report.hits:
+        print("Evidence hits:")
+        for hit in report.hits:
+            print(
+                f"  - {hit.source}:{hit.line_number} [{hit.kind}] "
+                f"{hit.reason}: {hit.text}"
+            )
     for source in report.sources:
         path = str(source.path) if source.path is not None else "not configured"
         if not source.exists:
