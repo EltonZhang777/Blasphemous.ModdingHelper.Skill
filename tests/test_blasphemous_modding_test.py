@@ -99,11 +99,21 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
             return profile / "Blasphemous.x86_64"
         return profile / "Blasphemous.app" / "Contents" / "MacOS" / "Blasphemous"
 
-    def create_project(self, name="Example.csproj", target_name="ExampleMod"):
+    def create_project(
+        self,
+        name="Example.csproj",
+        target_name="ExampleMod",
+        assembly_name=None,
+    ):
+        assembly_property = (
+            f"<AssemblyName>{assembly_name}</AssemblyName>"
+            if assembly_name is not None
+            else ""
+        )
         project = self.root / name
         project.write_text(
             "<Project><PropertyGroup>"
-            f"<TargetName>{target_name}</TargetName>"
+            f"<TargetName>{target_name}</TargetName>{assembly_property}"
             "</PropertyGroup></Project>\n",
             encoding="utf-8",
         )
@@ -198,14 +208,18 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
             file_adapter=file_adapter,
         )
 
-    def create_launched_session(self, prelaunch_bepinex_log=None):
+    def create_launched_session(
+        self,
+        prelaunch_bepinex_log=None,
+        project_kwargs=None,
+    ):
         module = self.load_cli_module()
         profile = self.create_profile()
         launcher = profile / "custom-launcher"
         launcher.write_bytes(b"launcher")
         if os.name != "nt":
             launcher.chmod(0o755)
-        project = self.create_project()
+        project = self.create_project(**(project_kwargs or {}))
         artifact = self.create_package(root=self.root, target_name="known-artifact")
         self.write_project_preferences(profile)
         if prelaunch_bepinex_log is not None:
@@ -405,6 +419,176 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
         self.assertIn("Startup state: ready", result.stdout)
         self.assertIn("Ready state: ready", result.stdout)
         self.assertIn("Mod-loaded state: not-loaded", result.stdout)
+
+    def test_logs_recognizes_structured_moddingapi_registration_for_runtime_alias(self):
+        module, session, deployment, profile_preflight, process, identity = self.create_launched_session(
+            project_kwargs={
+                "target_name": "PackageFolder",
+                "assembly_name": "RuntimeMod",
+            }
+        )
+        (profile_preflight.bepinex_root / "LogOutput.log").write_text(
+            "[Info : BepInEx] Chainloader initialized\n"
+            "[Info : ModdingAPI] Registered Mod: RuntimeMod\n",
+            encoding="utf-8",
+        )
+
+        result = self.run_module_cli(
+            module,
+            "logs",
+            deployment.session_id,
+            session=session,
+        )
+
+        self.assert_success(result)
+        self.assertIn("Startup state: mod_loaded", result.stdout)
+        payload = json.loads(deployment.state_path.read_text(encoding="utf-8"))
+        self.assertEqual(payload["target_name"], "PackageFolder")
+        self.assertEqual(
+            payload["runtime_aliases"],
+            ["PackageFolder", "RuntimeMod", "Example"],
+        )
+        self.assertEqual(payload["evidence"]["hits"][0]["reason"], "ModdingAPI registration")
+
+    def test_logs_recognizes_standard_bepinex_loading_record(self):
+        module, session, deployment, profile_preflight, process, identity = self.create_launched_session(
+            project_kwargs={
+                "name": "RuntimeProject.csproj",
+                "target_name": "PackageFolder",
+            }
+        )
+        (profile_preflight.bepinex_root / "LogOutput.log").write_text(
+            "[Info : BepInEx] Chainloader initialized\n"
+            "[Info : BepInEx] Loading [RuntimeProject 1.0.0]\n",
+            encoding="utf-8",
+        )
+
+        result = self.run_module_cli(
+            module,
+            "logs",
+            deployment.session_id,
+            session=session,
+        )
+
+        self.assert_success(result)
+        self.assertIn("Startup state: mod_loaded", result.stdout)
+
+    def test_logs_rejects_paths_errors_and_unstructured_target_text(self):
+        module, session, deployment, profile_preflight, process, identity = self.create_launched_session(
+            project_kwargs={"assembly_name": "RuntimeMod"}
+        )
+        (profile_preflight.bepinex_root / "LogOutput.log").write_text(
+            "[Info : BepInEx] Chainloader initialized\n"
+            "[Info : BepInEx] Loading plugin from C:/mods/RuntimeMod.dll\n"
+            "[Error : BepInEx] RuntimeMod failed to load\n"
+            "RuntimeMod loaded successfully\n",
+            encoding="utf-8",
+        )
+
+        result = self.run_module_cli(
+            module,
+            "logs",
+            deployment.session_id,
+            session=session,
+        )
+
+        self.assert_success(result)
+        self.assertIn("Startup state: ready", result.stdout)
+        self.assertIn("Mod-loaded state: not-loaded", result.stdout)
+
+    def test_registration_without_current_bepinex_readiness_does_not_load_mod(self):
+        module, session, deployment, profile_preflight, process, identity = self.create_launched_session(
+            project_kwargs={"assembly_name": "RuntimeMod"}
+        )
+        (profile_preflight.bepinex_root / "LogOutput.log").write_text(
+            "[Info : ModdingAPI] Registered Mod: RuntimeMod\n",
+            encoding="utf-8",
+        )
+
+        result = self.run_module_cli(
+            module,
+            "logs",
+            deployment.session_id,
+            session=session,
+        )
+
+        self.assert_success(result)
+        self.assertIn("Startup state: launched", result.stdout)
+        self.assertIn("Mod-loaded state: not-loaded", result.stdout)
+
+    def test_target_error_before_registration_does_not_promote_to_loaded(self):
+        module, session, deployment, profile_preflight, process, identity = self.create_launched_session(
+            project_kwargs={"assembly_name": "RuntimeMod"}
+        )
+        (profile_preflight.bepinex_root / "LogOutput.log").write_text(
+            "[Info : BepInEx] Chainloader initialized\n"
+            "[Error : BepInEx] RuntimeMod failed to load\n"
+            "[Info : ModdingAPI] Registered Mod: RuntimeMod\n",
+            encoding="utf-8",
+        )
+
+        result = self.run_module_cli(
+            module,
+            "logs",
+            deployment.session_id,
+            session=session,
+        )
+
+        self.assert_success(result)
+        self.assertIn("Startup state: ready", result.stdout)
+        self.assertIn("Mod-loaded state: not-loaded", result.stdout)
+
+    def test_target_error_after_registration_does_not_demote_loaded_state(self):
+        module, session, deployment, profile_preflight, process, identity = self.create_launched_session(
+            project_kwargs={"assembly_name": "RuntimeMod"}
+        )
+        (profile_preflight.bepinex_root / "LogOutput.log").write_text(
+            "[Info : BepInEx] Chainloader initialized\n"
+            "[Info : ModdingAPI] Registered Mod: RuntimeMod\n"
+            "[Error : BepInEx] RuntimeMod failed after registration\n",
+            encoding="utf-8",
+        )
+
+        result = self.run_module_cli(
+            module,
+            "logs",
+            deployment.session_id,
+            session=session,
+        )
+
+        self.assert_success(result)
+        self.assertIn("Startup state: mod_loaded", result.stdout)
+        self.assertIn('"kind": "error"', deployment.state_path.read_text(encoding="utf-8"))
+
+    def test_timeout_rechecks_evidence_at_deadline(self):
+        module, session, deployment, profile_preflight, process, identity = self.create_launched_session()
+        not_loaded = module.EvidenceReport("ready", True, False, False, (), ())
+        loaded = module.EvidenceReport(
+            "mod_loaded",
+            True,
+            True,
+            False,
+            (),
+            (),
+            (module.EvidenceHit("BepInEx", 2, "ModdingAPI registration", "registered"),),
+        )
+
+        with mock.patch.object(
+            module,
+            "collect_log_evidence",
+            side_effect=(not_loaded, loaded),
+        ) as collect:
+            with mock.patch.object(module.time, "monotonic", side_effect=(0.0, 1.0)):
+                result = session.wait_for_startup_evidence(
+                    deployment.state_path,
+                    profile_preflight,
+                    module.Preferences("project", self.root / "preferences.md", {"modding_profile_path": str(profile_preflight.profile)}),
+                    "Windows",
+                    0.0,
+                )
+
+        self.assertEqual(result.state, "mod_loaded")
+        self.assertEqual(collect.call_count, 2)
 
     def test_logs_ignores_prelaunch_bepinex_evidence_as_stale(self):
         module, session, deployment, profile_preflight, process, identity = self.create_launched_session(
