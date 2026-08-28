@@ -80,6 +80,14 @@ Project selection is deterministic:
 - Without `--project`, `run` accepts exactly one `.csproj` in current directory.
 - Zero projects or multiple projects require explicit `--project` and are usage/configuration failures.
 
+Solution selection is deterministic:
+
+- The CLI inspects `.sln` and `.slnx` files in the project directory and its ancestors in stable path order.
+- Classic `.sln` project entries are read from their project-path fields. XML `.slnx` project entries are read from `Project` elements' `Path` attributes.
+- Exactly one solution that lists the requested project is selected. Multiple matching solutions, or duplicate membership of the requested project within one solution, fail as build errors; the CLI never guesses.
+- If no inspected solution contains the project, the project directory is the explicit build-root fallback, even when unrelated solutions exist.
+- The artifact plan prints the selected solution (or fallback), solution root, and trailing-separator `SolutionDir`. Normal packages remain rooted at `<selected-root>/publish/<TargetName>`.
+
 Normal build artifact is package directory under `publish` directory selected by project's solution/build layout:
 
 ```text

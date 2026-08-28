@@ -90,6 +90,7 @@ The workflow stores only temporary session state for process ownership, deployme
 - The feature is a Python standard-library CLI using `argparse`, with equivalent behavior on Windows PowerShell and native Linux/macOS Bash.
 - The CLI exposes `run`, `stop`, `clean`, `logs`, and read-only `status` operations. It uses project preferences before user preferences, and explicit arguments override saved values.
 - The default build configuration is Debug. Release is explicit. A project is inferred only when the current directory contains exactly one project file; ambiguity requires explicit selection.
+- Build-root resolution inspects ancestor `.sln` and `.slnx` files, matches their project membership to the requested `.csproj`, selects one matching solution, and fails explicitly when matching membership is ambiguous. With no match, the project directory is the visible fallback; the artifact plan reports the selected root and trailing-separator `SolutionDir`.
 - A normal run builds the project, resolves the declared target name, and uses the corresponding package directory in the build output container. An explicit artifact selects deploy-only behavior. A dry run does not deploy or launch.
 - A package root is the deployment boundary. All safe relative files below it are copied to the matching relative location under the Modding root. File type is not used to discard resources.
 - Release archives are a recovery input only when explicitly selected. They are extracted to temporary state and validated before deployment. Directory and archive selection never uses timestamps or silent fallback.
@@ -110,7 +111,7 @@ The workflow stores only temporary session state for process ownership, deployme
 
 - Tests verify external behavior: command results, file mapping, preserved bytes, session state transitions, process ownership, log evidence, output, and exit codes. They do not assert private helper structure.
 - The highest useful seam is the CLI orchestration contract, with filesystem, process, and log behavior represented by temporary fixtures and controlled doubles where a real game is not available.
-- Fixture tests cover Debug-build selection, explicit Release selection, project ambiguity, package-directory selection, explicit archive selection, safe relative paths, rejected traversal, missing profile requirements, and dry-run non-mutation.
+- Fixture tests cover Debug-build selection, explicit Release selection, project ambiguity, deterministic `.sln`/`.slnx` membership, ambiguous solution rejection, project-directory fallback, package-directory selection, explicit archive selection, safe relative paths, rejected traversal, missing profile requirements, and dry-run non-mutation.
 - Fixture tests cover overwriting an existing file, restoring the previous file, retaining new files, protecting files modified during testing, explicit new-file removal, and rollback failure reporting.
 - Fixture tests cover repeated sessions, archived-session warnings, newest-first cleanup, status output, idempotent stop, and refusal to clean while a newer session is active.
 - Fixture tests cover launched, ready, mod-loaded, timeout, missing BepInEx log, missing Unity log, and preferences update handoff behavior.

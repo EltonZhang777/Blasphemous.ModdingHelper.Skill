@@ -15,6 +15,7 @@ from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
+from xml.sax.saxutils import escape
 
 
 SCRIPT = (
@@ -104,13 +105,15 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
         name="Example.csproj",
         target_name="ExampleMod",
         assembly_name=None,
+        project_directory=None,
     ):
         assembly_property = (
             f"<AssemblyName>{assembly_name}</AssemblyName>"
             if assembly_name is not None
             else ""
         )
-        project = self.root / name
+        project = (project_directory or self.root) / name
+        project.parent.mkdir(parents=True, exist_ok=True)
         project.write_text(
             "<Project><PropertyGroup>"
             f"<TargetName>{target_name}</TargetName>{assembly_property}"
@@ -118,6 +121,44 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
             encoding="utf-8",
         )
         return project
+
+    def create_classic_solution(self, solution, *projects):
+        solution.parent.mkdir(parents=True, exist_ok=True)
+        lines = [
+            "Microsoft Visual Studio Solution File, Format Version 12.00",
+            "# Visual Studio Version 17",
+        ]
+        for index, project in enumerate(projects, start=1):
+            relative_project = self.solution_project_path(solution, project)
+            guid = f"{index:032X}"
+            lines.extend(
+                (
+                    f'Project("{{{guid}}}") = "{project.stem}", '
+                    f'"{relative_project}", "{{{guid}}}"',
+                    "EndProject",
+                )
+            )
+        solution.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        return solution
+
+    def create_xml_solution(self, solution, *projects):
+        solution.parent.mkdir(parents=True, exist_ok=True)
+        project_nodes = []
+        for project in projects:
+            relative_project = self.solution_project_path(solution, project)
+            project_nodes.append(
+                f'  <Project Path="{escape(relative_project)}" />'
+            )
+        solution.write_text(
+            "<Solution>\n"
+            + "\n".join(project_nodes)
+            + "\n</Solution>\n",
+            encoding="utf-8",
+        )
+        return solution
+
+    def solution_project_path(self, solution, project):
+        return os.path.relpath(project, solution.parent).replace(os.sep, "/")
 
     def create_buildable_project(
         self,
@@ -1605,6 +1646,130 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
         self.assertEqual(result.returncode, 2)
         self.assertIn("Proton", result.stderr)
 
+    def test_classic_solution_membership_selects_matching_solution_root(self):
+        profile = self.create_profile()
+        solution_root = self.root / "solution"
+        project = self.create_project(
+            project_directory=solution_root / "src" / "mod"
+        )
+        unrelated_solution = self.create_classic_solution(
+            solution_root / "src" / "unrelated.sln",
+            self.root / "other.csproj",
+        )
+        target_solution = self.create_classic_solution(
+            solution_root / "BlasphemousMods.sln",
+            project,
+        )
+        package = self.create_package(root=self.root)
+        self.write_project_preferences(profile)
+
+        result = self.run_cli(
+            "run",
+            "--dry-run",
+            "--project",
+            str(project),
+            "--artifact",
+            str(package),
+        )
+
+        self.assert_success(result)
+        self.assertIn(f"Solution: {target_solution}", result.stdout)
+        self.assertNotIn(f"Solution: {unrelated_solution}", result.stdout)
+        self.assertIn(f"Solution root: {solution_root}", result.stdout)
+        self.assertIn(f"Publish directory: {solution_root / 'publish'}", result.stdout)
+
+    def test_xml_solution_membership_selects_solution_root(self):
+        profile = self.create_profile()
+        solution_root = self.root / "xml-solution"
+        project = self.create_project(
+            project_directory=solution_root / "mods" / "xml"
+        )
+        target_solution = self.create_xml_solution(
+            solution_root / "BlasphemousMods.slnx",
+            project,
+        )
+        package = self.create_package(root=self.root)
+        self.write_project_preferences(profile)
+
+        result = self.run_cli(
+            "run",
+            "--dry-run",
+            "--project",
+            str(project),
+            "--artifact",
+            str(package),
+        )
+
+        self.assert_success(result)
+        self.assertIn(f"Solution: {target_solution}", result.stdout)
+        self.assertIn(f"Solution root: {solution_root}", result.stdout)
+        self.assertIn(f"SolutionDir: {solution_root}{os.sep}", result.stdout)
+        self.assertIn(f"Publish directory: {solution_root / 'publish'}", result.stdout)
+
+    def test_unrelated_solutions_use_project_directory_fallback(self):
+        profile = self.create_profile()
+        project = self.create_project(project_directory=self.root / "mods")
+        self.create_classic_solution(
+            self.root / "Unrelated.sln",
+            self.root / "other.csproj",
+        )
+        package = self.create_package(root=self.root)
+        self.write_project_preferences(profile)
+
+        result = self.run_cli(
+            "run",
+            "--dry-run",
+            "--project",
+            str(project),
+            "--artifact",
+            str(package),
+        )
+
+        self.assert_success(result)
+        self.assertIn("Solution: project directory fallback", result.stdout)
+        self.assertIn(f"Solution root: {project.parent}", result.stdout)
+        self.assertIn(f"SolutionDir: {project.parent}{os.sep}", result.stdout)
+        self.assertIn(f"Publish directory: {project.parent / 'publish'}", result.stdout)
+
+    def test_multiple_matching_solutions_fail_explicitly(self):
+        profile = self.create_profile()
+        project = self.create_project()
+        self.create_classic_solution(self.root / "First.sln", project)
+        self.create_xml_solution(self.root / "Second.slnx", project)
+        package = self.create_package(root=self.root)
+        self.write_project_preferences(profile)
+
+        result = self.run_cli(
+            "run",
+            "--dry-run",
+            "--project",
+            str(project),
+            "--artifact",
+            str(package),
+        )
+
+        self.assertEqual(result.returncode, 20)
+        self.assertIn("Multiple solutions", result.stderr)
+
+    def test_duplicate_project_membership_fails_explicitly(self):
+        profile = self.create_profile()
+        project = self.create_project()
+        self.create_classic_solution(self.root / "Duplicate.sln", project, project)
+        package = self.create_package(root=self.root)
+        self.write_project_preferences(profile)
+
+        result = self.run_cli(
+            "run",
+            "--dry-run",
+            "--project",
+            str(project),
+            "--artifact",
+            str(package),
+        )
+
+        self.assertEqual(result.returncode, 20)
+        self.assertIn("listed multiple times", result.stderr)
+
     @unittest.skipUnless(shutil.which("dotnet"), "dotnet SDK required")
     def test_default_build_uses_debug_and_reports_the_package_plan(self):
         profile = self.create_profile()
@@ -1618,6 +1783,9 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
 
         self.assert_success(result)
         self.assertIn("Configuration: Debug", result.stdout)
+        self.assertIn("Solution: project directory fallback", result.stdout)
+        self.assertIn(f"Solution root: {self.root}", result.stdout)
+        self.assertIn(f"SolutionDir: {self.root}{os.sep}", result.stdout)
         self.assertIn(
             f"Package root: {self.root / 'publish' / 'ExampleMod'}",
             result.stdout,
@@ -1682,15 +1850,15 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
         )
 
     @unittest.skipUnless(shutil.which("dotnet"), "dotnet SDK required")
-    def test_build_uses_nearest_solution_root_for_publish(self):
+    def test_build_uses_matching_solution_root_for_publish(self):
         profile = self.create_profile()
         solution_root = self.root / "solution"
         project = self.create_buildable_project(
             project_directory=solution_root / "mod"
         )
-        (solution_root / "BlasphemousMods.sln").write_text(
-            "Microsoft Visual Studio Solution File, Format Version 12.00\n",
-            encoding="utf-8",
+        solution = self.create_classic_solution(
+            solution_root / "BlasphemousMods.sln",
+            project,
         )
         self.write_project_preferences(profile)
 
@@ -1702,6 +1870,43 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
         )
 
         self.assert_success(result)
+        self.assertIn(f"Solution: {solution}", result.stdout)
+        self.assertIn(f"Solution root: {solution_root}", result.stdout)
+        self.assertIn(f"SolutionDir: {solution_root}{os.sep}", result.stdout)
+        package_root = solution_root / "publish" / "ExampleMod"
+        self.assertIn(f"Publish directory: {solution_root / 'publish'}", result.stdout)
+        self.assertIn(f"Package root: {package_root}", result.stdout)
+        self.assertEqual(
+            (package_root / "data" / "build-configuration.txt").read_text(
+                encoding="utf-8"
+            ),
+            "Debug\n",
+        )
+
+    @unittest.skipUnless(shutil.which("dotnet"), "dotnet SDK required")
+    def test_build_uses_xml_solution_root_for_publish(self):
+        profile = self.create_profile()
+        solution_root = self.root / "xml-solution"
+        project = self.create_buildable_project(
+            project_directory=solution_root / "mod"
+        )
+        solution = self.create_xml_solution(
+            solution_root / "BlasphemousMods.slnx",
+            project,
+        )
+        self.write_project_preferences(profile)
+
+        result = self.run_cli(
+            "run",
+            "--dry-run",
+            "--project",
+            str(project),
+        )
+
+        self.assert_success(result)
+        self.assertIn(f"Solution: {solution}", result.stdout)
+        self.assertIn(f"Solution root: {solution_root}", result.stdout)
+        self.assertIn(f"SolutionDir: {solution_root}{os.sep}", result.stdout)
         package_root = solution_root / "publish" / "ExampleMod"
         self.assertIn(f"Publish directory: {solution_root / 'publish'}", result.stdout)
         self.assertIn(f"Package root: {package_root}", result.stdout)
