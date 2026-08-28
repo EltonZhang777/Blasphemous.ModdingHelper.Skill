@@ -14,7 +14,7 @@ The fixture suite exercises the CLI through temporary projects, packages, profil
 
 | Acceptance area | Fixture evidence |
 | --- | --- |
-| Project, Debug/Release, package selection | `test_default_build_uses_debug_and_reports_the_package_plan`, `test_release_requires_explicit_configuration`, `test_explicit_directory_artifact_skips_build`, `test_explicit_missing_artifact_does_not_fallback_to_publish` |
+| Project, solution-root, Debug/Release, package selection | `test_classic_solution_membership_selects_matching_solution_root`, `test_xml_solution_membership_selects_solution_root`, `test_unrelated_solutions_use_project_directory_fallback`, `test_multiple_matching_solutions_fail_explicitly`, `test_duplicate_project_membership_fails_explicitly`, `test_build_uses_matching_solution_root_for_publish`, `test_build_uses_xml_solution_root_for_publish`, `test_default_build_uses_debug_and_reports_the_package_plan`, `test_release_requires_explicit_configuration`, `test_explicit_directory_artifact_skips_build`, `test_explicit_missing_artifact_does_not_fallback_to_publish` |
 | Package-root mapping and unsafe inputs | `test_default_build_deploys_the_validated_package`, `test_run_deploys_artifact_relative_to_selected_modding_root`, `test_zip_parent_traversal_is_rejected_before_profile_mutation`, `test_zip_absolute_path_is_rejected_before_profile_mutation`, `test_zip_case_collision_is_rejected_as_ambiguous`, `test_explicit_directory_symlink_is_rejected`, `test_zip_symlink_entries_are_rejected` |
 | Dry-run and deployment safety | `test_dry_run_resolves_project_and_profile_without_mutation`, `test_deployment_records_backups_and_hashes_without_logs`, `test_deployment_preflight_rejects_file_parent_without_mutation`, `test_deployment_rejects_hard_linked_destination_without_mutation`, `test_deployment_failure_rolls_back_partial_copy`, `test_archive_failure_rolls_back_the_new_deployment` |
 | New files, changed files, and rollback order | `test_clean_restores_overwritten_files_and_keeps_new_files`, `test_clean_protects_an_overwritten_file_changed_during_testing`, `test_clean_removes_new_files_only_after_explicit_approval`, `test_clean_protects_a_new_file_changed_during_testing_when_removal_is_approved`, `test_clean_rejects_an_older_session_until_the_newer_session_is_cleaned`, `test_repeated_runs_archive_previous_session_and_status_is_newest_first` |
@@ -25,6 +25,8 @@ The fixture suite exercises the CLI through temporary projects, packages, profil
 Completion criterion: the fixture command exits successfully, all rows above remain represented by passing tests, and skipped cases are reported with their environment reason.
 
 Observed on 2026-08-23: the process-scoped Windows PowerShell runner passed CLI help and 62 tests; 2 symlink-related cases were skipped by host privilege conditions.
+
+Issue #49 validation on 2026-08-28: the native PowerShell runner passed CLI help and 91 tests; the same 2 symlink-related cases were skipped by host privilege conditions.
 
 ## Shell entrypoint gate
 

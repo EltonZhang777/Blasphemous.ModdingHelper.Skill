@@ -85,6 +85,12 @@ class InvocationContext:
 
 
 @dataclass(frozen=True)
+class SolutionSelection:
+    solution_path: Optional[Path]
+    root: Path
+
+
+@dataclass(frozen=True)
 class ArtifactPlan:
     configuration: str
     target_name: str
@@ -95,6 +101,11 @@ class ArtifactPlan:
     package_root: Path
     relative_files: Tuple[Path, ...]
     runtime_aliases: Tuple[str, ...] = ()
+    solution_path: Optional[Path] = None
+
+    @property
+    def solution_dir(self) -> str:
+        return str(self.solution_root) + os.sep
 
 
 @dataclass(frozen=True)
@@ -765,19 +776,140 @@ def read_project_target_name(project: Path, configuration: str) -> str:
     return read_project_metadata(project, configuration)[0]
 
 
-def find_solution_root(project: Path) -> Path:
-    """Find the nearest solution directory used by the publish convention."""
+_CLASSIC_SOLUTION_PROJECT_RE = re.compile(
+    r'^\s*Project\("[^"]+"\)\s*=\s*"[^"]*"\s*,\s*"([^"]+)"\s*,',
+    re.IGNORECASE,
+)
+_SOLUTION_SUFFIXES = frozenset({".sln", ".slnx"})
 
-    for parent in (project.parent, *project.parent.parents):
+
+def _solution_candidates(project: Path) -> Tuple[Path, ...]:
+    """Return all ancestor solution files in stable path order."""
+
+    candidates: List[Path] = []
+    resolved_project = project.resolve(strict=False)
+    for parent in (resolved_project.parent, *resolved_project.parent.parents):
         try:
-            if any(
-                entry.is_file() and entry.suffix.lower() == ".sln"
-                for entry in parent.iterdir()
-            ):
-                return parent
+            for entry in parent.iterdir():
+                if entry.suffix.lower() not in _SOLUTION_SUFFIXES:
+                    continue
+                try:
+                    if entry.is_file():
+                        candidates.append(entry)
+                except OSError:
+                    continue
         except OSError:
-            return project.parent
-    return project.parent
+            break
+    return tuple(
+        sorted(
+            candidates,
+            key=lambda path: (str(path).casefold(), str(path)),
+        )
+    )
+
+
+def _read_classic_solution_members(solution: Path) -> Tuple[str, ...]:
+    try:
+        content = solution.read_text(encoding="utf-8-sig")
+    except (OSError, UnicodeError) as error:
+        raise CliError(
+            EXIT_BUILD,
+            "build",
+            f"Could not read solution file {solution}: {error}",
+        ) from error
+    return tuple(
+        match.group(1)
+        for line in content.splitlines()
+        if (match := _CLASSIC_SOLUTION_PROJECT_RE.match(line))
+    )
+
+
+def _read_xml_solution_members(solution: Path) -> Tuple[str, ...]:
+    try:
+        root = ET.parse(solution).getroot()
+    except (OSError, ET.ParseError, UnicodeError) as error:
+        raise CliError(
+            EXIT_BUILD,
+            "build",
+            f"Could not parse solution file {solution}: {error}",
+        ) from error
+
+    members: List[str] = []
+    for element in root.iter():
+        if _xml_local_name(element.tag).casefold() != "project":
+            continue
+        for name, value in element.attrib.items():
+            if name.casefold() == "path" and value.strip():
+                members.append(value.strip())
+                break
+    return tuple(members)
+
+
+def _solution_members(solution: Path) -> Tuple[str, ...]:
+    if solution.suffix.lower() == ".sln":
+        return _read_classic_solution_members(solution)
+    return _read_xml_solution_members(solution)
+
+
+def _canonical_path(path: Path) -> str:
+    return os.path.normcase(str(path.resolve(strict=False)))
+
+
+def _solution_member_path(solution: Path, member: str) -> Path:
+    normalized_member = member.replace("\\", "/")
+    member_path = Path(normalized_member)
+    if not member_path.is_absolute():
+        member_path = solution.parent / member_path
+    return member_path.resolve(strict=False)
+
+
+def _solution_contains_project(solution: Path, project: Path) -> bool:
+    project_key = _canonical_path(project)
+    matching_members = [
+        member
+        for member in _solution_members(solution)
+        if _canonical_path(_solution_member_path(solution, member)) == project_key
+    ]
+    if len(matching_members) > 1:
+        raise CliError(
+            EXIT_BUILD,
+            "build",
+            f"Ambiguous project membership in solution {solution}: "
+            f"{project} is listed multiple times.",
+        )
+    return bool(matching_members)
+
+
+def resolve_solution(project: Path) -> SolutionSelection:
+    """Select the sole matching solution or the project-directory fallback."""
+
+    resolved_project = project.resolve(strict=False)
+    matching_solutions = tuple(
+        solution
+        for solution in _solution_candidates(resolved_project)
+        if _solution_contains_project(solution, resolved_project)
+    )
+    if len(matching_solutions) > 1:
+        names = ", ".join(str(solution) for solution in matching_solutions)
+        raise CliError(
+            EXIT_BUILD,
+            "build",
+            f"Multiple solutions contain project {resolved_project}; "
+            f"solution selection is ambiguous: {names}",
+        )
+    if matching_solutions:
+        solution = matching_solutions[0]
+        return SolutionSelection(
+            solution.resolve(strict=False),
+            solution.parent.resolve(strict=False),
+        )
+    return SolutionSelection(None, resolved_project.parent)
+
+
+def find_solution_root(project: Path) -> Path:
+    """Return the selected solution root or project-directory fallback."""
+
+    return resolve_solution(project).root
 
 
 def build_project(project: Path, configuration: str, solution_root: Path) -> None:
@@ -1010,7 +1142,8 @@ def prepare_artifact(
     """Build or select one package and validate its complete file plan."""
 
     target_name, runtime_aliases = read_project_metadata(project, configuration)
-    solution_root = find_solution_root(project)
+    solution = resolve_solution(project)
+    solution_root = solution.root
     publish_directory = solution_root / "publish"
     artifact_value = None
     if explicit_artifact:
@@ -1037,6 +1170,7 @@ def prepare_artifact(
             package_root,
             relative_files,
             runtime_aliases,
+            solution.solution_path,
         )
         return
 
@@ -1058,6 +1192,7 @@ def prepare_artifact(
             artifact_value,
             relative_files,
             runtime_aliases,
+            solution.solution_path,
         )
         return
     if artifact_value.suffix.lower() != ".zip" or not artifact_value.is_file():
@@ -1081,6 +1216,7 @@ def prepare_artifact(
             extraction_root,
             relative_files,
             runtime_aliases,
+            solution.solution_path,
         )
 
 
@@ -3824,6 +3960,12 @@ def _print_artifact_plan(plan: ArtifactPlan) -> None:
     print(f"Configuration: {plan.configuration}")
     print(f"Target name: {plan.target_name}")
     print(f"Runtime aliases: {', '.join(plan.runtime_aliases)}")
+    if plan.solution_path is None:
+        print("Solution: project directory fallback")
+    else:
+        print(f"Solution: {plan.solution_path}")
+    print(f"Solution root: {plan.solution_root}")
+    print(f"SolutionDir: {plan.solution_dir}")
     print(f"Publish directory: {plan.publish_directory}")
     print(f"Artifact: {plan.artifact}")
     print(f"Artifact kind: {plan.artifact_kind}")
