@@ -1989,6 +1989,10 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
         self.assertIn("Clean state: cleaned", result.stdout)
         self.assert_success(repeated)
         self.assertIn("Clean state: already-cleaned", repeated.stdout)
+        self.assertIn(
+            "restored plugins/Example.dll: restored previous file",
+            repeated.stdout,
+        )
         self.assertEqual(existing.read_bytes(), b"pre-test-plugin")
         self.assertEqual(
             (profile / "Modding" / "data" / "settings.json").read_text(
@@ -1998,6 +2002,138 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
         )
         payload = json.loads(deployment.state_path.read_text(encoding="utf-8"))
         self.assertEqual(payload["cleanup_state"], "cleaned")
+
+    def test_clean_reports_package_relative_file_outcomes_and_post_clean_status(self):
+        module = self.load_cli_module()
+        profile = self.create_profile()
+        project = self.create_project()
+        artifact = self.create_package(root=self.root, target_name="known-artifact")
+        existing = profile / "Modding" / "plugins" / "Example.dll"
+        existing.parent.mkdir(parents=True)
+        existing.write_bytes(b"pre-test-plugin")
+        self.write_project_preferences(profile)
+        environment = {
+            "Windows": "Windows",
+            "Linux": "Linux",
+            "Darwin": "macOS",
+        }[platform.system()]
+        profile_preflight = module.preflight_profile(profile, environment)
+        session = self.create_session(module)
+        with session.prepare_artifact(
+            project,
+            "Debug",
+            explicit_artifact=str(artifact),
+            cwd=self.root,
+        ) as plan:
+            deployment = session.deploy(plan, profile_preflight)
+
+        result = self.run_module_cli(
+            module,
+            "clean",
+            deployment.session_id,
+            session=session,
+        )
+
+        self.assert_success(result)
+        self.assertIn("Cleanup files:", result.stdout)
+        self.assertIn(
+            "restored plugins/Example.dll: restored previous file",
+            result.stdout,
+        )
+        self.assertIn(
+            "retained data/settings.json: retained new file by default",
+            result.stdout,
+        )
+        self.assertNotIn(str(profile), result.stdout)
+
+        payload = json.loads(deployment.state_path.read_text(encoding="utf-8"))
+        self.assertEqual(
+            payload["cleanup_outcomes"],
+            [
+                {
+                    "action": "retained",
+                    "reason": "retained new file by default",
+                    "relative_path": "data/settings.json",
+                },
+                {
+                    "action": "restored",
+                    "reason": "restored previous file",
+                    "relative_path": "plugins/Example.dll",
+                },
+            ],
+        )
+
+        status = self.run_module_cli(module, "status", session=session)
+
+        self.assert_success(status)
+        self.assertIn("deployment=deployed (history)", status.stdout)
+        self.assertIn("cleanup=cleaned (complete)", status.stdout)
+        self.assertIn("process=not-launched (observation)", status.stdout)
+
+    def test_clean_reports_each_protected_file_with_package_relative_reason(self):
+        module = self.load_cli_module()
+        profile = self.create_profile()
+        project = self.create_project()
+        artifact = self.create_package(root=self.root, target_name="known-artifact")
+        existing = profile / "Modding" / "plugins" / "Example.dll"
+        existing.parent.mkdir(parents=True)
+        existing.write_bytes(b"pre-test-plugin")
+        self.write_project_preferences(profile)
+        environment = {
+            "Windows": "Windows",
+            "Linux": "Linux",
+            "Darwin": "macOS",
+        }[platform.system()]
+        profile_preflight = module.preflight_profile(profile, environment)
+        session = self.create_session(module)
+        with session.prepare_artifact(
+            project,
+            "Debug",
+            explicit_artifact=str(artifact),
+            cwd=self.root,
+        ) as plan:
+            deployment = session.deploy(plan, profile_preflight)
+        existing.write_bytes(b"user-change-during-test")
+        new_file = profile / "Modding" / "data" / "settings.json"
+        new_file.write_text("user-settings\n", encoding="utf-8")
+
+        result = self.run_module_cli(
+            module,
+            "clean",
+            deployment.session_id,
+            "--remove-new-files",
+            session=session,
+        )
+
+        self.assertEqual(result.returncode, module.EXIT_CLEAN)
+        self.assertIn(
+            "protected plugins/Example.dll: overwritten deployment target changed during testing",
+            result.stderr,
+        )
+        self.assertIn(
+            "protected data/settings.json: new deployment target changed during testing",
+            result.stderr,
+        )
+        self.assertNotIn(str(profile), result.stderr)
+        self.assertEqual(existing.read_bytes(), b"user-change-during-test")
+        self.assertEqual(new_file.read_text(encoding="utf-8"), "user-settings\n")
+        payload = json.loads(deployment.state_path.read_text(encoding="utf-8"))
+        self.assertEqual(payload["cleanup_state"], "pending")
+        self.assertEqual(
+            [outcome["action"] for outcome in payload["cleanup_outcomes"]],
+            ["protected", "protected"],
+        )
+
+    def test_clean_marks_an_already_exited_process_before_cleanup(self):
+        module, session, deployment, profile_preflight, process, identity = self.create_launched_session()
+        session.process_adapter.is_alive.return_value = False
+
+        result = session.clean(deployment.session_id)
+
+        self.assertEqual(result.state, "cleaned")
+        session.process_adapter.terminate_tree.assert_not_called()
+        payload = json.loads(deployment.state_path.read_text(encoding="utf-8"))
+        self.assertEqual(payload["process"]["state"], "exited")
 
     def test_clean_uses_injected_file_adapter_for_restore_and_remove(self):
         module = self.load_cli_module()
@@ -2126,6 +2262,10 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
 
         self.assert_success(approved_clean)
         self.assertIn("Removed new files", approved_clean.stdout)
+        self.assertIn(
+            "removed data/settings.json: removed new file with explicit approval",
+            approved_clean.stdout,
+        )
         self.assertFalse(profile.joinpath("Modding", "data", "settings.json").exists())
 
     def test_clean_protects_a_new_file_changed_during_testing_when_removal_is_approved(self):

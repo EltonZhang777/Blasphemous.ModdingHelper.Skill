@@ -173,7 +173,7 @@ Completion criterion: agent reports state, current/stale/missing status of both 
 <TEST_CLI> status [common options]
 ```
 
-`status` prints selected context and sessions newest first. Each entry reports its role (`active`, `archived`, or `cleaned`), deployment state, cleanup state, tracked process state, and evidence state. It copies no files, launches no process, and does not inspect gameplay.
+`status` prints selected context and sessions newest first. Each entry reports its role (`active`, `archived`, or `cleaned`), deployment history, cleanup completion, a read-only process observation, and evidence state. The deployment label is marked `current` only for the active session; archived or cleaned deployments are marked `history`. Cleanup is marked `complete` only when the manifest records `cleanup_state: cleaned`. A tracked process that has already exited may therefore appear as `process=exited (observation)` while its manifest remains unchanged; status never rewrites process state.
 
 Completion criterion: agent can discover newest session and all older rollback sessions without changing profile.
 
@@ -191,10 +191,11 @@ Agent MUST stop session first, then clean it. CLI also refuses to clean while tr
 3. Overwritten files are restored only when their current hash still equals hash deployed by this session. file changed during testing is protected and causes safe clean to report conflict without silently overwriting it.
 4. Files first created by this session are retained by default, even after process stops. `--remove-new-files` explicitly approves removal only when file is still unchanged; changed, linked, or non-regular paths remain protected.
 5. Session manifests remain in temporary state after cleanup, so repeated cleanup is idempotent and `status` can show result.
+6. `clean` prints one `Cleanup files:` entry for every completed package file using `action package-relative/path: reason`. Actions are `restored`, `removed`, or `retained`; protection conflicts use `protected package-relative/path: reason`. The same outcomes are persisted as `cleanup_outcomes` in the session manifest.
 
 Default policy therefore restores old files but does not delete new files. If older session is blocked, inspect `status`, stop/clean newer session, then retry older one. If file was changed by user, preserve it and ask whether user wants separate manual resolution.
 
-Completion criterion: requested session is `cleaned` or `already-cleaned`, every restored/removed/retained file is reported, and protected files are unchanged.
+Completion criterion: requested session is `cleaned` or `already-cleaned`, every restored/removed/retained file is reported with its package-relative path and reason, protected files are reported with their protection reason and remain unchanged, and an already-exited tracked process is safely recorded as exited before cleanup.
 
 ## Preferences and CLI overrides
 
