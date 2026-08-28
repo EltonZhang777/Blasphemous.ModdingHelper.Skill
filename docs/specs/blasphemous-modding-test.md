@@ -84,6 +84,7 @@ The workflow stores only temporary session state for process ownership, deployme
 66. As a maintainer, I want one authoritative sub-skill document, so that CLI behavior, manual boundaries, and troubleshooting do not drift across duplicated pages.
 67. As a maintainer, I want the top-level skill to link the testing sub-skill once, so that detailed guidance is loaded progressively.
 68. As a user, I want common errors mapped to recovery steps, so that missing profile, build, package, launcher, log, and rollback problems are actionable.
+69. As an AI agent, I want each command's help to declare its accepted options and canonical use, so that I can stop safely and compose the workflow without guessing.
 
 ## Implementation Decisions
 
@@ -103,6 +104,7 @@ The workflow stores only temporary session state for process ownership, deployme
 - The BepInEx log is profile-relative. The Unity log directory is an optional preferences field. When it is missing, the agent asks the user and writes the answer to the active preferences scope; the CLI itself does not conduct the conversational update.
 - Logs are read from their existing system locations. Default output is bounded; full output is explicit. No persistent log report is created.
 - The CLI returns stable categories: success, usage/configuration, profile/preference, build, package, deployment/rollback, launch, log/readiness, and stop/clean.
+- Root and subcommand help are part of the agent-facing CLI contract. Each subcommand lists only its accepted options, explains applicable context overrides, and provides a canonical example; `stop` accepts only `SESSION_ID` and optional `--force`.
 - The sub-skill is the authority for the user-facing flow, manual gameplay boundary, acceptance criteria, and troubleshooting. The top-level skill links to it once.
 - This specification defines behavior only. It does not implement the CLI, modify a game profile, build a mod, or automate gameplay.
 
@@ -114,6 +116,7 @@ The workflow stores only temporary session state for process ownership, deployme
 - Fixture tests cover overwriting an existing file, restoring the previous file, retaining new files, protecting files modified during testing, explicit new-file removal, and rollback failure reporting.
 - Fixture tests cover repeated sessions, archived-session warnings, newest-first cleanup, status output, idempotent stop, and refusal to clean while a newer session is active.
 - Fixture tests cover launched, ready, mod-loaded, timeout, missing BepInEx log, missing Unity log, and preferences update handoff behavior.
+- Parser-level tests cover valid invocations, reject misplaced cross-command options, and assert root/subcommand help for the canonical workflow and limited stop contract.
 - The same user-visible contract is checked on PowerShell and native Bash environments. Platform-specific launcher resolution is tested with profile fixtures rather than Steam.
 - Manual smoke testing uses a real non-Steam or mirror modding profile and verifies build, deployment, process launch, BepInEx readiness, target-mod loading, player actions, log analysis, stop, and safe clean.
 - Existing repository Markdown-link checks, `git diff --check`, and final worktree checks remain required. No general package test suite is assumed.

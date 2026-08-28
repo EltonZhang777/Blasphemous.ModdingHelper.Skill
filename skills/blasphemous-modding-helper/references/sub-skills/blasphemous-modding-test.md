@@ -39,6 +39,22 @@ Argument shapes below abbreviate shell-specific invocation above as `<TEST_CLI>`
 
 CLI has five commands: `run`, `stop`, `clean`, `logs`, and read-only `status`. session identifier printed by `run` is 32-character lowercase hexadecimal value and is required by `stop`, `clean`, and `logs`.
 
+### Agent-safe help and canonical flow
+
+Agents SHOULD inspect `<TEST_CLI> --help` first, then `<TEST_CLI> <command> --help` before invoking a command. Each subcommand help lists only that command's accepted options, explains context and per-invocation overrides where applicable, and includes a command-specific example. `stop` is the exception to normal context resolution: it accepts only `SESSION_ID` and optional `--force`.
+
+Canonical flow for a normal build, startup evidence, tracked stop, safe cleanup, and read-only status:
+
+```text
+<TEST_CLI> run --project <PROJECT.csproj> --profile <PROFILE> --startup-timeout 60
+<TEST_CLI> logs SESSION_ID
+<TEST_CLI> stop SESSION_ID
+<TEST_CLI> clean SESSION_ID
+<TEST_CLI> status
+```
+
+If graceful stop does not finish, retry only the same tracked session with `<TEST_CLI> stop SESSION_ID --force`. `stop` does not accept project, profile, launcher, log-directory, artifact, build, or cleanup options.
+
 Common options are accepted by `run`, `clean`, `logs`, and `status`:
 
 | Option | Meaning |
@@ -57,6 +73,8 @@ Common options are accepted by `run`, `clean`, `logs`, and `status`:
     [--dry-run]
     [--startup-timeout SECONDS]
 ```
+
+`run` uses the selected project and profile context, with explicit common options overriding saved preferences for this invocation. `--artifact` switches to deploy-only selection; `--dry-run` validates and prints the plan without deployment or launch.
 
 Expected behavior, in order:
 
@@ -140,6 +158,8 @@ Completion criterion: tracked process is stopped or confirmed gone, and no unrel
 <TEST_CLI> logs SESSION_ID [common options] [--full]
 ```
 
+`logs` uses the selected profile and log-directory context. `--project`, `--profile`, `--launcher`, and `--unity-log-dir` override saved values for this invocation; `--full` is the only logs-specific output override.
+
 CLI reads existing logs in place and stores only evidence metadata in temporary session manifest. It does not create persistent log report or copy log contents. Default output is last 200 lines per source; `--full` prints complete current file.
 
 Sources are:
@@ -173,6 +193,8 @@ Completion criterion: agent reports state, current/stale/missing status of both 
 <TEST_CLI> status [common options]
 ```
 
+`status` resolves context only to select the profile and display sessions. Its output is read-only; context options override saved values for this invocation, and no build, deployment, launch, log read, or cleanup option is accepted.
+
 `status` prints selected context and sessions newest first. Each entry reports its role (`active`, `archived`, or `cleaned`), deployment state, cleanup state, tracked process state, and evidence state. It copies no files, launches no process, and does not inspect gameplay.
 
 Completion criterion: agent can discover newest session and all older rollback sessions without changing profile.
@@ -183,6 +205,8 @@ Completion criterion: agent can discover newest session and all older rollback s
 <TEST_CLI> clean SESSION_ID [common options]
     [--remove-new-files]
 ```
+
+`clean` resolves the session's profile context before rollback. `--project`, `--profile`, `--launcher`, and `--unity-log-dir` override saved values for this invocation; `--remove-new-files` is the only cleanup-specific mutation approval.
 
 Agent MUST stop session first, then clean it. CLI also refuses to clean while tracked game process is still running. Cleanup uses newest-first session stack:
 

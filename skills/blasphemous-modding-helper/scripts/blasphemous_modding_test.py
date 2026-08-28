@@ -49,6 +49,7 @@ DEFAULT_LOG_LINES = 200
 STARTUP_POLL_INTERVAL_SECONDS = 0.25
 MAX_EVIDENCE_HITS = 20
 MAX_EVIDENCE_TEXT = 240
+HELP_FORMATTER = argparse.RawDescriptionHelpFormatter
 
 
 class CliError(Exception):
@@ -3690,25 +3691,28 @@ def _resolve_context(args: argparse.Namespace, require_project: bool) -> Invocat
 
 
 def _add_common_options(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument(
+    context_group = parser.add_argument_group(
+        "context and per-invocation overrides"
+    )
+    context_group.add_argument(
         "--project",
         metavar="PATH",
-        help="Select a .csproj; otherwise infer the only project in the current directory.",
+        help="Select a .csproj; otherwise discover it from the current directory.",
     )
-    parser.add_argument(
+    context_group.add_argument(
         "--profile",
         metavar="PATH",
-        help="Override modding_profile_path for this invocation.",
+        help="Override saved modding_profile_path for this invocation.",
     )
-    parser.add_argument(
+    context_group.add_argument(
         "--launcher",
         metavar="PATH",
-        help="Use an explicit game launcher path for this invocation.",
+        help="Override the profile launcher for this invocation.",
     )
-    parser.add_argument(
+    context_group.add_argument(
         "--unity-log-dir",
         metavar="PATH",
-        help="Override unity_log_dir for this invocation without editing preferences.md.",
+        help="Override saved unity_log_dir for this invocation.",
     )
 
 
@@ -3716,13 +3720,37 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="blasphemous-modding-test",
         description="Build, validate, and deploy a Blasphemous mod artifact.",
-        epilog="Use 'run --dry-run' to inspect the plan without deployment or launch, 'logs SESSION_ID' to inspect current startup evidence, 'stop SESSION_ID' to stop one tracked process tree, 'clean SESSION_ID' for newest-first safe cleanup, or 'status' for a read-only profile view.",
+        formatter_class=HELP_FORMATTER,
+        epilog="""Canonical workflow (run from the caller's Mod repository):
+  blasphemous-modding-test run --project <PROJECT.csproj> --profile <PROFILE> --startup-timeout 60
+  blasphemous-modding-test logs SESSION_ID
+  blasphemous-modding-test stop SESSION_ID
+  blasphemous-modding-test stop SESSION_ID --force
+  blasphemous-modding-test clean SESSION_ID
+  blasphemous-modding-test status
+
+The stop contract is limited to SESSION_ID and optional --force. Other commands
+show their valid context and override options in their own help. Use run
+--dry-run to inspect the build and deployment plan without mutation.
+""",
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     run_parser = subparsers.add_parser(
         "run",
         help="Build or select an artifact and deploy it, or print a dry-run plan.",
+        description="""Build or select one package, validate it, deploy it, and launch the profile-local game.
+
+Context: --project, --profile, --launcher, and --unity-log-dir override saved
+context for this invocation. Without --project, run requires exactly one
+.csproj in the current directory. --artifact skips the build; --dry-run
+prevents deployment and launch.
+""",
+        formatter_class=HELP_FORMATTER,
+        epilog="""Examples:
+  blasphemous-modding-test run --project <PROJECT.csproj> --profile <PROFILE> --startup-timeout 60
+  blasphemous-modding-test run --artifact <PACKAGE> --profile <PROFILE> --dry-run
+""",
     )
     _add_common_options(run_parser)
     run_parser.add_argument(
@@ -3751,6 +3779,17 @@ def build_parser() -> argparse.ArgumentParser:
     stop_parser = subparsers.add_parser(
         "stop",
         help="Stop one tracked test-session process tree.",
+        usage="%(prog)s SESSION_ID [--force]",
+        description="""Stop only the tracked process tree recorded for SESSION_ID.
+
+Contract: SESSION_ID is required. --force is optional and remains limited to
+the same tracked tree. No context or profile overrides are accepted.
+""",
+        formatter_class=HELP_FORMATTER,
+        epilog="""Examples:
+  blasphemous-modding-test stop SESSION_ID
+  blasphemous-modding-test stop SESSION_ID --force
+""",
     )
     stop_parser.add_argument(
         "session_id",
@@ -3766,6 +3805,17 @@ def build_parser() -> argparse.ArgumentParser:
     clean_parser = subparsers.add_parser(
         "clean",
         help="Safely clean one stopped session in newest-first order.",
+        usage="%(prog)s SESSION_ID [OPTIONS]",
+        description="""Safely clean one stopped session in newest-first order.
+
+Context: --project, --profile, --launcher, and --unity-log-dir override saved
+context for this invocation. --remove-new-files explicitly approves removal
+of unchanged files first created by the session.
+""",
+        formatter_class=HELP_FORMATTER,
+        epilog="""Example:
+  blasphemous-modding-test clean SESSION_ID
+""",
     )
     clean_parser.add_argument(
         "session_id",
@@ -3782,6 +3832,17 @@ def build_parser() -> argparse.ArgumentParser:
     logs_parser = subparsers.add_parser(
         "logs",
         help="Read current BepInEx and Unity startup logs for one session.",
+        usage="%(prog)s SESSION_ID [OPTIONS]",
+        description="""Read current BepInEx and Unity startup evidence for SESSION_ID.
+
+Context: --project, --profile, --launcher, and --unity-log-dir override saved
+context for this invocation. --full prints complete current logs instead of the
+bounded tail.
+""",
+        formatter_class=HELP_FORMATTER,
+        epilog="""Example:
+  blasphemous-modding-test logs SESSION_ID
+""",
     )
     logs_parser.add_argument(
         "session_id",
@@ -3798,6 +3859,15 @@ def build_parser() -> argparse.ArgumentParser:
     status_parser = subparsers.add_parser(
         "status",
         help="Show the current read-only profile and session status.",
+        description="""Show the current profile and session status without changing files or processes.
+
+Context: --project, --profile, --launcher, and --unity-log-dir override saved
+context for this invocation. Status is read-only.
+""",
+        formatter_class=HELP_FORMATTER,
+        epilog="""Example:
+  blasphemous-modding-test status
+""",
     )
     _add_common_options(status_parser)
     return parser
