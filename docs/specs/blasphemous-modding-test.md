@@ -95,7 +95,7 @@ The workflow stores only temporary session state for process ownership, deployme
 - Release archives are a recovery input only when explicitly selected. They are extracted to temporary state and validated before deployment. Directory and archive selection never uses timestamps or silent fallback.
 - The profile is validated as a modding profile before deployment. The game launcher, Modding root, and BepInEx installation are hard prerequisites; missing log files are handled by the log recovery flow.
 - Launch uses a profile-local known launcher by default and does not use Steam URI resolution. An explicit launcher path is allowed with a warning, but arbitrary shell command strings are not accepted.
-- Deployment uses a transaction-like manifest with target hashes and backups. Session state is temporary and contains no copied log content.
+- Deployment uses a transaction-like manifest with target hashes and backups. Session state is temporary, stores only log metadata, digests, and bounded evidence hits, and contains no copied log content.
 - Repeated runs are allowed. Session state forms a newest-first stack. A newer session must be cleaned before an older session can be cleaned. An archived session is retained until its rollback position is safely removed.
 - Safe clean restores overwritten files and preserves new deployment files by default. Removing new files and handling files changed during testing require explicit user approval.
 - Stop and clean refuse to operate while the tracked game process is running. Stop is idempotent when the tracked process has already exited.

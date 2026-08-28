@@ -378,7 +378,106 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
         self.assertIn("unity-tail", result.stdout)
         self.assertNotIn("old-0", result.stdout)
         self.assertEqual(before, self.snapshot())
-        self.assertFalse(any(path.suffix.lower() == ".log" for path in deployment.state_path.parent.rglob("*")))
+        manifest_text = deployment.state_path.read_text(encoding="utf-8")
+        self.assertNotIn("old-0", manifest_text)
+        self.assertNotIn("unity-tail", manifest_text)
+        self.assertFalse(
+            any(
+                path.suffix.lower() == ".log"
+                for path in deployment.state_path.parent.rglob("*")
+            )
+        )
+
+    def test_logs_reports_bounded_hits_with_source_path_provenance(self):
+        module, session, deployment, profile_preflight, process, identity = self.create_launched_session()
+        bepinex_log = profile_preflight.bepinex_root / "LogOutput.log"
+        bepinex_log.write_text(
+            "[Info : BepInEx] Chainloader initialized\n"
+            + "".join(
+                f"[Info : BepInEx] Loading [ExampleMod {index}.0.0]\n"
+                for index in range(25)
+            ),
+            encoding="utf-8",
+        )
+
+        result = self.run_module_cli(
+            module,
+            "logs",
+            deployment.session_id,
+            session=session,
+        )
+
+        self.assert_success(result)
+        payload = json.loads(deployment.state_path.read_text(encoding="utf-8"))
+        hits = payload["evidence"]["hits"]
+        self.assertEqual(len(hits), module.MAX_EVIDENCE_HITS)
+        self.assertEqual(hits[0]["source"], "BepInEx")
+        self.assertEqual(hits[0]["path"], str(bepinex_log.resolve()))
+        self.assertEqual(hits[0]["line"], 2)
+        self.assertEqual(hits[-1]["line"], module.MAX_EVIDENCE_HITS + 1)
+        self.assertIn(f"BepInEx:{hits[0]['line']}", result.stdout)
+        self.assertIn(str(bepinex_log.resolve()), result.stdout)
+
+    def test_logs_detects_early_current_hit_outside_bounded_tail(self):
+        module, session, deployment, profile_preflight, process, identity = self.create_launched_session()
+        bepinex_log = profile_preflight.bepinex_root / "LogOutput.log"
+        bepinex_log.write_text(
+            "[Info : BepInEx] Chainloader initialized\n"
+            "[Info : BepInEx] Loading [ExampleMod 1.0.0]\n"
+            + "".join(f"noise-{index}\n" for index in range(250)),
+            encoding="utf-8",
+        )
+
+        result = self.run_module_cli(
+            module,
+            "logs",
+            deployment.session_id,
+            session=session,
+        )
+
+        self.assert_success(result)
+        self.assertIn("Startup state: mod_loaded", result.stdout)
+        self.assertIn("BepInEx:2", result.stdout)
+        self.assertNotIn("noise-0", result.stdout)
+
+    def test_logs_marks_same_size_content_rewrite_as_current(self):
+        module, session, deployment, profile_preflight, process, identity = self.create_launched_session(
+            prelaunch_bepinex_log="stale-entry" * 20,
+        )
+        bepinex_log = profile_preflight.bepinex_root / "LogOutput.log"
+        current_prefix = (
+            "[Info : BepInEx] Chainloader initialized\n"
+            "[Info : BepInEx] Loading [ExampleMod 1.0.0]\n"
+        )
+        baseline = json.loads(
+            deployment.state_path.read_text(encoding="utf-8")
+        )["process"]["log_baseline"]["bepinex"]
+        newline_translation = (
+            current_prefix.count("\n") if os.linesep == "\r\n" else 0
+        )
+        current = current_prefix + "x" * (
+            int(baseline["size"]) - len(current_prefix) - newline_translation
+        )
+        bepinex_log.write_text(current, encoding="utf-8")
+        os.utime(
+            bepinex_log,
+            ns=(int(baseline["mtime_ns"]), int(baseline["mtime_ns"])),
+        )
+        current_stat = bepinex_log.stat()
+        self.assertEqual(current_stat.st_size, baseline["size"])
+        self.assertEqual(current_stat.st_mtime_ns, baseline["mtime_ns"])
+
+        result = self.run_module_cli(
+            module,
+            "logs",
+            deployment.session_id,
+            session=session,
+        )
+
+        self.assert_success(result)
+        self.assertIn("BepInEx log status: current", result.stdout)
+        self.assertIn("Startup state: mod_loaded", result.stdout)
+        self.assertNotIn("not current", result.stderr)
 
     def test_logs_full_output_includes_the_complete_current_log(self):
         module, session, deployment, profile_preflight, process, identity = self.create_launched_session()
