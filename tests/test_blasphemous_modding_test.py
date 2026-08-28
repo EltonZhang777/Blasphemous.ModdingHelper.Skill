@@ -535,6 +535,196 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
         self.assertIn("Stop state: exited", stop_result.stdout)
         self.assert_success(clean_result)
         self.assertIn("Clean state: cleaned", clean_result.stdout)
+    def test_root_help_contains_canonical_agent_workflow_examples(self):
+        result = self.run_cli("--help")
+
+        self.assert_success(result)
+        for example in (
+            "blasphemous-modding-test run --project <PROJECT.csproj> --profile <PROFILE> --startup-timeout 60",
+            "blasphemous-modding-test logs SESSION_ID",
+            "blasphemous-modding-test stop SESSION_ID --force",
+            "blasphemous-modding-test clean SESSION_ID",
+            "blasphemous-modding-test status",
+        ):
+            self.assertIn(example, result.stdout)
+
+    def test_command_help_lists_only_valid_options_and_context(self):
+        expectations = {
+            "run": {
+                "present": (
+                    "--project PATH",
+                    "--profile PATH",
+                    "--launcher PATH",
+                    "--unity-log-dir PATH",
+                    "--configuration {Debug,Release}",
+                    "--artifact PATH",
+                    "--dry-run",
+                    "--startup-timeout SECONDS",
+                    "Context:",
+                ),
+                "absent": ("--force", "--full", "--remove-new-files"),
+            },
+            "logs": {
+                "present": (
+                    "SESSION_ID",
+                    "--project PATH",
+                    "--profile PATH",
+                    "--launcher PATH",
+                    "--unity-log-dir PATH",
+                    "--full",
+                    "Context:",
+                ),
+                "absent": ("--configuration", "--artifact", "--dry-run", "--force", "--remove-new-files"),
+            },
+            "stop": {
+                "present": (
+                    "SESSION_ID",
+                    "--force",
+                    "tracked process tree",
+                    "No context or profile overrides are accepted.",
+                ),
+                "absent": (
+                    "--project",
+                    "--profile",
+                    "--launcher",
+                    "--unity-log-dir",
+                    "--configuration",
+                    "--artifact",
+                    "--dry-run",
+                    "--full",
+                    "--remove-new-files",
+                ),
+            },
+            "clean": {
+                "present": (
+                    "SESSION_ID",
+                    "--project PATH",
+                    "--profile PATH",
+                    "--launcher PATH",
+                    "--unity-log-dir PATH",
+                    "--remove-new-files",
+                    "Context:",
+                ),
+                "absent": ("--configuration", "--artifact", "--dry-run", "--force", "--full"),
+            },
+            "status": {
+                "present": (
+                    "--project PATH",
+                    "--profile PATH",
+                    "--launcher PATH",
+                    "--unity-log-dir PATH",
+                    "read-only",
+                    "Context:",
+                ),
+                "absent": (
+                    "SESSION_ID",
+                    "--configuration",
+                    "--artifact",
+                    "--dry-run",
+                    "--force",
+                    "--full",
+                    "--remove-new-files",
+                ),
+            },
+        }
+
+        for command, command_expectations in expectations.items():
+            with self.subTest(command=command):
+                result = self.run_cli(command, "--help")
+                self.assert_success(result)
+                for expected in command_expectations["present"]:
+                    self.assertIn(expected, result.stdout)
+                for unexpected in command_expectations["absent"]:
+                    self.assertNotIn(unexpected, result.stdout)
+
+    def test_parser_accepts_each_command_contract(self):
+        module = self.load_cli_module()
+        parser = module.build_parser()
+        invocations = (
+            (
+                "run",
+                "--project",
+                "Mod.csproj",
+                "--profile",
+                "PROFILE",
+                "--launcher",
+                "launcher",
+                "--unity-log-dir",
+                "UNITY_LOGS",
+                "--configuration",
+                "Release",
+                "--artifact",
+                "PACKAGE",
+                "--dry-run",
+                "--startup-timeout",
+                "5",
+            ),
+            (
+                "logs",
+                "SESSION_ID",
+                "--project",
+                "Mod.csproj",
+                "--profile",
+                "PROFILE",
+                "--launcher",
+                "launcher",
+                "--unity-log-dir",
+                "UNITY_LOGS",
+                "--full",
+            ),
+            ("stop", "SESSION_ID", "--force"),
+            (
+                "clean",
+                "SESSION_ID",
+                "--project",
+                "Mod.csproj",
+                "--profile",
+                "PROFILE",
+                "--launcher",
+                "launcher",
+                "--unity-log-dir",
+                "UNITY_LOGS",
+                "--remove-new-files",
+            ),
+            (
+                "status",
+                "--project",
+                "Mod.csproj",
+                "--profile",
+                "PROFILE",
+                "--launcher",
+                "launcher",
+                "--unity-log-dir",
+                "UNITY_LOGS",
+            ),
+        )
+
+        for invocation in invocations:
+            with self.subTest(invocation=invocation):
+                args = parser.parse_args(invocation)
+                self.assertEqual(args.command, invocation[0])
+
+    def test_parser_rejects_misplaced_command_options(self):
+        module = self.load_cli_module()
+        parser = module.build_parser()
+        invalid_invocations = (
+            ("stop", "SESSION_ID", "--project", "Mod.csproj"),
+            ("stop", "SESSION_ID", "--profile", "PROFILE"),
+            ("stop", "SESSION_ID", "--launcher", "launcher"),
+            ("stop", "SESSION_ID", "--unity-log-dir", "UNITY_LOGS"),
+            ("run", "--full"),
+            ("logs", "SESSION_ID", "--dry-run"),
+            ("clean", "SESSION_ID", "--full"),
+            ("status", "--remove-new-files"),
+            ("--profile", "PROFILE", "status"),
+        )
+
+        for invocation in invalid_invocations:
+            with self.subTest(invocation=invocation):
+                with redirect_stderr(io.StringIO()):
+                    with self.assertRaises(SystemExit) as failure:
+                        parser.parse_args(invocation)
+                self.assertEqual(failure.exception.code, 2)
 
     def test_dispatch_command_routes_through_injected_session(self):
         module = self.load_cli_module()

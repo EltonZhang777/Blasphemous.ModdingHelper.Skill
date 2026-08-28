@@ -22,12 +22,17 @@ The fixture suite exercises the CLI through temporary projects, packages, profil
 | Startup states, timeout, logs, and output bounds | `test_run_reports_launched_ready_and_mod_loaded_as_distinct_states`, `test_startup_timeout_preserves_process_and_session_for_diagnosis`, `test_timeout_rechecks_evidence_at_deadline`, `test_logs_reports_bounded_current_evidence_without_persisting_logs`, `test_logs_full_output_includes_the_complete_current_log`, `test_logs_requires_current_chainloader_evidence_for_ready_and_mod_loaded`, `test_logs_recognizes_structured_moddingapi_registration_for_runtime_alias`, `test_logs_recognizes_standard_bepinex_loading_record`, `test_logs_rejects_paths_errors_and_unstructured_target_text`, `test_registration_without_current_bepinex_readiness_does_not_load_mod`, `test_target_error_before_registration_does_not_promote_to_loaded`, `test_target_error_after_registration_does_not_demote_loaded_state`, `test_logs_ignores_prelaunch_bepinex_evidence_as_stale`, `test_missing_unity_log_warns_with_preference_update_handoff` |
 | Unicode paths and decoding boundaries | `test_dry_run_preserves_unicode_and_space_paths_with_non_utf8_console`, `test_build_error_preserves_unicode_project_path_and_exit_category`, `test_unicode_space_paths_survive_complete_lifecycle_and_bad_log_bytes` |
 | Preferences, profile preflight, shell restrictions, and exit categories | `test_project_scope_overrides_user_scope`, `test_explicit_profile_overrides_project_preference`, `test_missing_preferences_returns_profile_preference_error`, `test_missing_profile_children_are_rejected_without_creation`, `test_missing_launcher_is_rejected_without_mutation`, `test_compatibility_shell_is_rejected`, `test_stop_rejects_compatibility_shell`, `test_proton_environment_is_rejected`, `test_build_failure_returns_build_error_before_artifact_validation` |
+| Agent-safe help and parser contracts | `test_root_help_contains_canonical_agent_workflow_examples`, `test_command_help_lists_only_valid_options_and_context`, `test_parser_accepts_each_command_contract`, `test_parser_rejects_misplaced_command_options` |
 
 Completion criterion: the fixture command exits successfully, all rows above remain represented by passing tests, and skipped cases are reported with their environment reason.
 
 Observed on 2026-08-23: the process-scoped Windows PowerShell runner passed CLI help and 62 tests; 2 symlink-related cases were skipped by host privilege conditions.
 
 Issue #49 validation on 2026-08-28: the native PowerShell runner passed CLI help and 91 tests; the same 2 symlink-related cases were skipped by host privilege conditions.
+
+## Agent-safe help gate
+
+The root help must expose the canonical sequence: normal `run`, current-log `logs`, tracked `stop`, newest-first `clean`, and read-only `status`. Each subcommand help is the option authority for that command. `stop` accepts only `SESSION_ID` and optional `--force`; it does not accept context, build, log, or cleanup options. Parser tests must preserve valid invocations and reject cross-command or misplaced options.
 
 ## Shell entrypoint gate
 
