@@ -49,6 +49,30 @@ DEFAULT_LOG_LINES = 200
 STARTUP_POLL_INTERVAL_SECONDS = 0.25
 MAX_EVIDENCE_HITS = 20
 MAX_EVIDENCE_TEXT = 240
+CLI_OUTPUT_ENCODING = "utf-8"
+CLI_OUTPUT_ERRORS = "backslashreplace"
+SUBPROCESS_OUTPUT_ENCODING = "utf-8"
+SUBPROCESS_OUTPUT_ERRORS = "replace"
+LOG_OUTPUT_ENCODING = "utf-8"
+LOG_OUTPUT_ERRORS = "replace"
+
+
+def _configure_cli_output() -> None:
+    """Make real console streams emit Unicode paths predictably."""
+
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if not callable(reconfigure):
+            continue
+        try:
+            reconfigure(
+                encoding=CLI_OUTPUT_ENCODING,
+                errors=CLI_OUTPUT_ERRORS,
+            )
+        except (OSError, ValueError):
+            # Test capture streams and some embedded hosts may reject
+            # reconfiguration; their existing text interface remains usable.
+            pass
 
 
 class CliError(Exception):
@@ -927,6 +951,8 @@ def build_project(project: Path, configuration: str, solution_root: Path) -> Non
             env=build_environment,
             capture_output=True,
             text=True,
+            encoding=SUBPROCESS_OUTPUT_ENCODING,
+            errors=SUBPROCESS_OUTPUT_ERRORS,
             check=False,
         )
     except OSError as error:
@@ -1664,8 +1690,8 @@ def _read_log_source(
 
     try:
         lines = normalized.read_text(
-            encoding="utf-8",
-            errors="replace",
+            encoding=LOG_OUTPUT_ENCODING,
+            errors=LOG_OUTPUT_ERRORS,
         ).splitlines()
     except OSError as error:
         return LogEvidenceSource(
@@ -2199,6 +2225,8 @@ def _ps_process_identity(
         ["ps", "-p", str(pid), "-o", "lstart="],
         capture_output=True,
         text=True,
+        encoding=SUBPROCESS_OUTPUT_ENCODING,
+        errors=SUBPROCESS_OUTPUT_ERRORS,
         check=False,
     )
     if start_result.returncode != 0 or not start_result.stdout.strip():
@@ -2207,6 +2235,8 @@ def _ps_process_identity(
         ["ps", "-p", str(pid), "-o", "command="],
         capture_output=True,
         text=True,
+        encoding=SUBPROCESS_OUTPUT_ENCODING,
+        errors=SUBPROCESS_OUTPUT_ERRORS,
         check=False,
     )
     command = command_result.stdout.strip()
@@ -2307,6 +2337,8 @@ def _process_ids() -> Tuple[int, ...]:
         ["ps", "-axo", "pid="],
         capture_output=True,
         text=True,
+        encoding=SUBPROCESS_OUTPUT_ENCODING,
+        errors=SUBPROCESS_OUTPUT_ERRORS,
         check=False,
     )
     if result.returncode != 0:
@@ -2334,6 +2366,8 @@ def _process_image_name(pid: int, known_name: Optional[str] = None) -> Optional[
             ["ps", "-p", str(pid), "-o", "comm="],
             capture_output=True,
             text=True,
+            encoding=SUBPROCESS_OUTPUT_ENCODING,
+            errors=SUBPROCESS_OUTPUT_ERRORS,
             check=False,
         )
     except OSError:
@@ -2434,6 +2468,8 @@ def _process_parent_map() -> Dict[int, int]:
         ["ps", "-axo", "pid=,ppid="],
         capture_output=True,
         text=True,
+        encoding=SUBPROCESS_OUTPUT_ENCODING,
+        errors=SUBPROCESS_OUTPUT_ERRORS,
         check=False,
     )
     if result.returncode != 0:
@@ -2634,6 +2670,8 @@ def _terminate_process_tree(identity: ProcessIdentity, force: bool = False) -> b
             command,
             capture_output=True,
             text=True,
+            encoding=SUBPROCESS_OUTPUT_ENCODING,
+            errors=SUBPROCESS_OUTPUT_ERRORS,
             check=False,
         )
         if result.returncode == 0:
@@ -4263,6 +4301,7 @@ def main(
     argv: Optional[Sequence[str]] = None,
     session: Optional[TestSession] = None,
 ) -> int:
+    _configure_cli_output()
     parser = build_parser()
     args = parser.parse_args(argv)
     try:
