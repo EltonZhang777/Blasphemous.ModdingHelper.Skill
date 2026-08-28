@@ -170,6 +170,13 @@ class StopResult:
 
 
 @dataclass(frozen=True)
+class CleanupFileOutcome:
+    relative_path: str
+    action: str
+    reason: str
+
+
+@dataclass(frozen=True)
 class CleanResult:
     session_id: str
     state: str
@@ -177,6 +184,7 @@ class CleanResult:
     removed_files: Tuple[Path, ...]
     retained_files: Tuple[Path, ...]
     warnings: Tuple[str, ...]
+    file_outcomes: Tuple[CleanupFileOutcome, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -1493,6 +1501,75 @@ def _profile_paths_match(first: Path, second: Path) -> bool:
 def _session_cleanup_state(payload: Dict[str, object]) -> str:
     value = str(payload.get("cleanup_state", "pending"))
     return value if value in {"pending", "cleaned"} else "pending"
+
+
+def _cleanup_file_outcome(
+    record: Dict[str, object],
+    index: int,
+    action: str,
+    reason: str,
+) -> CleanupFileOutcome:
+    raw_path = str(record.get("relative_path", "")).strip().replace("\\", "/")
+    raw_parts = tuple(raw_path.split("/")) if raw_path else ()
+    relative_path = PurePosixPath(raw_path)
+    if (
+        not raw_path
+        or relative_path.is_absolute()
+        or (len(raw_path) > 1 and raw_path[1] == ":")
+        or any(part in {"", ".", ".."} for part in raw_parts)
+    ):
+        relative_output = f"<file record {index}>"
+    else:
+        relative_output = relative_path.as_posix()
+    return CleanupFileOutcome(relative_output, action, reason)
+
+
+def _format_cleanup_file_outcome(outcome: CleanupFileOutcome) -> str:
+    return f"{outcome.action} {outcome.relative_path}: {outcome.reason}"
+
+
+def _serialise_cleanup_outcomes(
+    outcomes: Sequence[CleanupFileOutcome],
+) -> List[Dict[str, str]]:
+    return [
+        {
+            "relative_path": outcome.relative_path,
+            "action": outcome.action,
+            "reason": outcome.reason,
+        }
+        for outcome in outcomes
+    ]
+
+
+def _cleanup_outcomes_from_manifest(
+    payload: Dict[str, object],
+) -> Tuple[CleanupFileOutcome, ...]:
+    value = payload.get("cleanup_outcomes")
+    if not isinstance(value, list):
+        return ()
+    outcomes: List[CleanupFileOutcome] = []
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        relative_path = str(item.get("relative_path", "")).strip()
+        action = str(item.get("action", "")).strip()
+        reason = str(item.get("reason", "")).strip()
+        if (
+            relative_path
+            and action in {"restored", "removed", "retained", "protected"}
+            and reason
+        ):
+            outcomes.append(
+                _cleanup_file_outcome(
+                    {
+                        "relative_path": relative_path,
+                    },
+                    len(outcomes),
+                    action,
+                    reason,
+                )
+            )
+    return tuple(outcomes)
 
 
 def _session_is_cleanable(payload: Dict[str, object]) -> bool:
@@ -3228,7 +3305,15 @@ def clean_session(
     if cleanup_state == "cleaned" and not remove_new_files:
         if process_changed:
             _atomic_write_json(state_path, manifest)
-        return CleanResult(session_id, "already-cleaned", (), (), (), ())
+        return CleanResult(
+            session_id,
+            "already-cleaned",
+            (),
+            (),
+            (),
+            (),
+            _cleanup_outcomes_from_manifest(manifest),
+        )
 
     entries = _session_entries(profile, state_root=state_root)
     current_entry: Optional[Tuple[Path, Dict[str, object]]] = None
@@ -3274,10 +3359,35 @@ def clean_session(
             f"Session {session_id} has no valid deployment file records.",
         )
 
-    operations: List[Tuple[str, Dict[str, object], Path, Optional[Path]]] = []
+    operations: List[
+        Tuple[int, str, Dict[str, object], Path, Optional[Path]]
+    ] = []
     retained_files: List[Path] = []
     warnings: List[str] = []
     conflicts: List[str] = []
+    outcomes_by_record_id: Dict[int, CleanupFileOutcome] = {}
+    outcome_record_ids = set()
+
+    def append_outcome(
+        record: Dict[str, object],
+        index: int,
+        action: str,
+        reason: str,
+    ) -> CleanupFileOutcome:
+        outcome = _cleanup_file_outcome(record, index, action, reason)
+        outcomes_by_record_id[id(record)] = outcome
+        outcome_record_ids.add(id(record))
+        record["cleanup_action"] = action
+        record["cleanup_reason"] = reason
+        return outcome
+
+    def ordered_outcomes() -> Tuple[CleanupFileOutcome, ...]:
+        return tuple(
+            outcomes_by_record_id[id(value)]
+            for value in files_value
+            if isinstance(value, dict) and id(value) in outcomes_by_record_id
+        )
+
     for index, value in enumerate(files_value):
         if not isinstance(value, dict):
             conflicts.append(f"file record {index} is not an object")
@@ -3291,12 +3401,14 @@ def clean_session(
                 f"file record {index} destination",
             )
         except OSError as error:
-            conflicts.append(str(error))
+            outcome = append_outcome(value, index, "protected", str(error))
+            conflicts.append(_format_cleanup_file_outcome(outcome))
             continue
 
         existed = bool(value.get("existed", False))
         if existed:
             if bool(value.get("restored", False)):
+                append_outcome(value, index, "restored", "restored previous file")
                 continue
             try:
                 backup = _clean_backup_path(
@@ -3308,36 +3420,44 @@ def clean_session(
                 _reject_unsafe_deployment_destination(destination)
                 deployed_hash = str(value.get("deployed_sha256", ""))
                 if not deployed_hash or _sha256(destination) != deployed_hash:
-                    raise OSError(
-                        f"overwritten deployment target changed during testing; protected from restoration: {destination}"
-                    )
+                    raise OSError("overwritten deployment target changed during testing")
                 original_hash = str(value.get("original_sha256", ""))
                 if not original_hash or _sha256(backup) != original_hash:
                     raise OSError(f"recorded backup hash is invalid: {backup}")
-                operations.append(("restore", value, destination, backup))
+                operations.append((index, "restore", value, destination, backup))
             except (OSError, ValueError) as error:
-                conflicts.append(str(error))
+                reason = str(error).replace(str(destination), "deployment target")
+                outcome = append_outcome(value, index, "protected", reason)
+                conflicts.append(_format_cleanup_file_outcome(outcome))
             continue
 
         if bool(value.get("removed", False)):
+            append_outcome(value, index, "removed", "removed new file")
             continue
         if not remove_new_files:
             if destination.exists() or destination.is_symlink():
                 retained_files.append(destination)
+                reason = "retained new file by default"
                 if destination.is_symlink() or not destination.is_file():
+                    reason = "retained new deployment path without inspection"
                     warnings.append(
                         f"Retaining new deployment path without inspection: {destination}"
                     )
                 else:
                     deployed_hash = str(value.get("deployed_sha256", ""))
                     if deployed_hash and _sha256(destination) != deployed_hash:
+                        reason = "retained new file changed during testing"
                         warnings.append(
                             f"Retaining new file changed during testing: {destination}"
                         )
+                append_outcome(value, index, "retained", reason)
+            else:
+                append_outcome(value, index, "retained", "new file already absent")
             continue
 
         if not destination.exists() and not destination.is_symlink():
             value["removed"] = True
+            append_outcome(value, index, "removed", "new file already absent")
             continue
         try:
             if destination.is_symlink() or not destination.is_file():
@@ -3345,53 +3465,99 @@ def clean_session(
             _reject_unsafe_deployment_destination(destination)
             deployed_hash = str(value.get("deployed_sha256", ""))
             if not deployed_hash or _sha256(destination) != deployed_hash:
-                raise OSError(
-                    f"new deployment target changed during testing; protected from removal: {destination}"
-                )
-            operations.append(("remove", value, destination, None))
+                raise OSError("new deployment target changed during testing")
+            operations.append((index, "remove", value, destination, None))
         except (OSError, ValueError) as error:
-            conflicts.append(str(error))
+            reason = str(error).replace(str(destination), "deployment target")
+            outcome = append_outcome(value, index, "protected", reason)
+            conflicts.append(_format_cleanup_file_outcome(outcome))
 
     if conflicts:
-        if process_changed:
-            _atomic_write_json(state_path, manifest)
+        blocked_reason = "cleanup aborted because another file was protected"
+        for index, value in enumerate(files_value):
+            if isinstance(value, dict) and id(value) not in outcome_record_ids:
+                outcome = append_outcome(value, index, "protected", blocked_reason)
+                conflicts.append(_format_cleanup_file_outcome(outcome))
+        manifest["cleanup_outcomes"] = _serialise_cleanup_outcomes(
+            ordered_outcomes()
+        )
+        _atomic_write_json(state_path, manifest)
+        outcome_details = [
+            _format_cleanup_file_outcome(item) for item in ordered_outcomes()
+        ]
+        outcome_details.extend(
+            conflict for conflict in conflicts if conflict not in outcome_details
+        )
         raise CliError(
             EXIT_CLEAN,
             "stop/clean",
             "Safe clean refused; protected files were not changed: "
-            + "; ".join(conflicts),
+            + "; ".join(outcome_details),
         )
 
     restored_files: List[Path] = []
     removed_files: List[Path] = []
+    current_operation: Optional[
+        Tuple[int, str, Dict[str, object], Path, Optional[Path]]
+    ] = None
     try:
-        for operation, record, destination, backup in operations:
+        for record_index, operation, record, destination, backup in operations:
+            current_operation = (
+                record_index,
+                operation,
+                record,
+                destination,
+                backup,
+            )
             _reject_unsafe_deployment_destination(destination)
             if operation == "restore":
                 if backup is None or not destination.is_file():
                     raise OSError(f"restoration target is unavailable: {destination}")
                 expected = str(record.get("deployed_sha256", ""))
                 if not expected or _sha256(destination) != expected:
-                    raise OSError(
-                        f"overwritten deployment target changed during testing; protected from restoration: {destination}"
-                    )
+                    raise OSError("overwritten deployment target changed during testing")
                 adapter.copy(backup, destination)
                 original_hash = str(record.get("original_sha256", ""))
                 if not original_hash or _sha256(destination) != original_hash:
                     raise OSError(f"restored file hash mismatch: {destination}")
                 record["restored"] = True
+                reason = "restored previous file"
+                append_outcome(record, record_index, "restored", reason)
                 restored_files.append(destination)
             else:
                 expected = str(record.get("deployed_sha256", ""))
                 if not destination.is_file() or not expected or _sha256(destination) != expected:
-                    raise OSError(
-                        f"new deployment target changed during testing; protected from removal: {destination}"
-                    )
+                    raise OSError("new deployment target changed during testing")
                 adapter.remove(destination)
                 record["removed"] = True
+                reason = "removed new file with explicit approval"
+                append_outcome(record, record_index, "removed", reason)
                 removed_files.append(destination)
             _atomic_write_json(state_path, manifest)
     except (OSError, ValueError) as error:
+        detail = str(error)
+        if current_operation is not None:
+            detail = detail.replace(str(current_operation[3]), "deployment target")
+            append_outcome(
+                current_operation[2],
+                current_operation[0],
+                "protected",
+                detail,
+            )
+            for index, value in enumerate(files_value):
+                if isinstance(value, dict) and id(value) not in outcome_record_ids:
+                    append_outcome(
+                        value,
+                        index,
+                        "protected",
+                        "cleanup stopped before this file was processed",
+                    )
+            detail = "; ".join(
+                _format_cleanup_file_outcome(item) for item in ordered_outcomes()
+            )
+            manifest["cleanup_outcomes"] = _serialise_cleanup_outcomes(
+                ordered_outcomes()
+            )
         try:
             _atomic_write_json(state_path, manifest)
         except OSError:
@@ -3399,7 +3565,8 @@ def clean_session(
         raise CliError(
             EXIT_CLEAN,
             "stop/clean",
-            f"Safe clean stopped without completing all records: {error}",
+            "Safe clean stopped without completing all records: "
+            f"{detail}",
         ) from error
 
     directory_values = manifest.get("created_directories", [])
@@ -3431,12 +3598,14 @@ def clean_session(
             except OSError:
                 warnings.append(f"Left non-empty deployment directory untouched: {directory}")
 
+    ordered_file_outcomes = ordered_outcomes()
     manifest["cleanup_state"] = "cleaned"
     manifest["cleaned_at"] = datetime.now(timezone.utc).isoformat()
     manifest["cleaned_with_remove_new_files"] = remove_new_files
     manifest["restored_files"] = [path.as_posix() for path in restored_files]
     manifest["removed_files"] = [path.as_posix() for path in removed_files]
     manifest["retained_files"] = [path.as_posix() for path in retained_files]
+    manifest["cleanup_outcomes"] = _serialise_cleanup_outcomes(ordered_file_outcomes)
     try:
         _atomic_write_json(state_path, manifest)
     except OSError as error:
@@ -3452,6 +3621,7 @@ def clean_session(
         tuple(removed_files),
         tuple(retained_files),
         tuple(warnings),
+        ordered_file_outcomes,
     )
 
 
@@ -4288,9 +4458,17 @@ def status_command(
                 if isinstance(evidence_value, dict)
                 else "unknown"
             )
+            deployment_context = (
+                "history" if role in {"archived", "cleaned"} else "current"
+            )
+            cleanup_context = (
+                "complete" if cleanup_state == "cleaned" else "incomplete"
+            )
             print(
-                f"  {session_id}: {role} (deployment={deployment_state}, "
-                f"cleanup={cleanup_state}, process={process_state}, evidence={evidence_state})"
+                f"  {session_id}: {role} (deployment={deployment_state} "
+                f"({deployment_context}), cleanup={cleanup_state} "
+                f"({cleanup_context}), process={process_state} (observation), "
+                f"evidence={evidence_state})"
             )
     print("Status is read-only: no files copied; no process launched.")
     return EXIT_SUCCESS
@@ -4370,6 +4548,12 @@ def clean_command(
     print(f"Restored files: {len(result.restored_files)}")
     print(f"Removed new files: {len(result.removed_files)}")
     print(f"Retained new files: {len(result.retained_files)}")
+    print("Cleanup files:")
+    if result.file_outcomes:
+        for outcome in result.file_outcomes:
+            print(f"  {_format_cleanup_file_outcome(outcome)}")
+    else:
+        print("  none")
     for warning in result.warnings:
         print(f"Warning: {warning}", file=sys.stderr)
     return EXIT_SUCCESS
