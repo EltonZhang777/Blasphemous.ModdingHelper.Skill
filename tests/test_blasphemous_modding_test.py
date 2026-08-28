@@ -65,6 +65,8 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
             env=environment or self.environment,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             check=False,
         )
 
@@ -327,6 +329,171 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
         self.assertIn("clean", result.stdout)
         self.assertIn("status", result.stdout)
         self.assertIn("--dry-run", result.stdout)
+
+    def test_dry_run_preserves_unicode_and_space_paths_with_non_utf8_console(self):
+        profile = self.create_profile(name="配置 文件")
+        project = self.create_project(name="项目 工程.csproj", target_name="包 名")
+        artifact = self.create_package(
+            root=self.root / "发布 目录",
+            target_name="包 名",
+        )
+        self.write_project_preferences(profile)
+        environment = self.environment.copy()
+        environment["PYTHONIOENCODING"] = "ascii"
+
+        result = self.run_cli(
+            "run",
+            "--dry-run",
+            "--project",
+            str(project),
+            "--artifact",
+            str(artifact),
+            "--launcher",
+            str(self.launcher_path(profile)),
+            environment=environment,
+        )
+
+        self.assert_success(result)
+        for path in (project, profile, artifact):
+            self.assertIn(str(path), result.stdout)
+        self.assertNotIn("�", result.stdout)
+        self.assertIn(str(profile), result.stderr)
+        self.assertNotIn("�", result.stderr)
+
+    def test_build_error_preserves_unicode_project_path_and_exit_category(self):
+        module = self.load_cli_module()
+        profile = self.create_profile(name="配置 文件")
+        project = self.create_project(name="项目 工程.csproj", target_name="包 名")
+        self.write_project_preferences(profile)
+        build_result = SimpleNamespace(
+            returncode=1,
+            stdout=f"build output for {project}",
+            stderr=f"build error for {project}",
+        )
+
+        with mock.patch.object(
+            module.subprocess,
+            "run",
+            return_value=build_result,
+        ) as run:
+            result = self.run_module_cli(
+                module,
+                "run",
+                "--dry-run",
+                "--project",
+                str(project),
+            )
+
+        self.assertEqual(result.returncode, 20)
+        self.assertIn(str(project), result.stderr)
+        self.assertNotIn("�", result.stderr)
+        self.assertEqual(run.call_args.kwargs["encoding"], "utf-8")
+        self.assertEqual(run.call_args.kwargs["errors"], "replace")
+
+    def test_unicode_space_paths_survive_complete_lifecycle_and_bad_log_bytes(self):
+        module = self.load_cli_module()
+        profile = self.create_profile(name="游戏 配置")
+        project = self.create_project(name="模组 工程.csproj", target_name="包 名")
+        artifact = self.create_package(
+            root=self.root / "构建 输出",
+            target_name="包 名",
+        )
+        unity_log_dir = self.root / "统一 日志"
+        unity_log_dir.mkdir()
+        self.write_project_preferences(profile, unity_log_dir)
+        environment = {
+            "Windows": "Windows",
+            "Linux": "Linux",
+            "Darwin": "macOS",
+        }[platform.system()]
+        profile_preflight = module.preflight_profile(profile, environment)
+        process, identity = self.live_process_double(
+            module,
+            self.launcher_path(profile),
+        )
+        process_adapter = mock.Mock(spec=module.ProcessAdapter)
+        process_adapter.find_conflict.return_value = None
+        process_adapter.start.return_value = process
+        process_adapter.identify.return_value = identity
+        process_adapter.wait_for_alive.return_value = (True, identity)
+        process_adapter.snapshot_tree.return_value = (identity,)
+        session = self.create_session(module, process_adapter)
+
+        run_result = self.run_module_cli(
+            module,
+            "run",
+            "--project",
+            str(project),
+            "--artifact",
+            str(artifact),
+            session=session,
+        )
+        self.assert_success(run_result)
+        session_id = run_result.stdout.split("Deployment session: ", 1)[1].splitlines()[0]
+
+        bepinex_log = profile_preflight.bepinex_root / "LogOutput.log"
+        bepinex_log.write_bytes(
+            b"[Info : BepInEx] Chainloader initialized\n"
+            b"[Info : BepInEx] Loading ["
+            + "包 名 1.0.0".encode("utf-8")
+            + b"]\ninvalid byte: \xff; profile: "
+            + str(profile).encode("utf-8")
+            + b"\n"
+        )
+        (unity_log_dir / "output_log.txt").write_text(
+            "Unity log for 配置 文件\n",
+            encoding="utf-8",
+        )
+
+        logs_result = self.run_module_cli(
+            module,
+            "logs",
+            session_id,
+            "--project",
+            str(project),
+            "--unity-log-dir",
+            str(unity_log_dir),
+            session=session,
+        )
+        process_adapter.is_alive.return_value = False
+        status_result = self.run_module_cli(
+            module,
+            "status",
+            "--project",
+            str(project),
+            session=session,
+        )
+        stop_result = self.run_module_cli(
+            module,
+            "stop",
+            session_id,
+            session=session,
+        )
+        clean_result = self.run_module_cli(
+            module,
+            "clean",
+            session_id,
+            "--project",
+            str(project),
+            session=session,
+        )
+
+        self.assert_success(run_result)
+        self.assertIn(str(project), run_result.stdout)
+        self.assertIn(str(profile), run_result.stdout)
+        self.assertIn(str(artifact), run_result.stdout)
+        self.assert_success(logs_result)
+        self.assertIn("Startup state: mod_loaded", logs_result.stdout)
+        self.assertIn(str(profile), logs_result.stdout)
+        self.assertIn(str(unity_log_dir), logs_result.stdout)
+        self.assertIn("invalid byte: �", logs_result.stdout)
+        self.assert_success(status_result)
+        self.assertIn(str(project), status_result.stdout)
+        self.assertIn(str(profile), status_result.stdout)
+        self.assert_success(stop_result)
+        self.assertIn("Stop state: exited", stop_result.stdout)
+        self.assert_success(clean_result)
+        self.assertIn("Clean state: cleaned", clean_result.stdout)
 
     def test_dispatch_command_routes_through_injected_session(self):
         module = self.load_cli_module()
@@ -1066,6 +1233,8 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
             ["taskkill", "/PID", str(identity.pid), "/T"],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             check=False,
         )
         payload = json.loads(deployment.state_path.read_text(encoding="utf-8"))

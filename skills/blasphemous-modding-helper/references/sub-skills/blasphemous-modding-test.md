@@ -39,6 +39,10 @@ Argument shapes below abbreviate shell-specific invocation above as `<TEST_CLI>`
 
 CLI has five commands: `run`, `stop`, `clean`, `logs`, and read-only `status`. session identifier printed by `run` is 32-character lowercase hexadecimal value and is required by `stop`, `clean`, and `logs`.
 
+## Encoding and path output
+
+The CLI emits user-facing stdout and stderr as UTF-8, including profile, project, artifact, and log paths. Keep paths as quoted arguments in native PowerShell and Bash invocations; spaces are part of the path, not argument separators. Text returned by build and process-management subprocesses is decoded as UTF-8 with replacement for undecodable bytes, so a decoding failure remains a readable build, launch, or cleanup error. Existing log files use the same explicit replacement policy only for log content; it does not alter recorded or displayed path values.
+
 Common options are accepted by `run`, `clean`, `logs`, and `status`:
 
 | Option | Meaning |
