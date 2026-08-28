@@ -172,7 +172,7 @@ Completion criterion: tracked process is stopped or confirmed gone, and no unrel
 
 `logs` uses the selected profile and log-directory context. `--project`, `--profile`, `--launcher`, and `--unity-log-dir` override saved values for this invocation; `--full` is the only logs-specific output override.
 
-CLI reads existing logs in place and stores only evidence metadata in temporary session manifest. It does not create persistent log report or copy log contents. Default output is last 200 lines per source; `--full` prints complete current file.
+CLI reads existing logs in place and stores only bounded evidence metadata in temporary session manifest. It does not create persistent log report or copy log contents. Default output is last 200 lines per source; `--full` prints complete current file. Evidence hits retain source label, concrete path, line number, match reason, kind, and bounded text independently of the output tail, so early startup hits remain reportable without unbounded output.
 
 Sources are:
 
@@ -184,9 +184,9 @@ Unity:   <unity_log_dir>/Player.log           (native Linux/macOS, then output_l
 
 `unity_log_dir` is optional in schema but REQUIRED to locate Unity log. On Windows, usual directory is `%USERPROFILE%/AppData/LocalLow/TheGameKitchen/Blasphemous`; agent MUST configure that directory explicitly when it is not already in `preferences.md`. If directory or file is missing, CLI MUST print warning, agent MUST ask user for correct directory, and agent MUST save `unity_log_dir: PATH` in active `preferences.md` after user supplies it. one-run `--unity-log-dir PATH` override is available while confirming value.
 
-`LogOutput.log` contains current BepInEx run and overwrites previous run; there is no BepInEx history or polling log to recover. launcher records file baseline, so existing log is marked `stale` and ignored for this session unless its signature changes after launch. missing or unreadable BepInEx log is hard logs/readiness failure. missing Unity log is warning and requires user handoff above.
+`LogOutput.log` contains current BepInEx run and overwrites previous run; there is no BepInEx history or polling log to recover. launcher records a metadata-and-content baseline, so existing log is marked `stale` and ignored for this session unless its content changes after launch. missing or unreadable BepInEx log is hard logs/readiness failure. missing Unity log is warning and requires user handoff above.
 
-Package `TargetName` identifies the publish package, not necessarily the runtime Mod identity. The CLI persists bounded runtime aliases derived from `TargetName`, an explicit project `AssemblyName`, and the project name. Positive target evidence requires a current BepInEx chainloader readiness record plus either a structured ModdingAPI registration record or a standard BepInEx `Loading`/`Loaded` record whose identity exactly matches one of those aliases. Paths, errors, and unstructured mentions do not count. A target error before positive registration prevents promotion; a later target error is retained as diagnostic metadata without demoting an already established load. The session manifest retains bounded source, line, reason, kind, and text metadata for matched evidence; it never copies a log.
+Package `TargetName` identifies the publish package, not necessarily the runtime Mod identity. The CLI persists bounded runtime aliases derived from `TargetName`, an explicit project `AssemblyName`, and the project name. Positive target evidence requires a current BepInEx chainloader readiness record plus either a structured ModdingAPI registration record or a standard BepInEx `Loading`/`Loaded` record whose identity exactly matches one of those aliases. Paths, errors, and unstructured mentions do not count. A target error before positive registration prevents promotion; a later target error is retained as diagnostic metadata without demoting an already established load. The session manifest retains bounded source, path, line, reason, kind, and text metadata for matched evidence; it never copies a log.
 
 Startup states are deliberately narrower than gameplay results:
 

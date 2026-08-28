@@ -198,6 +198,7 @@ class EvidenceHit:
     reason: str
     text: str
     kind: str = "positive"
+    path: Optional[Path] = None
 
 
 @dataclass(frozen=True)
@@ -606,16 +607,23 @@ def resolve_unity_log_path(
 
 
 def _log_signature(path: Path) -> Optional[Dict[str, object]]:
+    """Return file metadata and content digest without persisting log data."""
+
     try:
         if not path.is_file():
             return None
         stat_result = path.stat()
+        digest = hashlib.sha256()
+        with path.open("rb") as stream:
+            for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                digest.update(chunk)
     except OSError:
         return None
     return {
         "exists": True,
         "mtime_ns": int(stat_result.st_mtime_ns),
         "size": int(stat_result.st_size),
+        "sha256": digest.hexdigest(),
     }
 
 
@@ -1645,6 +1653,10 @@ def _log_is_current(
     if baseline is not None:
         if not bool(baseline.get("exists")):
             return True
+        baseline_digest = baseline.get("sha256")
+        current_digest = signature.get("sha256")
+        if isinstance(baseline_digest, str) and isinstance(current_digest, str):
+            return baseline_digest != current_digest
         return any(
             signature.get(key) != baseline.get(key)
             for key in ("mtime_ns", "size")
@@ -1788,6 +1800,7 @@ def _target_mod_evidence(
     lines: Sequence[str],
     aliases: Sequence[str],
     source: str = "BepInEx",
+    source_path: Optional[Path] = None,
 ) -> Tuple[EvidenceHit, ...]:
     """Match only framework log records whose identity exactly matches an alias."""
 
@@ -1813,6 +1826,7 @@ def _target_mod_evidence(
                         line_number,
                         "ModdingAPI registration",
                         line[:MAX_EVIDENCE_TEXT],
+                        path=source_path,
                     )
                 )
                 continue
@@ -1834,6 +1848,7 @@ def _target_mod_evidence(
                     line_number,
                     "BepInEx loading record",
                     line[:MAX_EVIDENCE_TEXT],
+                    path=source_path,
                 )
             )
     return tuple(hits[:MAX_EVIDENCE_HITS])
@@ -1843,6 +1858,7 @@ def _target_error_evidence(
     lines: Sequence[str],
     aliases: Sequence[str],
     source: str = "BepInEx",
+    source_path: Optional[Path] = None,
 ) -> Tuple[EvidenceHit, ...]:
     hits: List[EvidenceHit] = []
     for line_number, line in enumerate(lines, start=1):
@@ -1860,6 +1876,7 @@ def _target_error_evidence(
                     "target error",
                     line[:MAX_EVIDENCE_TEXT],
                     "error",
+                    path=source_path,
                 )
             )
     return tuple(hits[:MAX_EVIDENCE_HITS])
@@ -1942,12 +1959,20 @@ def collect_log_evidence(
         and _chainloader_ready(bepinex_source.evidence_lines)
     )
     positive_hits = (
-        _target_mod_evidence(bepinex_source.evidence_lines, runtime_aliases)
+        _target_mod_evidence(
+            bepinex_source.evidence_lines,
+            runtime_aliases,
+            source_path=bepinex_source.path,
+        )
         if bepinex_source.exists and bepinex_source.current
         else ()
     )
     error_hits = (
-        _target_error_evidence(bepinex_source.evidence_lines, runtime_aliases)
+        _target_error_evidence(
+            bepinex_source.evidence_lines,
+            runtime_aliases,
+            source_path=bepinex_source.path,
+        )
         if bepinex_source.exists and bepinex_source.current
         else ()
     )
@@ -1995,6 +2020,7 @@ def _update_evidence_state(state_path: Path, report: EvidenceReport) -> None:
                 "reason": hit.reason,
                 "kind": hit.kind,
                 "text": hit.text,
+                "path": str(hit.path) if hit.path is not None else None,
             }
             for hit in report.hits[:MAX_EVIDENCE_HITS]
         ],
@@ -2003,6 +2029,7 @@ def _update_evidence_state(state_path: Path, report: EvidenceReport) -> None:
                 "exists": source.exists,
                 "current": source.current,
                 "line_count": source.total_lines,
+                "path": str(source.path) if source.path is not None else None,
             }
             for source in report.sources
         },
@@ -4097,7 +4124,7 @@ def _print_evidence_report(
         for hit in report.hits:
             print(
                 f"  - {hit.source}:{hit.line_number} [{hit.kind}] "
-                f"{hit.reason}: {hit.text}"
+                f"{hit.reason} ({hit.path or 'path unavailable'}): {hit.text}"
             )
     for source in report.sources:
         path = str(source.path) if source.path is not None else "not configured"
