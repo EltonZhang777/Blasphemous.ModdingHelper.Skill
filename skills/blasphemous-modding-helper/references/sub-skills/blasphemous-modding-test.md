@@ -172,7 +172,7 @@ Completion criterion: tracked process is stopped or confirmed gone, and no unrel
 
 `logs` uses the selected profile and log-directory context. `--project`, `--profile`, `--launcher`, and `--unity-log-dir` override saved values for this invocation; `--full` is the only logs-specific output override.
 
-CLI reads existing logs in place and stores only bounded evidence metadata in temporary session manifest. It does not create persistent log report or copy log contents. Default output is last 200 lines per source; `--full` prints complete current file. Evidence hits retain source label, concrete path, line number, match reason, kind, and bounded text independently of the output tail, so early startup hits remain reportable without unbounded output.
+CLI reads existing logs in place and stores only bounded evidence metadata in temporary session manifest. It does not create persistent log report or copy log contents. Default output is last 200 lines per source; `--full` prints complete current file. Evidence hits retain source label, concrete path, line number, match reason, kind, bounded text, and available `mod_id`/`mod_name` independently of the output tail, so early startup hits remain reportable without unbounded output.
 
 Sources are:
 
@@ -186,15 +186,15 @@ Unity:   <unity_log_dir>/Player.log           (native Linux/macOS, then output_l
 
 `LogOutput.log` contains current BepInEx run and overwrites previous run; there is no BepInEx history or polling log to recover. launcher records a metadata-and-content baseline, so existing log is marked `stale` and ignored for this session unless its content changes after launch. missing or unreadable BepInEx log is hard logs/readiness failure. missing Unity log is warning and requires user handoff above.
 
-Package `TargetName` identifies the publish package, not necessarily the runtime Mod identity. The CLI persists bounded runtime aliases derived from `TargetName`, an explicit project `AssemblyName`, and the project name. Positive target evidence requires a current BepInEx chainloader readiness record plus either a structured ModdingAPI registration record or a standard BepInEx `Loading`/`Loaded` record whose identity exactly matches one of those aliases. Paths, errors, and unstructured mentions do not count. A target error before positive registration prevents promotion; a later target error is retained as diagnostic metadata without demoting an already established load. The session manifest retains bounded source, path, line, reason, kind, and text metadata for matched evidence; it never copies a log.
+Package `TargetName` identifies the publish package, not necessarily the runtime Mod identity. The CLI persists bounded runtime aliases derived from `TargetName`, an explicit project `AssemblyName`, and the project name. Structured ModdingAPI or Mod Loader registration evidence exposes the canonical `mod_id`; standard BepInEx `Loading`/`Loaded` evidence exposes the human-readable `mod_name`. Mod Loader identity is preferred for target matching. A BepInEx display name participates only through an explicit display-name alias or as corroborating context; it is never rewritten as a canonical ID. Positive target evidence requires a current BepInEx chainloader readiness record plus an exact structured target record. Paths, errors, and unstructured mentions do not count. A target error before positive registration prevents promotion; a later target error is retained as diagnostic metadata without demoting an already established load. The session manifest retains bounded source, path, line, reason, kind, text, and available identity metadata for matched evidence; it never copies a log.
 
 Startup states are deliberately narrower than gameplay results:
 
 | State | Automated evidence |
 | --- | --- |
 | `launched` | The selected profile-local launcher produced a safely tracked process, but current BepInEx readiness is not established. |
-| `ready` | The current BepInEx log contains chainloader readiness evidence. |
-| `mod_loaded` | `ready` plus current structured ModdingAPI registration or standard BepInEx loading evidence matching a derived runtime alias exactly. |
+| `ready` | The current BepInEx log contains chainloader readiness evidence, including `Chainloader startup complete`. |
+| `mod_loaded` | `ready` plus current structured ModdingAPI or Mod Loader registration, or standard BepInEx loading evidence, matching a derived runtime alias exactly. |
 | `timeout` | `--startup-timeout` expired before `mod_loaded`; the session and process remain for diagnosis. |
 
 Completion criterion: agent reports state, current/stale/missing status of both sources, relevant warnings, and bounded or full log output requested by user.

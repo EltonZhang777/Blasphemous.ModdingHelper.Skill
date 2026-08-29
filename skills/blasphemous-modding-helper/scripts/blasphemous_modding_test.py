@@ -207,6 +207,8 @@ class EvidenceHit:
     text: str
     kind: str = "positive"
     path: Optional[Path] = None
+    mod_id: Optional[str] = None
+    mod_name: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -1825,6 +1827,8 @@ def _chainloader_ready(lines: Sequence[str]) -> bool:
         "completed",
         "finished",
         "loaded",
+        "startup complete",
+        "start-up complete",
     )
     for line in lines:
         lowered = line.casefold()
@@ -1836,17 +1840,86 @@ def _chainloader_ready(lines: Sequence[str]) -> bool:
 
 
 _BEPINEX_LOAD_RECORD = re.compile(
-    r"^\s*\[(?P<level>[^:\]]+):\s*BepInEx\s*\]\s+"
+    r"^\s*\[(?P<level>[^:\]]+):\s*(?P<source>BepInEx)\s*\]\s+"
     r"(?:Loading|Loaded)\s+\[(?P<identity>[^\]\r\n]+)\]",
     re.IGNORECASE,
 )
 _MODDING_API_REGISTRATION_RECORD = re.compile(
-    r"^\s*\[(?P<level>[^:\]]+):\s*ModdingAPI\s*\]\s+"
+    r"^\s*\[(?P<level>[^:\]]+):\s*"
+    r"(?P<source>ModdingAPI|Mod\s+Loader)\s*\]\s+"
     r"(?:Registered|Registering)\s+Mod\s*(?::|=)?\s*"
     r"(?:['\"](?P<quoted_identity>[^'\"]+)['\"]|"
     r"(?P<identity>[A-Za-z0-9][A-Za-z0-9_.-]*))",
     re.IGNORECASE,
 )
+
+
+@dataclass(frozen=True)
+class _StructuredLoadRecord:
+    source: str
+    record_kind: str
+    identity: str
+    mod_id: Optional[str] = None
+    mod_name: Optional[str] = None
+
+
+_VERSION_SUFFIX = re.compile(
+    r"^(?P<identity>.+?)\s+"
+    r"(?P<version>\d+(?:\.\d+){1,4}(?:[-+][0-9A-Za-z.-]+)?)\s*$"
+)
+
+
+def _strip_record_version(value: str) -> str:
+    normalized = value.strip()
+    match = _VERSION_SUFFIX.match(normalized)
+    if match is None:
+        return normalized
+    return match.group("identity").strip()
+
+
+def _is_positive_record_level(level: str) -> bool:
+    return level.strip().casefold() not in {
+        "error",
+        "warning",
+        "warn",
+        "fatal",
+    }
+
+
+def _normalize_log_source(source: str) -> str:
+    return " ".join(source.split())
+
+
+def _parse_structured_load_record(line: str) -> Optional[_StructuredLoadRecord]:
+    registration = _MODDING_API_REGISTRATION_RECORD.match(line)
+    if registration and _is_positive_record_level(registration.group("level")):
+        raw_identity = (
+            registration.group("quoted_identity")
+            or registration.group("identity")
+            or ""
+        )
+        identity = _strip_record_version(raw_identity)
+        if identity:
+            return _StructuredLoadRecord(
+                _normalize_log_source(registration.group("source")),
+                "registration",
+                identity,
+                mod_id=identity,
+            )
+
+    loading = _BEPINEX_LOAD_RECORD.match(line)
+    if loading and _is_positive_record_level(loading.group("level")):
+        display_name = _strip_record_version(loading.group("identity"))
+        if display_name:
+            return _StructuredLoadRecord(
+                _normalize_log_source(loading.group("source")),
+                "bepinex",
+                display_name,
+                mod_name=display_name,
+            )
+    return None
+
+
 _STRUCTURED_ERROR_RECORD = re.compile(
     r"^\s*\[(?P<level>[^:\]]+):\s*(?P<source>[^\]]+)\]\s*",
     re.IGNORECASE,
@@ -1884,50 +1957,61 @@ def _target_mod_evidence(
     normalized_aliases = tuple(alias.strip() for alias in aliases if alias.strip())
     hits: List[EvidenceHit] = []
     for line_number, line in enumerate(lines, start=1):
-        registration = _MODDING_API_REGISTRATION_RECORD.match(line)
-        registration_level = (
-            registration.group("level").strip().casefold()
-            if registration
-            else ""
-        )
-        if registration and registration_level not in {"error", "warning", "warn", "fatal"}:
-            identity = (
-                registration.group("quoted_identity")
-                or registration.group("identity")
-                or ""
-            )
-            if _alias_matches_record(identity, normalized_aliases):
-                hits.append(
-                    EvidenceHit(
-                        source,
-                        line_number,
-                        "ModdingAPI registration",
-                        line[:MAX_EVIDENCE_TEXT],
-                        path=source_path,
-                    )
-                )
-                continue
-
-        loading = _BEPINEX_LOAD_RECORD.match(line)
-        loading_level = (
-            loading.group("level").strip().casefold() if loading else ""
-        )
-        if (
-            loading
-            and loading_level not in {"error", "warning", "warn", "fatal"}
-            and _alias_matches_record(
-                loading.group("identity"), normalized_aliases
-            )
+        record = _parse_structured_load_record(line)
+        if record is None or not _alias_matches_record(
+            record.identity, normalized_aliases
         ):
-            hits.append(
-                EvidenceHit(
-                    source,
-                    line_number,
-                    "BepInEx loading record",
-                    line[:MAX_EVIDENCE_TEXT],
-                    path=source_path,
-                )
+            continue
+        reason = (
+            f"{record.source} registration"
+            if record.record_kind == "registration"
+            else "BepInEx loading record"
+        )
+        hits.append(
+            EvidenceHit(
+                source,
+                line_number,
+                reason,
+                line[:MAX_EVIDENCE_TEXT],
+                path=source_path,
+                mod_id=record.mod_id,
+                mod_name=record.mod_name,
             )
+        )
+    return tuple(hits[:MAX_EVIDENCE_HITS])
+
+
+def _bepinex_context_evidence(
+    lines: Sequence[str],
+    target_hits: Sequence[EvidenceHit],
+    source: str = "BepInEx",
+    source_path: Optional[Path] = None,
+) -> Tuple[EvidenceHit, ...]:
+    """Retain recognized non-target BepInEx display records as context."""
+
+    target_bepinex_lines = {
+        hit.line_number
+        for hit in target_hits
+        if hit.reason == "BepInEx loading record"
+    }
+    hits: List[EvidenceHit] = []
+    for line_number, line in enumerate(lines, start=1):
+        if line_number in target_bepinex_lines:
+            continue
+        record = _parse_structured_load_record(line)
+        if record is None or record.record_kind != "bepinex":
+            continue
+        hits.append(
+            EvidenceHit(
+                source,
+                line_number,
+                "BepInEx loading record",
+                line[:MAX_EVIDENCE_TEXT],
+                kind="context",
+                path=source_path,
+                mod_name=record.mod_name,
+            )
+        )
     return tuple(hits[:MAX_EVIDENCE_HITS])
 
 
@@ -1962,11 +2046,12 @@ def _target_error_evidence(
 def _select_evidence_hits(
     positive_hits: Sequence[EvidenceHit],
     error_hits: Sequence[EvidenceHit],
+    context_hits: Sequence[EvidenceHit] = (),
 ) -> Tuple[EvidenceHit, ...]:
     """Keep bounded evidence while retaining positive and error context."""
 
     ordered_hits = sorted(
-        [*positive_hits, *error_hits],
+        [*positive_hits, *error_hits, *context_hits],
         key=lambda hit: hit.line_number,
     )
     required_hits: List[EvidenceHit] = []
@@ -2079,7 +2164,16 @@ def collect_log_evidence(
         if bepinex_source.exists and bepinex_source.current
         else ()
     )
-    hits = _select_evidence_hits(positive_hits, error_hits)
+    context_hits = (
+        _bepinex_context_evidence(
+            bepinex_source.evidence_lines,
+            positive_hits,
+            source_path=bepinex_source.path,
+        )
+        if bepinex_source.exists and bepinex_source.current
+        else ()
+    )
+    hits = _select_evidence_hits(positive_hits, error_hits, context_hits)
     first_positive_line = (
         min(hit.line_number for hit in positive_hits)
         if positive_hits
@@ -2119,6 +2213,8 @@ def _update_evidence_state(state_path: Path, report: EvidenceReport) -> None:
                 "kind": hit.kind,
                 "text": hit.text,
                 "path": str(hit.path) if hit.path is not None else None,
+                "mod_id": hit.mod_id,
+                "mod_name": hit.mod_name,
             }
             for hit in report.hits[:MAX_EVIDENCE_HITS]
         ],
@@ -4313,9 +4409,16 @@ def _print_evidence_report(
     if report.hits:
         print("Evidence hits:")
         for hit in report.hits:
+            identities = []
+            if hit.mod_id is not None:
+                identities.append(f"mod_id={hit.mod_id}")
+            if hit.mod_name is not None:
+                identities.append(f"mod_name={hit.mod_name}")
+            identity_text = f" [{', '.join(identities)}]" if identities else ""
             print(
                 f"  - {hit.source}:{hit.line_number} [{hit.kind}] "
-                f"{hit.reason} ({hit.path or 'path unavailable'}): {hit.text}"
+                f"{hit.reason}{identity_text} "
+                f"({hit.path or 'path unavailable'}): {hit.text}"
             )
     for source in report.sources:
         path = str(source.path) if source.path is not None else "not configured"

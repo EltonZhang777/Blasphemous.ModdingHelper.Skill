@@ -980,6 +980,118 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
         self.assert_success(result)
         self.assertIn("Startup state: mod_loaded", result.stdout)
 
+    def test_logs_recognizes_mod_loader_id_and_bepinex_display_name(self):
+        module, session, deployment, profile_preflight, process, identity = self.create_launched_session(
+            project_kwargs={
+                "name": "ModList.csproj",
+                "target_name": "ModList",
+                "assembly_name": "Blasphemous.ModList",
+            }
+        )
+        (profile_preflight.bepinex_root / "LogOutput.log").write_text(
+            "[Info   :   BepInEx] Loading [Mod List 0.1.0]\n"
+            "[Message:   BepInEx] Chainloader startup complete\n"
+            "[Message:Mod Loader] Registering mod: Blasphemous.ModList (0.1.0)\n",
+            encoding="utf-8",
+        )
+
+        result = self.run_module_cli(
+            module,
+            "logs",
+            deployment.session_id,
+            session=session,
+        )
+
+        self.assert_success(result)
+        self.assertIn("Startup state: mod_loaded", result.stdout)
+        self.assertIn("mod_id=Blasphemous.ModList", result.stdout)
+        self.assertIn("mod_name=Mod List", result.stdout)
+        payload = json.loads(deployment.state_path.read_text(encoding="utf-8"))
+        id_hit = next(
+            hit
+            for hit in payload["evidence"]["hits"]
+            if hit["mod_id"] == "Blasphemous.ModList"
+        )
+        display_hit = next(
+            hit
+            for hit in payload["evidence"]["hits"]
+            if hit["mod_name"] == "Mod List"
+        )
+        self.assertEqual(id_hit["reason"], "Mod Loader registration")
+        self.assertEqual(display_hit["kind"], "context")
+        self.assertIsNone(display_hit["mod_id"])
+
+    def test_bepinex_display_name_does_not_become_canonical_id(self):
+        module, session, deployment, profile_preflight, process, identity = self.create_launched_session(
+            project_kwargs={"target_name": "Blasphemous.ModList"}
+        )
+        (profile_preflight.bepinex_root / "LogOutput.log").write_text(
+            "[Message:Mod Loader] Chainloader startup complete\n"
+            "[Info : BepInEx] Loading [Mod List 0.1.0]\n",
+            encoding="utf-8",
+        )
+
+        result = self.run_module_cli(
+            module,
+            "logs",
+            deployment.session_id,
+            session=session,
+        )
+
+        self.assert_success(result)
+        self.assertIn("Startup state: ready", result.stdout)
+        self.assertIn("Mod-loaded state: not-loaded", result.stdout)
+        payload = json.loads(deployment.state_path.read_text(encoding="utf-8"))
+        display_hit = next(
+            hit
+            for hit in payload["evidence"]["hits"]
+            if hit["mod_name"] == "Mod List"
+        )
+        self.assertIsNone(display_hit["mod_id"])
+
+    def test_logs_recognizes_registered_mod_loader_record(self):
+        module, session, deployment, profile_preflight, process, identity = self.create_launched_session(
+            project_kwargs={"target_name": "Blasphemous.ModList"}
+        )
+        (profile_preflight.bepinex_root / "LogOutput.log").write_text(
+            "[Message:Mod Loader] Chainloader startup complete\n"
+            '[Message:Mod Loader] Registered Mod = "Blasphemous.ModList" (0.1.0)\n',
+            encoding="utf-8",
+        )
+
+        result = self.run_module_cli(
+            module,
+            "logs",
+            deployment.session_id,
+            session=session,
+        )
+
+        self.assert_success(result)
+        self.assertIn("Startup state: mod_loaded", result.stdout)
+        self.assertIn("mod_id=Blasphemous.ModList", result.stdout)
+
+    def test_logs_rejects_similar_mod_loader_id(self):
+        module, session, deployment, profile_preflight, process, identity = self.create_launched_session(
+            project_kwargs={"target_name": "Blasphemous.ModList"}
+        )
+        (profile_preflight.bepinex_root / "LogOutput.log").write_text(
+            "[Message:Mod Loader] Chainloader startup complete\n"
+            "[Message:Mod Loader] Registering mod: Blasphemous.ModListExtra (0.1.0)\n",
+            encoding="utf-8",
+        )
+
+        result = self.run_module_cli(
+            module,
+            "logs",
+            deployment.session_id,
+            session=session,
+        )
+
+        self.assert_success(result)
+        self.assertIn("Startup state: ready", result.stdout)
+        self.assertIn("Mod-loaded state: not-loaded", result.stdout)
+        self.assertNotIn("mod_id=Blasphemous.ModListExtra", result.stdout)
+
     def test_logs_recognizes_standard_bepinex_loading_record(self):
         module, session, deployment, profile_preflight, process, identity = self.create_launched_session(
             project_kwargs={
