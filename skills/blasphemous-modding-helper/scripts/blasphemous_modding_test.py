@@ -1959,6 +1959,32 @@ def _target_error_evidence(
     return tuple(hits[:MAX_EVIDENCE_HITS])
 
 
+def _select_evidence_hits(
+    positive_hits: Sequence[EvidenceHit],
+    error_hits: Sequence[EvidenceHit],
+) -> Tuple[EvidenceHit, ...]:
+    """Keep bounded evidence while retaining positive and error context."""
+
+    ordered_hits = sorted(
+        [*positive_hits, *error_hits],
+        key=lambda hit: hit.line_number,
+    )
+    required_hits: List[EvidenceHit] = []
+    if positive_hits:
+        required_hits.append(positive_hits[0])
+    if error_hits:
+        required_hits.append(error_hits[0])
+
+    selected: List[EvidenceHit] = []
+    for hit in [*required_hits, *ordered_hits]:
+        if hit in selected:
+            continue
+        selected.append(hit)
+        if len(selected) == MAX_EVIDENCE_HITS:
+            break
+    return tuple(sorted(selected, key=lambda hit: hit.line_number))
+
+
 def _target_mod_loaded(lines: Sequence[str], target_name: str) -> bool:
     """Compatibility wrapper for callers that provide one package alias."""
 
@@ -2053,12 +2079,7 @@ def collect_log_evidence(
         if bepinex_source.exists and bepinex_source.current
         else ()
     )
-    hits = tuple(
-        sorted(
-            positive_hits + error_hits,
-            key=lambda hit: hit.line_number,
-        )[:MAX_EVIDENCE_HITS]
-    )
+    hits = _select_evidence_hits(positive_hits, error_hits)
     first_positive_line = (
         min(hit.line_number for hit in positive_hits)
         if positive_hits

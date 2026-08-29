@@ -960,6 +960,26 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
         )
         self.assertEqual(payload["evidence"]["hits"][0]["reason"], "ModdingAPI registration")
 
+    def test_logs_recognizes_registering_moddingapi_record(self):
+        module, session, deployment, profile_preflight, process, identity = self.create_launched_session(
+            project_kwargs={"target_name": "Blasphemous.Modlist"}
+        )
+        (profile_preflight.bepinex_root / "LogOutput.log").write_text(
+            "[Info : BepInEx] Chainloader initialized\n"
+            "[Info : ModdingAPI] Registering mod: Blasphemous.Modlist\n",
+            encoding="utf-8",
+        )
+
+        result = self.run_module_cli(
+            module,
+            "logs",
+            deployment.session_id,
+            session=session,
+        )
+
+        self.assert_success(result)
+        self.assertIn("Startup state: mod_loaded", result.stdout)
+
     def test_logs_recognizes_standard_bepinex_loading_record(self):
         module, session, deployment, profile_preflight, process, identity = self.create_launched_session(
             project_kwargs={
@@ -970,6 +990,29 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
         (profile_preflight.bepinex_root / "LogOutput.log").write_text(
             "[Info : BepInEx] Chainloader initialized\n"
             "[Info : BepInEx] Loading [RuntimeProject 1.0.0]\n",
+            encoding="utf-8",
+        )
+
+        result = self.run_module_cli(
+            module,
+            "logs",
+            deployment.session_id,
+            session=session,
+        )
+
+        self.assert_success(result)
+        self.assertIn("Startup state: mod_loaded", result.stdout)
+
+    def test_logs_recognizes_standard_bepinex_loaded_record(self):
+        module, session, deployment, profile_preflight, process, identity = self.create_launched_session(
+            project_kwargs={
+                "name": "RuntimeProject.csproj",
+                "target_name": "PackageFolder",
+            }
+        )
+        (profile_preflight.bepinex_root / "LogOutput.log").write_text(
+            "[Info : BepInEx] Chainloader initialized\n"
+            "[Info : BepInEx] Loaded [RuntimeProject 1.0.0]\n",
             encoding="utf-8",
         )
 
@@ -1069,6 +1112,34 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
         self.assert_success(result)
         self.assertIn("Startup state: mod_loaded", result.stdout)
         self.assertIn('"kind": "error"', deployment.state_path.read_text(encoding="utf-8"))
+
+    def test_target_error_after_many_registrations_remains_visible(self):
+        module, session, deployment, profile_preflight, process, identity = self.create_launched_session(
+            project_kwargs={"assembly_name": "RuntimeMod"}
+        )
+        registration_lines = "".join(
+            "[Info : ModdingAPI] Registered Mod: RuntimeMod\n"
+            for _ in range(module.MAX_EVIDENCE_HITS + 1)
+        )
+        (profile_preflight.bepinex_root / "LogOutput.log").write_text(
+            "[Info : BepInEx] Chainloader initialized\n"
+            + registration_lines
+            + "[Error : BepInEx] RuntimeMod failed after registration\n",
+            encoding="utf-8",
+        )
+
+        result = self.run_module_cli(
+            module,
+            "logs",
+            deployment.session_id,
+            session=session,
+        )
+
+        self.assert_success(result)
+        self.assertIn("Startup state: mod_loaded", result.stdout)
+        self.assertIn("RuntimeMod failed after registration", result.stdout)
+        payload = json.loads(deployment.state_path.read_text(encoding="utf-8"))
+        self.assertTrue(any(hit["kind"] == "error" for hit in payload["evidence"]["hits"]))
 
     def test_timeout_rechecks_evidence_at_deadline(self):
         module, session, deployment, profile_preflight, process, identity = self.create_launched_session()
