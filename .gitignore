@@ -2,6 +2,7 @@
 .baoyu-skills/
 skills/blasphemous-modding-helper/scripts/testdata/
 docs/adr/
+docs/handoff/
 .wt/
 
 ## Ignore Visual Studio temporary files, build results, and

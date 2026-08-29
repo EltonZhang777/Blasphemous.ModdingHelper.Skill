@@ -1141,6 +1141,25 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
         self.assertIn(str(preferences), result.stderr)
         self.assertIn("Startup state: mod_loaded", result.stdout)
 
+    def test_missing_bepinex_log_persists_missing_source_before_failure(self):
+        module, session, deployment, profile_preflight, process, identity = self.create_launched_session()
+        bepinex_log = profile_preflight.bepinex_root / "LogOutput.log"
+        self.assertFalse(bepinex_log.exists())
+
+        result = self.run_module_cli(
+            module,
+            "logs",
+            deployment.session_id,
+            session=session,
+        )
+
+        self.assertEqual(result.returncode, module.EXIT_LOGS)
+        self.assertIn("BepInEx log status: missing", result.stdout)
+        self.assertIn("current BepInEx log is unavailable", result.stderr)
+        payload = json.loads(deployment.state_path.read_text(encoding="utf-8"))
+        self.assertEqual(payload["evidence"]["state"], "launched")
+        self.assertFalse(payload["evidence"]["sources"]["BepInEx"]["exists"])
+
     def test_run_reports_launched_ready_and_mod_loaded_as_distinct_states(self):
         module = self.load_cli_module()
         profile = self.create_profile()

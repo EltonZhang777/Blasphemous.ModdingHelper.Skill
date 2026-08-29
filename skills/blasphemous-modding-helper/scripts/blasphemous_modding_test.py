@@ -4504,13 +4504,13 @@ def logs_command(
         explicit_unity_log_dir=args.unity_log_dir,
     )
     _print_evidence_report(report, include_logs=True, full_logs=args.full)
+    _update_evidence_state(state_path, report)
     if not report.sources[0].exists:
         raise CliError(
             EXIT_LOGS,
             "logs/readiness",
             "The current BepInEx log is unavailable; readiness cannot be confirmed.",
         )
-    _update_evidence_state(state_path, report)
     return EXIT_SUCCESS
 
 
