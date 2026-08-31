@@ -16,12 +16,18 @@ Every executable example in this Skill MUST use these context:
 3. Agent MUST invoke each script through explicit Skill-root path and interpreter named by its reference:
    - Bash entry point: `bash "$SKILL_ROOT/scripts/<script>.sh" [arguments]`.
    - PowerShell entry point: `& (Join-Path $SkillRoot 'scripts\<script>.ps1') [arguments]`.
-   - Python entry point: `"$PYTHON3" "$SKILL_ROOT/scripts/<script>.py" [arguments]`, or equivalent PowerShell invocation, after `PYTHON3` has been resolved.
+   - Python entry point: `"$PYTHON3" "$SKILL_ROOT/scripts/<script>.py" [arguments]`, or equivalent PowerShell invocation, after `PYTHON3` has been resolved. Runtime selection and failure classification are defined in [Python Runtime](python-runtime.md).
    - Node.js entry point: `node "$SKILL_ROOT/scripts/<script>.js" [arguments]` when reference names Node.js entry point.
 4. Agent MUST resolve and set root variable and any required interpreter before copying or executing command. selected branch MUST supply any additional shell compatibility requirement; command context does not authorize compatibility shell where branch requires native shell.
 5. Agent MUST quote paths and arguments whenever selected shell requires quoting, including paths containing spaces.
 
 Command context is ready when installed Skill root, caller Mod repository, required interpreter, and selected shell are known before command is executed.
+
+## Python runtime gate
+
+During first-time setup, agent MUST complete [Python Runtime](python-runtime.md) before asking setup questions. The gate resolves an explicit interpreter, `PYTHON3`, or the host interpreter in that order; accepts Python 3.9 or newer; validates the Skill dependency manifest; and never installs packages automatically.
+
+After setup succeeds, agent MUST reuse the validated interpreter context for normal branches. Agent MUST retry this gate only after a classified Python-environment failure. Ordinary Git, network, dotnet, game, profile, log, and Mod failures remain branch-owned runtime or domain failures and MUST NOT trigger Python reconfiguration.
 
 ## Preferences gate
 

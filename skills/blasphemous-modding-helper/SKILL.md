@@ -13,7 +13,7 @@ At start of every Skill invocation, agent MUST read [Requirement levels](referen
 
 ## Invocation preflight
 
-Before selecting branch or executing command, agent MUST read [Invocation preflight](references/config/invocation-preflight.md). It is authoritative contract for Skill-root resolution, caller Mod-repository context, interpreter and shell expectations, preference scope and precedence, first-time setup, path recovery, tracked-session stop exception, and shared completion.
+Before selecting branch or executing command, agent MUST read [Invocation preflight](references/config/invocation-preflight.md). It is authoritative contract for Skill-root resolution, caller Mod-repository context, interpreter and shell expectations, preference scope and precedence, first-time setup, path recovery, tracked-session stop exception, and shared completion. It routes Python interpreter and dependency validation to [Python Runtime](references/config/python-runtime.md).
 
 ## Coding standards
 

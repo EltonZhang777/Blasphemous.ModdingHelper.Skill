@@ -15,13 +15,16 @@ Before executing command in this reference, agent MUST apply command-context con
 
 Agent MUST ask only questions in this setup flow, MUST save `preferences.md`, and MUST continue only after those steps complete.
 
+Before asking Q1, agent MUST complete the [Python runtime gate](python-runtime.md). Q1 remains the first user question. A failed runtime gate MUST stop setup, show its stable configuration diagnostic, and provide the retry action; it MUST NOT install packages or write `preferences.md`.
+
 On success, agent MUST return validated preferences file to Invocation preflight completion check. On failure, agent MUST report error and retry path through that same contract.
 
 ## Setup Flow
 
 ```mermaid
 flowchart TD
-    Start["No preferences.md found"] --> Q1["Q1: Ask save location first"]
+    Start["No preferences.md found"] --> Runtime["Resolve Python 3.9+ and validate requirements"]
+    Runtime --> Q1["Q1: Ask save location first"]
     Q1 --> Q2{"Q2: Decompiled source available?"}
 
     Q2 -->|Yes| Q3["Q3: Ask lightweight source path"]
