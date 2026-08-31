@@ -53,12 +53,12 @@ Use the narrowest authoritative file for each change:
 Run only the checks relevant to the changed area:
 
 - Installer or JavaScript: `node --check bin/install.js`, both installer dry-runs above, and `node bin/install.js --help`.
-- Python preference/decompiler workflows: use resolved Python 3.9+ interpreter for `-m unittest discover -s tests` and `-m py_compile` on changed entry points.
+- Python Skill workflows: use a resolved Python 3.9+ interpreter for `tests/run_blasphemous_modding_test.py` or `skills/blasphemous-modding-helper/scripts/test_modding_api_acceptance.py`; use `-m py_compile` on changed entry points.
 - Version or manifest: run `python ci/UpdateVersionNumber.py --dry-run`, parse every changed JSON manifest, and confirm all version fields agree with `ci/version.yml`. Use the available Python 3 interpreter on the host.
 - Skill or Markdown references: inspect every changed relative link and confirm paths/case match the repository. For source navigation, check `MAIN.md` routing and keep class-to-document mappings in one topical file.
 - Any change: `git diff --check` and a final `git status --short`.
 
-There is no package test suite or build script; CI's installer smoke tests and release packaging are the repository's executable checks.
+There is no package test suite or build script; the Python acceptance surface, CI installer smoke tests, and release packaging are the repository's executable checks.
 
 ## Local material
 

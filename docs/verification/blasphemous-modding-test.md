@@ -1,16 +1,23 @@
 # Blasphemous mod test acceptance record
 
-This record is the evidence surface for issue #19. It separates fixture evidence, shell-entrypoint evidence, and the real-profile **Manual verification** gate. A warning is an unresolved environment or user-operated step; it is not a gameplay pass.
+This record is the evidence surface for issue #19. It separates fixture evidence, native-Python entrypoint evidence, and the real-profile **Manual verification** gate. A warning is an unresolved environment or user-operated step; it is not a gameplay pass.
 
 ## Automated fixture gate
 
 Run from the repository root:
 
 ```text
-<python3> -m unittest discover -s tests -p test_blasphemous_modding_test.py
+<python3> tests/run_blasphemous_modding_test.py --require-clean
 ```
 
-The fixture suite exercises the CLI through temporary projects, packages, profiles, processes, logs, and session state. It does not modify a real game profile or claim gameplay verification.
+The Python runner exercises the CLI, script-local contract tests, help contracts,
+documentation smoke checks, temporary projects, packages, profiles, processes,
+logs, and session state. It does not modify a real game profile or claim
+gameplay verification. The broader maintainer gate is:
+
+```text
+<python3> skills/blasphemous-modding-helper/scripts/test_modding_api_acceptance.py --require-clean
+```
 
 | Acceptance area | Fixture evidence |
 | --- | --- |
@@ -26,35 +33,51 @@ The fixture suite exercises the CLI through temporary projects, packages, profil
 
 Completion criterion: the fixture command exits successfully, all rows above remain represented by passing tests, and skipped cases are reported with their environment reason.
 
-Observed on 2026-08-23: the process-scoped Windows PowerShell runner passed CLI help and 62 tests; 2 symlink-related cases were skipped by host privilege conditions.
+Observed on 2026-08-23: the process-scoped Windows Python runner passed CLI help and 62 tests; 2 symlink-related cases were skipped by host privilege conditions.
 
-Issue #49 validation on 2026-08-28: the native PowerShell runner passed CLI help and 91 tests; the same 2 symlink-related cases were skipped by host privilege conditions.
+Issue #49 validation on 2026-08-28: the native Python runner passed CLI help and 91 tests; the same 2 symlink-related cases were skipped by host privilege conditions.
+
+Issue #79/#80 validation on 2026-08-31: the native Python runner passed CLI
+help and 179 tests; 2 symlink-related cases were skipped by host privilege
+conditions. The CI contract runs this same Python surface on native Windows,
+Linux, and macOS.
 
 ## Agent-safe help gate
 
 The root help must expose the canonical sequence: normal `run`, current-log `logs`, tracked `stop`, newest-first `clean`, and read-only `status`. Each subcommand help is the option authority for that command. `stop` accepts only `SESSION_ID` and optional `--force`; it does not accept context, build, log, or cleanup options. Parser tests must preserve valid invocations and reject cross-command or misplaced options.
 
-## Shell entrypoint gate
+## Native Python entrypoint gate
 
-The two runners invoke the same Python CLI and fixture suite from their native shell. They perform no deployment and launch no game:
+The acceptance runner invokes the same Python CLI and fixture suite directly on
+each supported native host. The invoking shell is only a process host; no
+legacy Skill shell or JavaScript implementation is part of the contract. The
+runner performs no deployment and launches no game:
 
-PowerShell:
+Repository runner:
 
-```powershell
-powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File .\tests\run_blasphemous_modding_test.ps1 -Python "PATH\TO\python.exe"
+```text
+<python3> tests/run_blasphemous_modding_test.py --require-clean
 ```
 
-Native Bash:
+Maintainer acceptance runner:
 
-```bash
-PYTHON3=/path/to/python3 bash tests/run_blasphemous_modding_test.sh
+```text
+<python3> skills/blasphemous-modding-helper/scripts/test_modding_api_acceptance.py --require-clean
 ```
 
-Both runners require an explicit Python 3 executable through `-Python`, `PYTHON3`, or `BLASPHEMOUS_PYTHON`; they do not infer Python from `PATH`.
+Both runners accept an explicit Python 3 executable through `--python`; the
+default is the current interpreter. Skill runtime commands use the resolved
+`PYTHON3` context from [Python Runtime](../../skills/blasphemous-modding-helper/references/config/python-runtime.md)
+and do not silently install dependencies.
 
-The Bash runner rejects `MSYSTEM`, `CYGWIN`, WSL, and WSL interop environments before invoking the CLI. This keeps Git Bash and WSL from being reported as native Bash.
+The CLI rejects compatibility-layer indicators such as `MSYSTEM`, `CYGWIN`,
+WSL, Proton, and Wine before profile operations. This keeps a compatibility
+layer from being reported as a native host.
 
-Completion criterion: each available native shell prints its shell identity, passes CLI help, and passes the same fixture suite; unavailable shells produce a warning with the reason.
+Completion criterion: the same Python entry point prints its host identity,
+passes CLI help, and passes the same fixture suite on native Windows, Linux,
+and macOS. An unavailable CI host produces a warning with the reason; it is
+not substituted with a shell-wrapper result.
 
 ## Real-profile Manual verification gate
 
@@ -69,7 +92,7 @@ The agent does not run this gate automatically. Deployment changes an external p
 
 Invocation template:
 
-The agent MUST resolve a native Python 3 interpreter as `PYTHON3` before running these commands. The agent MUST run them from the caller's Mod repository and MUST set `SKILL_ROOT` in Bash or `$SkillRoot` in PowerShell to the installed directory containing the Skill's `SKILL.md` and `scripts/`, as defined by the [authoritative command context](../../skills/blasphemous-modding-helper/SKILL.md#skill-command-context).
+The agent MUST resolve a native Python 3 interpreter as `PYTHON3` before running these commands. The agent MUST run them from the caller's Mod repository and MUST set `SKILL_ROOT` in Bash or `$SkillRoot` in PowerShell to the installed directory containing the Skill's `SKILL.md` and `scripts/`, as defined by the [authoritative Invocation preflight](../../skills/blasphemous-modding-helper/references/config/invocation-preflight.md).
 
 PowerShell:
 
@@ -95,8 +118,8 @@ Completion criterion: the user has supplied the Manual verification and the agen
 
 ## Current environment warnings
 
-- **Native Bash unavailable:** the current Windows host exposes `C:\Windows\System32\bash.exe` as a WSL launcher; its invocation was denied and is not evidence for native Bash. Run the Bash runner on native Linux/macOS.
-- **PowerShell policy:** direct `-File` execution was blocked by the host policy; the recorded PowerShell run used process-scoped `-ExecutionPolicy Bypass` and did not change machine or user policy.
+- **Native Python matrix:** this local record was produced on Windows. Linux and macOS evidence is supplied by the CI matrix using the same Python entry point; a local Windows shell is not a substitute for either host.
+- **Python setup:** if interpreter or dependency validation fails, follow the first-time setup gate and retry only after the failure is classified as a Python-environment failure.
 - **Real profile gate deferred:** no external profile was deployed to or launched by this worktree. The user will perform the authorized Manual verification after the three worktrees are merged.
 - **Gameplay remains manual:** the CLI and fixture suite do not control game input or verify visual, input, combat, menu, save, or other gameplay behavior.
 - **Symlink privilege:** the existing suite may skip directory-symlink or hard-link cases when the host denies creation; the test output is the authoritative warning for that run.

@@ -18,6 +18,19 @@ SCRIPT_ROOT = Path(__file__).resolve().parent
 SKILL_ROOT = SCRIPT_ROOT.parent
 REPOSITORY_ROOT = SKILL_ROOT.parents[1]
 RESOLVER = SCRIPT_ROOT / "resolve_modding_api.py"
+LEGACY_SCRIPT_NAME = re.compile(r"\b[\w.-]+\.(?:js|ps1|sh)\b", re.IGNORECASE)
+PYTHON_ENTRY_POINTS = (
+    "blasphemous_modding_test.py",
+    "check_python_environment.py",
+    "check_preferences.py",
+    "clone_modding_api.py",
+    "decompile_source.py",
+    "manage_modding_api.py",
+    "resolve_modding_api.py",
+    "test_modding_api_acceptance.py",
+    "test_modding_api_live.py",
+    "test_referencing_modding_api.py",
+)
 
 
 class DocumentationTestFailure(RuntimeError):
@@ -39,6 +52,32 @@ def assert_contains(text: str, needle: str, label: str) -> None:
 def assert_not_contains(text: str, needle: str, label: str) -> None:
     if needle in text:
         raise DocumentationTestFailure(f"{label} must not contain: {needle}")
+
+
+def audit_skill_documentation() -> None:
+    """Reject documentation that still presents legacy script files as entry points."""
+
+    documents = sorted(SKILL_ROOT.rglob("*.md"))
+    contents = {path: read_file(path) for path in documents}
+    legacy_references = []
+    for path, document in contents.items():
+        for match in LEGACY_SCRIPT_NAME.finditer(document):
+            legacy_references.append(
+                f"{path.relative_to(SKILL_ROOT).as_posix()}: {match.group(0)}"
+            )
+    if legacy_references:
+        raise DocumentationTestFailure(
+            "Skill documentation contains legacy script references:\n"
+            + "\n".join(legacy_references)
+        )
+
+    corpus = "\n".join(contents.values())
+    missing = [entry for entry in PYTHON_ENTRY_POINTS if entry not in corpus]
+    if missing:
+        raise DocumentationTestFailure(
+            "Skill documentation does not expose Python entry points: "
+            + ", ".join(missing)
+        )
 
 
 def parse_preferences(path: Path) -> Dict[str, str]:
@@ -106,6 +145,7 @@ def resolve_release_documentation(metadata_file: Path) -> Dict[str, str]:
 
 
 def run_documentation_smoke() -> None:
+    audit_skill_documentation()
     documents = {
         "top-level Skill": read_file(SKILL_ROOT / "SKILL.md"),
         "Invocation preflight reference": read_file(

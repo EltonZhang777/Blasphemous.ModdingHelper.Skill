@@ -10,22 +10,25 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-latest, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
 
     steps:
     - name: Checkout Repository
       uses: actions/checkout@v4
 
-    - name: Run ModdingAPI acceptance gate on Linux
-      if: runner.os == 'Linux'
-      shell: bash
-      run: bash skills/blasphemous-modding-helper/scripts/test_modding_api_acceptance.sh --require-clean
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.9"
 
-    - name: Run ModdingAPI acceptance gate on Windows
-      if: runner.os == 'Windows'
-      shell: pwsh
-      run: ./skills/blasphemous-modding-helper/scripts/test_modding_api_acceptance.ps1 -RequireClean
+    - name: Set up Node.js installer boundary
+      uses: actions/setup-node@v4
+      with:
+        node-version: "18"
+
+    - name: Run native Python acceptance surface
+      run: python skills/blasphemous-modding-helper/scripts/test_modding_api_acceptance.py --python python --require-clean
 
   build:
     permissions:
@@ -36,6 +39,11 @@ jobs:
     steps:
     - name: Checkout Repository
       uses: actions/checkout@v4
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: "18"
 
     - name: Install jq
       run: sudo apt-get update && sudo apt-get install -y jq

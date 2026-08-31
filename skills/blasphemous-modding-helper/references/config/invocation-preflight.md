@@ -5,23 +5,22 @@ description: Shared command context, preferences gate, recovery, and completion 
 
 # Invocation preflight
 
-This reference is single source of truth for shared preflight contract of every `blasphemous-modding-helper` invocation. It owns command context, preference scope selection, first-time setup, path-failure recovery, tracked-session stop exception, and preflight completion. top-level [Skill](../../SKILL.md) remains sole cross-branch router. Specialized references MUST link here and MUST add only their own requirements and evidence.
+This reference is the single source of truth for the shared preflight contract of every `blasphemous-modding-helper` invocation. It owns command context, preference scope selection, first-time setup, path-failure recovery, the tracked-session stop exception, and preflight completion. The top-level [Skill](../../SKILL.md) remains the sole cross-branch router. Specialized references MUST link here and MUST add only their own requirements and evidence.
 
 ## Command context
 
-Every executable example in this Skill MUST use these context:
+Every executable example in this Skill MUST use this context:
 
-1. Agent MUST set `SKILL_ROOT` in Bash or `$SkillRoot` in PowerShell to absolute installed directory containing this `SKILL.md` and its `scripts/` directory. value identifies installed Skill and MUST NOT be inferred from, or replaced by, checkout-relative path.
+1. Agent MUST set `SKILL_ROOT` in Bash or `$SkillRoot` in PowerShell to the absolute installed directory containing this `SKILL.md` and its `scripts/` directory. The value identifies the installed Skill and MUST NOT be inferred from, or replaced by, a checkout-relative path.
 2. Agent MUST keep caller's Mod repository as current working directory when invoking Skill scripts. Project-relative paths, `.csproj` discovery, and project-scoped preferences MUST resolve from that caller directory.
-3. Agent MUST invoke each script through explicit Skill-root path and interpreter named by its reference:
-   - Bash entry point: `bash "$SKILL_ROOT/scripts/<script>.sh" [arguments]`.
-   - PowerShell entry point: `& (Join-Path $SkillRoot 'scripts\<script>.ps1') [arguments]`.
-   - Python entry point: `"$PYTHON3" "$SKILL_ROOT/scripts/<script>.py" [arguments]`, or equivalent PowerShell invocation, after `PYTHON3` has been resolved. Runtime selection and failure classification are defined in [Python Runtime](python-runtime.md).
-   - Node.js entry point: `node "$SKILL_ROOT/scripts/<script>.js" [arguments]` when reference names Node.js entry point.
-4. Agent MUST resolve and set root variable and any required interpreter before copying or executing command. selected branch MUST supply any additional shell compatibility requirement; command context does not authorize compatibility shell where branch requires native shell.
+3. Agent MUST invoke Skill runtime and test scripts through their explicit Python entry point:
+   - Bash host: `"$PYTHON3" "$SKILL_ROOT/scripts/<script>.py" [arguments]`.
+   - PowerShell host: `& $PYTHON3 (Join-Path $SkillRoot 'scripts\<script>.py') [arguments]`.
+   The Python interpreter MUST be resolved first. Runtime selection and failure classification are defined in [Python Runtime](python-runtime.md). Legacy JavaScript, PowerShell, and Bash script files are not Skill invocation paths.
+4. Agent MUST resolve and set the root variable and Python interpreter before copying or executing a command. The selected branch MUST supply any additional native-OS or compatibility-layer requirement; command context does not authorize a compatibility environment.
 5. Agent MUST quote paths and arguments whenever selected shell requires quoting, including paths containing spaces.
 
-Command context is ready when installed Skill root, caller Mod repository, required interpreter, and selected shell are known before command is executed.
+Command context is ready when installed Skill root, caller Mod repository, resolved Python interpreter, and supported native host are known before a command is executed.
 
 ## Python runtime gate
 
@@ -65,7 +64,7 @@ After this contract completes, agent MUST return to top-level Skill's workflow. 
 
 Shared preflight is complete only when all applicable conditions below hold:
 
-1. Command context is ready, including installed Skill root, caller Mod repository, required interpreter, and selected shell.
+1. Command context is ready, including installed Skill root, caller Mod repository, resolved Python interpreter, and supported native host.
 2. Preference check has selected and applied project or user file, or First-Time Setup has reported success.
 3. Selected branch has received active preferences file and can state its additional required fields before mutating files, launching process, or relying on source or log path.
 4. For tracked-session stop exception, recorded process is stopped or confirmed gone and no unrelated process was touched.

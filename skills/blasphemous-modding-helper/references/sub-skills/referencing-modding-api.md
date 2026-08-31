@@ -185,7 +185,7 @@ cannot refresh reference. If online `check` loses network access, it may fall ba
 that same matching lock validation; missing or mismatching offline state is
 error and MUST NOT be presented as verified version.
 
-Exit codes are stable across Bash and PowerShell: `0` means success, `2`
+Exit codes are stable across the Python entry points: `0` means success, `2`
 means usage or configuration failure, and `1` means runtime, Git, network,
 offline, or reference-state failure. Every failure prints terminal text
 `[ERROR REPORT]` containing `operation`, `target_path`, `selector`,
@@ -195,14 +195,15 @@ Agent MUST mark lifecycle verification complete when explicitly requested operat
 
 ## Documentation smoke check
 
-Agent MUST run deterministic documentation smoke check from caller's Mod repository using explicit Skill-root path:
+Agent MUST run the deterministic Python documentation smoke check from the
+caller's Mod repository using the explicit Skill-root path:
 
 ```bash
-bash "$SKILL_ROOT/scripts/test_referencing_modding_api.sh"
+"$PYTHON3" "$SKILL_ROOT/scripts/test_referencing_modding_api.py"
 ```
 
 ```powershell
-& (Join-Path $SkillRoot 'scripts\test_referencing_modding_api.ps1')
+& $PYTHON3 (Join-Path $SkillRoot 'scripts\test_referencing_modding_api.py')
 ```
 
 It verifies top-level pointer, stable and archived route tables, the
@@ -212,19 +213,20 @@ remote route.
 
 ## Cross-platform acceptance gate
 
-Agent MUST run deterministic acceptance gate before publishing changes to the
-reference workflow:
+Agent MUST run the deterministic Python acceptance gate before publishing
+changes to the reference workflow:
 
 ```bash
-bash "$SKILL_ROOT/scripts/test_modding_api_acceptance.sh"
+"$PYTHON3" "$SKILL_ROOT/scripts/test_modding_api_acceptance.py"
 ```
 
 ```powershell
-& (Join-Path $SkillRoot 'scripts\test_modding_api_acceptance.ps1')
+& $PYTHON3 (Join-Path $SkillRoot 'scripts\test_modding_api_acceptance.py')
 ```
 
-Gate runs resolver, clone, lifecycle, and documentation suites through
-both Bash and PowerShell. Their fixture scenarios cover annotated tags,
+Gate runs resolver, clone, lifecycle, and documentation suites through the
+same Python surface on the current native host. Its fixture scenarios cover
+annotated tags,
 branches, exact commits, clean updates, dirty worktrees, wrong origins,
 missing references, network failure, offline locks, output fields, and exit
 codes. It also checks resolver parity, installer dry-runs, repository-owned
@@ -232,35 +234,36 @@ Markdown links, reports ignored local Markdown artifacts separately, and runs
 `git diff --check`. It never contacts GitHub and never uses user's reference
 checkout.
 
-Final verification invocation may require clean worktree:
+Final verification invocation may require a clean worktree:
 
 ```bash
-bash "$SKILL_ROOT/scripts/test_modding_api_acceptance.sh" --require-clean
+"$PYTHON3" "$SKILL_ROOT/scripts/test_modding_api_acceptance.py" --require-clean
 ```
 
 ```powershell
-& (Join-Path $SkillRoot 'scripts\test_modding_api_acceptance.ps1') -RequireClean
+& $PYTHON3 (Join-Path $SkillRoot 'scripts\test_modding_api_acceptance.py') --require-clean
 ```
 
-Live network check is separate and manual. It resolves actual latest
-non-draft, non-prerelease Release through both script surfaces, compares the
+Live network check is separate and manual. It resolves the actual latest
+non-draft, non-prerelease Release through the Python entry point, compares the
 resolved tag and commit, and verifies tag-specific documentation and source
 URLs:
 
 ```bash
-bash "$SKILL_ROOT/scripts/test_modding_api_live.sh"
+"$PYTHON3" "$SKILL_ROOT/scripts/test_modding_api_live.py"
 ```
 
 ```powershell
-& (Join-Path $SkillRoot 'scripts\test_modding_api_live.ps1')
+& $PYTHON3 (Join-Path $SkillRoot 'scripts\test_modding_api_live.py')
 ```
 
 Agent MAY run live check only when network access is available. failure MUST NOT be
 treated as reason to substitute `main`; agent MUST preserve resolver error report and
 retry or use explicit selector.
 
-Acceptance verification is complete when documentation smoke check and the
-cross-platform acceptance gate both exit successfully. Ignored local Markdown
-artifacts MAY produce separate warning, but MUST NOT make repository-owned
-documentation validation fail; live network check is optional and MUST be
-reported as not run when it was not requested or unavailable.
+Acceptance verification is complete when the Python documentation smoke check
+and acceptance gate exit successfully on each native Windows/Linux/macOS CI
+matrix job. Ignored local Markdown artifacts MAY produce a separate warning,
+but MUST NOT make repository-owned documentation validation fail; live network
+check is optional and MUST be reported as not run when it was not requested or
+unavailable.

@@ -7,41 +7,41 @@ Python CLI automates filesystem, build, process, and log operations. It does not
 ## Entry conditions
 
 1. Agent MUST complete [Invocation preflight](../config/invocation-preflight.md) before using the workflow. This sub-skill adds one profile-specific requirement: the active `preferences.md` MUST define `modding_profile_path`; the agent MUST use the [preferences schema](../config/preferences-schema.md) and [first-time setup](../config/first-time-setup.md) when that field is missing or invalid.
-2. Agent MUST resolve native Python 3 interpreter before invoking CLI. `PYTHON3` below means that resolved executable; it is not arbitrary shell command. On Windows, agent MUST use configured Python installation rather than assuming `python` or `py` is on `PATH`.
-3. Agent MUST use native Windows PowerShell, or native Linux/macOS Bash. CLI MUST reject Git Bash, Cygwin, WSL, Proton, Wine, and unsupported operating systems. Paths MUST remain quoted when they contain spaces.
+2. Agent MUST resolve a native Python 3.9+ interpreter before invoking the CLI. `PYTHON3` below means that resolved executable; it is not an arbitrary shell command. On Windows, agent MUST use the configured Python installation rather than assuming `python` or `py` is on `PATH`.
+3. The Python CLI is the only Skill entry point and MUST run on a native Windows, Linux, or macOS host. Bash or PowerShell may host the Python process, but they are not separate implementations. The CLI MUST reject Git Bash, Cygwin, WSL, Proton, Wine, and unsupported operating systems. Paths MUST remain quoted when they contain spaces.
 4. Agent MUST confirm that selected profile is disposable or mirror game installation. CLI operates on that profile's `Modding` root and launches its local game executable.
 
-Done when: agent can name active preferences file, project, profile, Python interpreter, and native shell before any profile mutation is attempted.
+Done when: agent can name active preferences file, project, profile, Python interpreter, and supported native host before any profile mutation is attempted.
 
 ## CLI entry point
 
 Before executing command in this reference, agent MUST apply command-context contract in [Invocation preflight](../config/invocation-preflight.md). CLI MUST run from caller's Mod repository; caller does not need repository checkout containing `skills/blasphemous-modding-helper`.
 
-CLI entry point is:
+The CLI entry point is the Python file below. `$PYTHON3` is the interpreter resolved by preflight:
 
 ```text
-$SKILL_ROOT/scripts/blasphemous_modding_test.py
+"$PYTHON3" "$SKILL_ROOT/scripts/blasphemous_modding_test.py"
 ```
 
-PowerShell invocation shape:
+PowerShell host invocation shape:
 
 ```powershell
 & $PYTHON3 (Join-Path $SkillRoot 'scripts\blasphemous_modding_test.py') <command> [options]
 ```
 
-Native Bash invocation shape:
+Bash host invocation shape:
 
 ```bash
 "$PYTHON3" "$SKILL_ROOT/scripts/blasphemous_modding_test.py" <command> [options]
 ```
 
-Argument shapes below abbreviate shell-specific invocation above as `<TEST_CLI>`. Agent MUST expand that placeholder with PowerShell or Bash form; it MUST NOT replace it with checkout-relative script path.
+Argument shapes below abbreviate the resolved Python invocation above as `<TEST_CLI>`. Agent MUST expand that placeholder with the Python executable and installed Skill-root path; it MUST NOT replace it with a legacy shell/JavaScript implementation or a checkout-relative script path.
 
 CLI has five commands: `run`, `stop`, `clean`, `logs`, and read-only `status`. session identifier printed by `run` is 32-character lowercase hexadecimal value and is required by `stop`, `clean`, and `logs`.
 
 ## Encoding and path output
 
-The CLI emits user-facing stdout and stderr as UTF-8, including profile, project, artifact, and log paths. Keep paths as quoted arguments in native PowerShell and Bash invocations; spaces are part of the path, not argument separators. Text returned by build and process-management subprocesses is decoded as UTF-8 with replacement for undecodable bytes, so a decoding failure remains a readable build, launch, or cleanup error. Existing log files use the same explicit replacement policy only for log content; it does not alter recorded or displayed path values.
+The CLI emits user-facing stdout and stderr as UTF-8, including profile, project, artifact, and log paths. Keep paths as quoted arguments when hosting the Python process from PowerShell or Bash; spaces are part of the path, not argument separators. Text returned by build and process-management subprocesses is decoded as UTF-8 with replacement for undecodable bytes, so a decoding failure remains a readable build, launch, or cleanup error. Existing log files use the same explicit replacement policy only for log content; it does not alter recorded or displayed path values.
 
 ### Agent-safe help and canonical flow
 
@@ -262,7 +262,7 @@ CLI prints `Error [category]` and returns stable categories. Route recovery by e
 | Code | Category | Typical cause | Recovery |
 | ---: | --- | --- | --- |
 | `0` | success | Operation completed. | Continue to the next workflow step. |
-| `2` | usage/configuration | Invalid arguments, ambiguous project, unsupported shell/OS, or compatibility layer. | Correct the invocation and use native PowerShell or native Bash. |
+| `2` | usage/configuration | Invalid arguments, ambiguous project, unsupported host/OS, or compatibility layer. | Correct the invocation and use the resolved Python entry point on a native Windows, Linux, or macOS host. |
 | `10` | profile/preferences | Missing/invalid preferences, missing profile directories, missing BepInEx core, or missing/invalid launcher preflight. | Complete first-time setup, verify `modding_profile_path`, `Modding`, `BepInEx/core/BepInEx.dll`, and launcher; use explicit path overrides only for the intended invocation. |
 | `20` | build | `dotnet build` could not start, parse the project, or returned a failure. | Read the build output, fix the project/dependencies, and rerun. No old package is silently substituted. |
 | `30` | package artifact | Missing/empty package, unsafe directory/archive entry, missing `<TargetName>`, or explicit artifact is not a directory/zip. | Inspect `publish/<TargetName>`, pass the exact package directory with `--artifact`, or explicitly use a validated recovery zip. |
@@ -277,7 +277,7 @@ Deployment failures are transactional: partial copy is rolled back automatically
 
 Agent MUST use this checklist for complete implementation or Manual verification:
 
-- [ ] Agent can invoke `run`, `stop`, `clean`, `logs`, and `status` with documented argument contract on native Windows PowerShell and native Linux/macOS Bash.
+- [ ] Agent can invoke `run`, `stop`, `clean`, `logs`, and `status` with the documented argument contract through the same Python entry point on native Windows, Linux, and macOS.
 - [ ] Project selection is explicit when ambiguous; default builds use Debug; Release requires explicit option.
 - [ ] build package resolves to `publish/<TargetName>` and every file below that package root is planned and deployed with its relative path preserved.
 - [ ] explicit directory artifact works without build; explicit zip is temporary, path-validated, and never selected implicitly.

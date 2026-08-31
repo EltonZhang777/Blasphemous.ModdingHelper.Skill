@@ -18,8 +18,8 @@ The workflow stores only temporary session state for process ownership, deployme
 
 1. As a Blasphemous mod developer, I want one named testing sub-skill, so that I can start the complete local test workflow consistently.
 2. As an AI agent, I want a documented CLI contract, so that I can use the same operations on every supported platform.
-3. As a Windows user, I want the workflow to run from PowerShell, so that I can test a mod without installing a second automation stack.
-4. As a Linux or macOS user, I want the workflow to run from Bash, so that I can use the native game profile and launcher behavior.
+3. As a Windows user, I want the workflow to run through the supported Python runtime, so that I can test a mod without installing a second automation stack.
+4. As a Linux or macOS user, I want the same Python workflow to run on the native host, so that I can use the native game profile and launcher behavior.
 5. As a user on an unsupported shell or compatibility layer, I want an explicit unsupported-environment result, so that the workflow does not pretend to provide safe automation.
 6. As a mod developer, I want the CLI to use the only project file in the current directory by default, so that common projects need no repeated path input.
 7. As a mod developer, I want multiple project files to require an explicit project selection, so that the CLI never builds an arbitrary project.
@@ -88,7 +88,7 @@ The workflow stores only temporary session state for process ownership, deployme
 
 ## Implementation Decisions
 
-- The feature is a Python standard-library CLI using `argparse`, with equivalent behavior on Windows PowerShell and native Linux/macOS Bash.
+- The feature is a Python standard-library CLI using `argparse`, with one implementation boundary on native Windows, Linux, and macOS. PowerShell or Bash may host the process but are not separate Skill entry points.
 - The CLI exposes `run`, `stop`, `clean`, `logs`, and read-only `status` operations. It uses project preferences before user preferences, and explicit arguments override saved values.
 - The default build configuration is Debug. Release is explicit. A project is inferred only when the current directory contains exactly one project file; ambiguity requires explicit selection.
 - Build-root resolution inspects ancestor `.sln` and `.slnx` files, matches their project membership to the requested `.csproj`, selects one matching solution, and fails explicitly when matching membership is ambiguous. With no match, the project directory is the visible fallback; the artifact plan reports the selected root and trailing-separator `SolutionDir`.
@@ -120,7 +120,7 @@ The workflow stores only temporary session state for process ownership, deployme
 - Fixture tests cover launched, ready, mod-loaded, timeout, missing BepInEx log, missing Unity log, and preferences update handoff behavior.
 - Fixture tests cover Unicode and space-containing paths through dry-run, build errors, run, logs, status, stop, and clean, including undecodable log bytes.
 - Parser-level tests cover valid invocations, reject misplaced cross-command options, and assert root/subcommand help for the canonical workflow and limited stop contract.
-- The same user-visible contract is checked on PowerShell and native Bash environments. Platform-specific launcher resolution is tested with profile fixtures rather than Steam.
+- The same user-visible contract is checked through the Python acceptance surface on native Windows, Linux, and macOS environments. Platform-specific launcher resolution is tested with profile fixtures rather than Steam.
 - Manual smoke testing uses a real non-Steam or mirror modding profile and verifies build, deployment, process launch, BepInEx readiness, target-mod loading, player actions, log analysis, stop, and safe clean.
 - Existing repository Markdown-link checks, `git diff --check`, and final worktree checks remain required. No general package test suite is assumed.
 
