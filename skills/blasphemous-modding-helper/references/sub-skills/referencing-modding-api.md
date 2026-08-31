@@ -95,11 +95,11 @@ Official upstream is
 reference before opening documentation or source:
 
 ```bash
-bash "$SKILL_ROOT/scripts/resolve_modding_api.sh" --selector latest
+"$PYTHON3" "$SKILL_ROOT/scripts/resolve_modding_api.py" --selector latest
 ```
 
 ```powershell
-& (Join-Path $SkillRoot 'scripts\resolve_modding_api.ps1') -Selector latest
+& $PYTHON3 (Join-Path $SkillRoot 'scripts\resolve_modding_api.py') --selector latest
 ```
 
 Agent MUST use resolver's `MODDING_API_DOCS_URL` and `MODDING_API_SOURCE_URL` outputs
@@ -113,8 +113,8 @@ one of:
 - `branch:REF` for explicit branch, including `branch:main` when requested;
 - `commit:SHA` for exact 40-character commit.
 
-Both resolver scripts MUST emit same `MODDING_API_*` fields. nonzero exit
-MUST print terminal `[ERROR REPORT]` with cause and next step. Agent MUST preserve that
+The Python resolver MUST emit the established `MODDING_API_*` fields. nonzero
+exit MUST print terminal `[ERROR REPORT]` with cause and next step. Agent MUST preserve that
 report, MUST NOT invent URL, and MUST ask for corrected selector, local checkout,
 or retry when Release lookup fails.
 
@@ -126,8 +126,7 @@ checkout pinned to stored selector. They also write sibling lock state
 `<reference-path>.lock`; lock is outside checkout and records the
 selector, resolved tag, resolved commit, check time, and supported repository:
 
-- Bash: `bash "$SKILL_ROOT/scripts/clone_modding_api.sh"`
-- PowerShell: `& (Join-Path $SkillRoot 'scripts\clone_modding_api.ps1')`
+- Python: `"$PYTHON3" "$SKILL_ROOT/scripts/clone_modding_api.py"`
 
 Tags and commits are detached; explicit branches track their corresponding
 `origin/<branch>`. Existing targets are not replaced.
@@ -136,23 +135,22 @@ Tags and commits are detached; explicit branches track their corresponding
 
 Agent MUST use lifecycle manager only when user explicitly asks to check or
 update local checkout. Ordinary ModdingAPI questions MUST NOT mutate the
-checkout. shared Skill-root `clone_modding_api.js` and
-`manage_modding_api.js` implementations own clone and lifecycle
-behavior; Bash and PowerShell expose thin equivalent entry points. Both
-script surfaces expose same operation model:
+checkout. Python `clone_modding_api.py` owns fresh-clone behavior and Python
+`manage_modding_api.py` owns check/update behavior. Its compatibility wrappers
+expose the existing operation model:
 
 ```bash
-bash "$SKILL_ROOT/scripts/manage_modding_api.sh" --operation check
-bash "$SKILL_ROOT/scripts/manage_modding_api.sh" --operation update
-bash "$SKILL_ROOT/scripts/manage_modding_api.sh" --operation update --dry-run
-bash "$SKILL_ROOT/scripts/manage_modding_api.sh" --operation check --offline
+"$PYTHON3" "$SKILL_ROOT/scripts/manage_modding_api.py" --operation check
+"$PYTHON3" "$SKILL_ROOT/scripts/manage_modding_api.py" --operation update
+"$PYTHON3" "$SKILL_ROOT/scripts/manage_modding_api.py" --operation update --dry-run
+"$PYTHON3" "$SKILL_ROOT/scripts/manage_modding_api.py" --operation check --offline
 ```
 
 ```powershell
-& (Join-Path $SkillRoot 'scripts\manage_modding_api.ps1') -Operation check
-& (Join-Path $SkillRoot 'scripts\manage_modding_api.ps1') -Operation update
-& (Join-Path $SkillRoot 'scripts\manage_modding_api.ps1') -Operation update -DryRun
-& (Join-Path $SkillRoot 'scripts\manage_modding_api.ps1') -Operation check -Offline
+& $PYTHON3 (Join-Path $SkillRoot 'scripts\manage_modding_api.py') -Operation check
+& $PYTHON3 (Join-Path $SkillRoot 'scripts\manage_modding_api.py') -Operation update
+& $PYTHON3 (Join-Path $SkillRoot 'scripts\manage_modding_api.py') -Operation update -DryRun
+& $PYTHON3 (Join-Path $SkillRoot 'scripts\manage_modding_api.py') -Operation check -Offline
 ```
 
 Manager reads `modding_api_reference_path` and

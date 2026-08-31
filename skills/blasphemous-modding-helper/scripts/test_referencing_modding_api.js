@@ -111,29 +111,18 @@ function writeFixture(filePath, contents) {
 }
 
 function resolveReleaseDocumentation(metadataFile) {
-  const resolverName =
-    process.platform === "win32"
-      ? "resolve_modding_api.ps1"
-      : "resolve_modding_api.sh";
-  const resolverPath = path.join(__dirname, resolverName);
+  const resolverPath = path.join(__dirname, "resolve_modding_api.py");
   const command =
-    process.platform === "win32"
-      ? process.env.MODDING_API_POWERSHELL || "powershell.exe"
-      : "bash";
-  const args =
-    process.platform === "win32"
-      ? [
-          "-NoProfile",
-          "-ExecutionPolicy",
-          "Bypass",
-          "-File",
-          resolverPath,
-          "-Selector",
-          "latest",
-          "-MetadataFile",
-          metadataFile,
-        ]
-      : [resolverPath, "--selector", "latest", "--metadata-file", metadataFile];
+    process.env.PYTHON3 ||
+    process.env.BLASPHEMOUS_PYTHON ||
+    (process.platform === "win32" ? "python" : "python3");
+  const args = [
+    resolverPath,
+    "--selector",
+    "latest",
+    "--metadata-file",
+    metadataFile,
+  ];
   const result = childProcess.spawnSync(command, args, {
     encoding: "utf8",
     timeout: 10000,

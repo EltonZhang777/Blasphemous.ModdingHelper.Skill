@@ -183,11 +183,11 @@ additional value.
 Agent MUST run matching fresh-clone command from caller's Mod repository using explicit Skill-root path:
 
 ```bash
-bash "$SKILL_ROOT/scripts/clone_modding_api.sh" --scope user --selector latest
+"$PYTHON3" "$SKILL_ROOT/scripts/clone_modding_api.py" --scope user --selector latest
 ```
 
 ```powershell
-& (Join-Path $SkillRoot 'scripts\clone_modding_api.ps1') -Scope user -Selector latest
+& $PYTHON3 (Join-Path $SkillRoot 'scripts\clone_modding_api.py') -Scope user -Selector latest
 ```
 
 Agent MUST use `--scope project` / `-Scope project` when Q1 selected
