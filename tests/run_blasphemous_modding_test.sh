@@ -7,7 +7,7 @@ if [[ -n "${MSYSTEM:-}" || -n "${CYGWIN:-}" || -n "${WSL_DISTRO_NAME:-}" || -n "
 fi
 
 repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
-cli="$repo_root/skills/blasphemous-modding-helper/scripts/blasphemous_modding_test.py"
+runner="$repo_root/tests/run_blasphemous_modding_test.py"
 python3_bin="${PYTHON3:-${BLASPHEMOUS_PYTHON:-}}"
 
 if [[ -z "$python3_bin" ]]; then
@@ -20,9 +20,4 @@ if ! "$python3_bin" --version >/dev/null 2>&1; then
     exit 2
 fi
 
-printf 'Shell: native Bash\nPython: %s\n' "$python3_bin"
-"$python3_bin" "$cli" --help
-for command in run stop clean logs status; do
-    "$python3_bin" "$cli" "$command" --help
-done
-(cd "$repo_root" && "$python3_bin" -m unittest discover -s tests -p test_blasphemous_modding_test.py)
+exec "$python3_bin" "$runner" --python "$python3_bin" "$@"
