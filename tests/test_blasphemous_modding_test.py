@@ -360,6 +360,89 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
             msg=f"stdout={result.stdout}\nstderr={result.stderr}",
         )
 
+    def test_supported_platforms_use_explicit_adapters(self):
+        module = self.load_cli_module()
+
+        expected = {
+            "Windows": (module.WindowsPlatformAdapter, ("output_log.txt",)),
+            "Linux": (module.LinuxPlatformAdapter, ("Player.log", "output_log.txt")),
+            "macOS": (module.MacOSPlatformAdapter, ("Player.log", "output_log.txt")),
+        }
+        for environment, (adapter_type, log_names) in expected.items():
+            with self.subTest(environment=environment):
+                adapter = module.platform_adapter_for(environment)
+                self.assertIsInstance(adapter, adapter_type)
+                self.assertEqual(adapter.unity_log_filenames(), log_names)
+
+    def test_unavailable_platform_is_a_usage_failure(self):
+        module = self.load_cli_module()
+
+        with self.assertRaises(module.CliError) as failure:
+            module.platform_adapter_for("Plan 9")
+
+        self.assertEqual(failure.exception.code, module.EXIT_USAGE)
+        self.assertEqual(failure.exception.category, "usage/configuration")
+        self.assertIn("unsupported", str(failure.exception).lower())
+
+    def test_cli_reports_unavailable_host_platform_before_profile_access(self):
+        module = self.load_cli_module()
+
+        with mock.patch.object(module.platform, "system", return_value="Plan 9"):
+            result = self.run_module_cli(module, "status")
+
+        self.assertEqual(result.returncode, module.EXIT_USAGE)
+        self.assertIn("unsupported operating system", result.stderr.lower())
+
+    def test_linux_adapter_uses_ps_when_procfs_is_unavailable(self):
+        module = self.load_cli_module()
+        command_results = iter(
+            (
+                module.shared_runtime.CommandResult(
+                    ("ps", "-p", "123", "-o", "lstart="),
+                    0,
+                    stdout="Mon Jan 1 00:00:00 2024\n",
+                ),
+                module.shared_runtime.CommandResult(
+                    ("ps", "-p", "123", "-o", "command="),
+                    0,
+                    stdout="/profile/Blasphemous\n",
+                ),
+            )
+        )
+        runner = mock.Mock(side_effect=lambda command: next(command_results))
+        adapter = module.LinuxPlatformAdapter(command_runner=runner)
+
+        with mock.patch.object(module.Path, "is_dir", return_value=False):
+            identity = adapter.identify(123, strict=True)
+
+        self.assertIsNotNone(identity)
+        self.assertEqual(identity.pid, 123)
+        self.assertEqual(identity.start_token, "Mon Jan 1 00:00:00 2024")
+        self.assertTrue(str(identity.executable).endswith("Blasphemous"))
+        self.assertEqual(runner.call_args_list[0].args[0][0], "ps")
+        self.assertEqual(runner.call_args_list[1].args[0][0], "ps")
+
+    def test_build_uses_shared_runtime_command_boundary(self):
+        module = self.load_cli_module()
+        project = self.create_project()
+        result = module.shared_runtime.CommandResult(
+            ("dotnet", "build"),
+            0,
+        )
+
+        with mock.patch.object(
+            module.shared_runtime,
+            "run_command",
+            return_value=result,
+        ) as run_command:
+            module.build_project(project, "Debug", self.root)
+
+        self.assertEqual(
+            tuple(run_command.call_args.args[0]),
+            ("dotnet", "build", str(project), "--configuration", "Debug"),
+        )
+        self.assertEqual(run_command.call_args.kwargs["cwd"], self.root)
+
     def test_help_exposes_run_status_and_dry_run(self):
         result = self.run_cli("--help")
 
@@ -413,7 +496,7 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
         )
 
         with mock.patch.object(
-            module.subprocess,
+            module.shared_runtime.subprocess,
             "run",
             return_value=build_result,
         ) as run:
@@ -1750,7 +1833,7 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
                     side_effect=lambda pid, strict=False: next(observed_identities),
                 ):
                     with mock.patch.object(
-                        module.subprocess,
+                        module.shared_runtime.subprocess,
                         "run",
                         return_value=SimpleNamespace(
                             returncode=1281,
@@ -1761,14 +1844,15 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
                         result = session.stop(deployment.session_id)
 
         self.assertEqual(result.state, "exited")
-        taskkill.assert_called_once_with(
+        taskkill.assert_called_once()
+        self.assertEqual(
+            taskkill.call_args.args[0],
             ["taskkill", "/PID", str(identity.pid), "/T"],
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            check=False,
         )
+        self.assertFalse(taskkill.call_args.kwargs["shell"])
+        self.assertTrue(taskkill.call_args.kwargs["capture_output"])
+        self.assertEqual(taskkill.call_args.kwargs["encoding"], "utf-8")
+        self.assertEqual(taskkill.call_args.kwargs["errors"], "replace")
         payload = json.loads(deployment.state_path.read_text(encoding="utf-8"))
         self.assertEqual(payload["process"]["state"], "exited")
         cleaned = session.clean(deployment.session_id)
@@ -1798,7 +1882,7 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
                     side_effect=lambda pid, strict=False: next(observed_identities),
                 ):
                     with mock.patch.object(
-                        module.subprocess,
+                        module.shared_runtime.subprocess,
                         "run",
                         return_value=SimpleNamespace(
                             returncode=1281,

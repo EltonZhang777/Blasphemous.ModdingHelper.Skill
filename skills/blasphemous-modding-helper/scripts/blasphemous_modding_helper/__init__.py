@@ -21,7 +21,17 @@ from .runtime import (
     require_success,
     resolve_interpreter,
     run_command,
+    start_process,
     validate_dependencies,
+)
+from .platform_adapters import (
+    MacOSPlatformAdapter,
+    LinuxPlatformAdapter,
+    PlatformAdapter,
+    PlatformUnavailableError,
+    ProcessIdentity,
+    WindowsPlatformAdapter,
+    platform_adapter_for,
 )
 
 __all__ = [
@@ -45,5 +55,13 @@ __all__ = [
     "require_success",
     "resolve_interpreter",
     "run_command",
+    "start_process",
     "validate_dependencies",
+    "MacOSPlatformAdapter",
+    "LinuxPlatformAdapter",
+    "PlatformAdapter",
+    "PlatformUnavailableError",
+    "ProcessIdentity",
+    "WindowsPlatformAdapter",
+    "platform_adapter_for",
 ]
