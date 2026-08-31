@@ -10,6 +10,7 @@ Use the narrowest authoritative file for each change:
 
 - `skills/blasphemous-modding-helper/SKILL.md` defines the installed skill's behavior, workflow, frontmatter, and required preferences gate.
 - `skills/blasphemous-modding-helper/references/config/` defines preference setup and schema; `references/sub-skills/` defines source and log analysis branches.
+- `skills/blasphemous-modding-helper/scripts/blasphemous_modding_helper/preferences.py` owns Python preference scope and parsing; `decompiler.py` owns the cross-platform decompilation workflow.
 - `skills/blasphemous-modding-helper/references/source_code_navigation/MAIN.md` is the navigation index. Route to one topical document (`core`, `player`, `enemy`, `bosses`, `ui`, `items`, `level`, `tools`, or `localization`) before searching its details.
 - `bin/install.js` owns installer behavior, agent detection, provider IDs, and CLI flags. `install.sh` and `install.ps1` are thin entry shims and should remain behaviorally aligned with it.
 - `ci/version.yml` is the version source. `ci/UpdateVersionNumber.py` synchronizes the version fields in `package.json`, `.claude-plugin/plugin.json`, `gemini-extension.json`, and `skills-lock.json`.
@@ -43,7 +44,7 @@ Use the narrowest authoritative file for each change:
   ```
 
   Dry-run keeps checks from writing to the user's home directory or invoking an installation. `--uninstall` and real installation runs are user-authorized operations.
-- `decompile_source.ps1` and `decompile_source.sh` are setup operations with side effects: they remove `Assembly-CSharp.dll` and `Assembly-CSharp-firstpass.dll` from the configured Steam installation to trigger file validation, then decompile them. Resolve and confirm paths before invoking them; they also require elevated privileges, Steam, a .NET SDK, and `ilspycmd`.
+- `decompile_source.py` is a setup operation with side effects: it removes `Assembly-CSharp.dll` and `Assembly-CSharp-firstpass.dll` from the configured Steam installation to trigger file validation, then decompiles them. Resolve and confirm paths before invoking it; it checks actual access, does not auto-elevate, and requires Steam, a .NET SDK, and `ilspycmd`.
 - Failure propagation regression: run `node tests/test_installer.js`. This test intentionally executes a temporary fake provider without `--dry-run` to exercise command failure handling; it does not access real agent directories or install anything.
 - Keep the Windows and Unix decompiler flows conceptually equivalent: validate the game, restore the DLLs through Steam, decompile both assemblies, create `BlasphemousSourceCode.sln` when projects are found, and report the output path for `preferences.md`.
 
@@ -52,6 +53,7 @@ Use the narrowest authoritative file for each change:
 Run only the checks relevant to the changed area:
 
 - Installer or JavaScript: `node --check bin/install.js`, both installer dry-runs above, and `node bin/install.js --help`.
+- Python preference/decompiler workflows: use resolved Python 3.9+ interpreter for `-m unittest discover -s tests` and `-m py_compile` on changed entry points.
 - Version or manifest: run `python ci/UpdateVersionNumber.py --dry-run`, parse every changed JSON manifest, and confirm all version fields agree with `ci/version.yml`. Use the available Python 3 interpreter on the host.
 - Skill or Markdown references: inspect every changed relative link and confirm paths/case match the repository. For source navigation, check `MAIN.md` routing and keep class-to-document mappings in one topical file.
 - Any change: `git diff --check` and a final `git status --short`.

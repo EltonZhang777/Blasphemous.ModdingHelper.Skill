@@ -200,8 +200,7 @@ function run() {
     "absolute installed directory",
     "current working directory",
     "Project scope MUST take precedence over user scope",
-    "check_preferences.sh",
-    "check_preferences.ps1",
+    "check_preferences.py",
     "/blasphemous-modding-test stop SESSION_ID",
   ]) {
     assertContains(
@@ -215,6 +214,7 @@ function run() {
     "[Invocation preflight](invocation-preflight.md)",
     "First-Time Setup reference",
   );
+  assertContains(setup, "decompile_source.py", "First-Time Setup reference");
 
   for (const [label, document] of [
     ["source route", source],

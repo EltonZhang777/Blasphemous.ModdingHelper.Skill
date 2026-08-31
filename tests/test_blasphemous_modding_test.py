@@ -2100,6 +2100,28 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
         self.assert_success(result)
         self.assertIn(f"Modding profile: {explicit_profile}", result.stdout)
 
+    def test_configured_source_path_is_validated_before_build_or_dry_run(self):
+        profile = self.create_profile()
+        self.create_project()
+        package_root = self.create_package()
+        preferences = self.write_project_preferences(profile)
+        preferences.write_text(
+            preferences.read_text(encoding="utf-8")
+            + f"lightweight_source_code_path: {self.root / 'missing-source'}\n",
+            encoding="utf-8",
+        )
+
+        result = self.run_cli(
+            "run",
+            "--dry-run",
+            "--artifact",
+            str(package_root),
+        )
+
+        self.assertEqual(result.returncode, 10)
+        self.assertIn("lightweight_source_code_path", result.stderr)
+        self.assertIn("does not exist", result.stderr)
+
     def test_missing_preferences_returns_profile_preference_error(self):
         self.create_project()
 

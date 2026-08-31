@@ -95,8 +95,8 @@ options:
 ```
 
 - When user selects **No**, agent MUST run decompile script synchronously:
-  - **Windows**: `& (Join-Path $SkillRoot 'scripts\decompile_source.ps1')`
-  - **macOS/Linux**: `bash "$SKILL_ROOT/scripts/decompile_source.sh"`
+  - **Windows**: `& $PYTHON3 (Join-Path $SkillRoot 'scripts\decompile_source.py')`
+  - **macOS/Linux**: `"$PYTHON3" "$SKILL_ROOT/scripts/decompile_source.py"`
   On success, `lightweight_source_code_path` is auto-filled to `<skill-root>/source_code/`. On failure, agent MUST prompt user whether to provide paths manually.
 - When user selects **Yes**, agent MUST enter manual path flow.
 

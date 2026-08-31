@@ -34,11 +34,11 @@ After setup succeeds, agent MUST reuse the validated interpreter context for nor
 Agent MUST run preference check from caller's Mod repository with explicit Skill-root path:
 
 ```bash
-bash "$SKILL_ROOT/scripts/check_preferences.sh"
+"$PYTHON3" "$SKILL_ROOT/scripts/check_preferences.py"
 ```
 
 ```powershell
-& (Join-Path $SkillRoot 'scripts\check_preferences.ps1')
+& $PYTHON3 (Join-Path $SkillRoot 'scripts\check_preferences.py')
 ```
 
 Check emits `project`, `user`, or no output. Project scope MUST take precedence over user scope:
