@@ -1,5 +1,6 @@
 """Shared Python foundation for the Blasphemous modding helper Skill."""
 
+from . import logs
 from .runtime import (
     DEFAULT_PROBE_TIMEOUT_SECONDS,
     EXIT_CONFIGURATION,
@@ -35,6 +36,7 @@ from .platform_adapters import (
 )
 
 __all__ = [
+    "logs",
     "DEFAULT_PROBE_TIMEOUT_SECONDS",
     "EXIT_CONFIGURATION",
     "EXIT_SUCCESS",
