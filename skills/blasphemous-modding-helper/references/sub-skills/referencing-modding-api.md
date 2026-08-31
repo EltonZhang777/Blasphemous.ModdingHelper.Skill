@@ -95,11 +95,11 @@ Official upstream is
 reference before opening documentation or source:
 
 ```bash
-bash "$SKILL_ROOT/scripts/resolve_modding_api.sh" --selector latest
+"$PYTHON3" "$SKILL_ROOT/scripts/resolve_modding_api.py" --selector latest
 ```
 
 ```powershell
-& (Join-Path $SkillRoot 'scripts\resolve_modding_api.ps1') -Selector latest
+& $PYTHON3 (Join-Path $SkillRoot 'scripts\resolve_modding_api.py') --selector latest
 ```
 
 Agent MUST use resolver's `MODDING_API_DOCS_URL` and `MODDING_API_SOURCE_URL` outputs
@@ -113,8 +113,8 @@ one of:
 - `branch:REF` for explicit branch, including `branch:main` when requested;
 - `commit:SHA` for exact 40-character commit.
 
-Both resolver scripts MUST emit same `MODDING_API_*` fields. nonzero exit
-MUST print terminal `[ERROR REPORT]` with cause and next step. Agent MUST preserve that
+The Python resolver MUST emit the established `MODDING_API_*` fields. nonzero
+exit MUST print terminal `[ERROR REPORT]` with cause and next step. Agent MUST preserve that
 report, MUST NOT invent URL, and MUST ask for corrected selector, local checkout,
 or retry when Release lookup fails.
 
