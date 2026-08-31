@@ -100,6 +100,12 @@ def resolve_unity_log_path(
     for filename in filenames:
         candidate = directory / filename
         if candidate.is_file():
+            if not os.access(candidate, os.R_OK):
+                return candidate, (
+                    f"Configured Unity log is not readable: {candidate}. Ask the "
+                    "user for an accessible log directory and update "
+                    f"{preference_path}."
+                )
             return candidate, None
 
     expected = ", ".join(str(directory / filename) for filename in filenames)

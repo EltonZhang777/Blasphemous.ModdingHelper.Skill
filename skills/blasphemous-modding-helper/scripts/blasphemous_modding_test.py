@@ -46,6 +46,15 @@ from blasphemous_modding_helper.platform_adapters import (
     WindowsPlatformAdapter,
     platform_adapter_for as _platform_adapter_for,
 )
+from blasphemous_modding_helper.preferences import (
+    PreferenceError,
+    Preferences,
+    load_preferences as load_shared_preferences,
+    parse_preferences,
+    preference_paths,
+    resolve_preference_path,
+    validate_source_paths,
+)
 
 
 EXIT_SUCCESS = 0
@@ -101,13 +110,6 @@ class CliError(Exception):
 
 
 @dataclass(frozen=True)
-class Preferences:
-    scope: str
-    path: Path
-    values: Dict[str, str]
-
-
-@dataclass(frozen=True)
 class ProfilePreflight:
     profile: Path
     launcher: Path
@@ -122,6 +124,8 @@ class InvocationContext:
     preferences: Preferences
     project: Optional[Path]
     profile: ProfilePreflight
+    unity_log_path: Optional[Path] = None
+    unity_log_warning: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -479,8 +483,7 @@ class TestSession:
 
 
 def _preference_paths(cwd: Path, home: Path) -> Tuple[Tuple[str, Path], ...]:
-    relative_path = Path(".skills") / "blasphemous-modding-helper" / "preferences.md"
-    return (("project", cwd / relative_path), ("user", home / relative_path))
+    return tuple((location.scope, location.path) for location in preference_paths(cwd, home))
 
 
 def platform_adapter_for(environment: str) -> PlatformAdapter:
@@ -530,76 +533,33 @@ def _default_process_platform_adapter() -> PlatformAdapter:
 
 
 def _parse_preferences(path: Path) -> Dict[str, str]:
-    values: Dict[str, str] = {}
     try:
-        lines = path.read_text(encoding="utf-8").splitlines()
-    except (OSError, UnicodeError) as error:
+        return parse_preferences(path, required=("modding_profile_path",))
+    except PreferenceError as error:
         raise CliError(
             EXIT_PROFILE,
             "profile/preferences",
-            f"Could not read preferences.md at {path}: {error}",
+            str(error),
         ) from error
-
-    for line_number, line in enumerate(lines, start=1):
-        stripped = line.strip()
-        if not stripped or stripped.startswith("#"):
-            continue
-        if ":" not in line:
-            raise CliError(
-                EXIT_PROFILE,
-                "profile/preferences",
-                f"Invalid preferences.md line {line_number}: expected 'key: value'.",
-            )
-        key, value = line.split(":", 1)
-        key = key.strip()
-        value = value.strip()
-        if not key or not value:
-            raise CliError(
-                EXIT_PROFILE,
-                "profile/preferences",
-                f"Invalid preferences.md line {line_number}: key and value are required.",
-            )
-        if key in values:
-            raise CliError(
-                EXIT_PROFILE,
-                "profile/preferences",
-                f"Duplicate preference '{key}' on line {line_number}.",
-            )
-        values[key] = value
-
-    if "modding_profile_path" not in values:
-        raise CliError(
-            EXIT_PROFILE,
-            "profile/preferences",
-            f"preferences.md at {path} must define modding_profile_path.",
-        )
-    return values
 
 
 def load_preferences(cwd: Optional[Path] = None, home: Optional[Path] = None) -> Preferences:
     """Load project preferences before user preferences without writing either."""
 
-    current_directory = (cwd or Path.cwd()).resolve()
-    user_home = (home or Path.home()).resolve()
-    candidates = _preference_paths(current_directory, user_home)
-
-    for scope, path in candidates:
-        if not path.exists():
-            continue
-        if not path.is_file():
-            raise CliError(
-                EXIT_PROFILE,
-                "profile/preferences",
-                f"Preference path is not a file: {path}",
+    try:
+        return load_shared_preferences(
+            cwd=cwd,
+            home=home,
+            required=("modding_profile_path",),
+        )
+    except PreferenceError as error:
+        message = str(error)
+        if message.startswith("No preferences.md found."):
+            message = (
+                "No preferences.md found. Complete first-time setup before "
+                f"running the test CLI. {message[len('No preferences.md found. '):]}"
             )
-        return Preferences(scope, path, _parse_preferences(path))
-
-    locations = ", ".join(str(path) for _, path in candidates)
-    raise CliError(
-        EXIT_PROFILE,
-        "profile/preferences",
-        f"No preferences.md found. Complete first-time setup before running the test CLI. Checked: {locations}",
-    )
+        raise CliError(EXIT_PROFILE, "profile/preferences", message) from error
 
 
 def _unity_log_filenames(environment: str) -> Tuple[str, ...]:
@@ -629,11 +589,11 @@ _capture_log_baselines = log_diagnostics.capture_log_baselines
 
 
 def _expand_path(value: str, base: Path, *, resolve: bool = True) -> Path:
+    if resolve:
+        return resolve_preference_path(value, base)
     expanded = os.path.expandvars(os.path.expanduser(value.strip()))
     path = Path(expanded)
-    if not path.is_absolute():
-        path = base / path
-    return path.resolve(strict=False) if resolve else path
+    return path if path.is_absolute() else base / path
 
 
 def _project_candidates(cwd: Path) -> List[Path]:
@@ -3242,6 +3202,14 @@ def _resolve_context(args: argparse.Namespace, require_project: bool) -> Invocat
     environment = detect_supported_environment()
     cwd = Path.cwd().resolve()
     preferences = load_preferences(cwd=cwd)
+    try:
+        validate_source_paths(preferences.values, cwd)
+    except PreferenceError as error:
+        raise CliError(
+            EXIT_PROFILE,
+            "profile/preferences",
+            str(error),
+        ) from error
     configured_profile = preferences.values["modding_profile_path"]
     profile_value = args.profile if args.profile else configured_profile
     profile_path = _expand_path(profile_value, cwd)
@@ -3251,7 +3219,20 @@ def _resolve_context(args: argparse.Namespace, require_project: bool) -> Invocat
         else select_optional_project(cwd, args.project)
     )
     profile = preflight_profile(profile_path, environment, args.launcher)
-    return InvocationContext(environment, preferences, project, profile)
+    unity_log_path, unity_log_warning = resolve_unity_log_path(
+        preferences,
+        environment,
+        explicit_directory=args.unity_log_dir,
+        cwd=cwd,
+    )
+    return InvocationContext(
+        environment,
+        preferences,
+        project,
+        profile,
+        unity_log_path,
+        unity_log_warning,
+    )
 
 
 def _add_common_options(parser: argparse.ArgumentParser) -> None:
@@ -3450,8 +3431,12 @@ def _print_context(context: InvocationContext) -> None:
     print(f"Launcher: {context.profile.launcher}")
     print(f"Modding root: {context.profile.modding_root}")
     print(f"BepInEx: {context.profile.bepinex_root}")
+    if context.unity_log_path is not None:
+        print(f"Unity log: {context.unity_log_path}")
     for warning in context.profile.warnings:
         print(f"Warning: {warning}", file=sys.stderr)
+    if context.unity_log_warning:
+        print(f"Warning: {context.unity_log_warning}", file=sys.stderr)
 
 
 def _print_artifact_plan(plan: ArtifactPlan) -> None:
@@ -3577,14 +3562,9 @@ def run_command(
             print(f"Deployment session: {result.session_id}")
             print(f"Deployment state: deployed")
             print(f"Deployed files: {len(result.deployed_files)}")
-            unity_log_path, _ = resolve_unity_log_path(
-                context.preferences,
-                context.environment,
-                explicit_directory=args.unity_log_dir,
-            )
             log_paths = [context.profile.bepinex_root / "LogOutput.log"]
-            if unity_log_path is not None:
-                log_paths.append(unity_log_path)
+            if context.unity_log_path is not None:
+                log_paths.append(context.unity_log_path)
             launch = session.launch(result, context.profile, log_paths=log_paths)
             print(f"Launch session: {launch.session_id}")
             print("Launch state: launched")
