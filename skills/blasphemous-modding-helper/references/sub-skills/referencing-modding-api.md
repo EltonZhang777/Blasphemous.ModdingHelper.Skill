@@ -135,22 +135,22 @@ Tags and commits are detached; explicit branches track their corresponding
 
 Agent MUST use lifecycle manager only when user explicitly asks to check or
 update local checkout. Ordinary ModdingAPI questions MUST NOT mutate the
-checkout. Python `clone_modding_api.py` owns fresh-clone behavior.
-The staged lifecycle migration still uses `manage_modding_api.js`; its Bash
-and PowerShell entry points expose the existing operation model:
+checkout. Python `clone_modding_api.py` owns fresh-clone behavior and Python
+`manage_modding_api.py` owns check/update behavior. Its compatibility wrappers
+expose the existing operation model:
 
 ```bash
-bash "$SKILL_ROOT/scripts/manage_modding_api.sh" --operation check
-bash "$SKILL_ROOT/scripts/manage_modding_api.sh" --operation update
-bash "$SKILL_ROOT/scripts/manage_modding_api.sh" --operation update --dry-run
-bash "$SKILL_ROOT/scripts/manage_modding_api.sh" --operation check --offline
+"$PYTHON3" "$SKILL_ROOT/scripts/manage_modding_api.py" --operation check
+"$PYTHON3" "$SKILL_ROOT/scripts/manage_modding_api.py" --operation update
+"$PYTHON3" "$SKILL_ROOT/scripts/manage_modding_api.py" --operation update --dry-run
+"$PYTHON3" "$SKILL_ROOT/scripts/manage_modding_api.py" --operation check --offline
 ```
 
 ```powershell
-& (Join-Path $SkillRoot 'scripts\manage_modding_api.ps1') -Operation check
-& (Join-Path $SkillRoot 'scripts\manage_modding_api.ps1') -Operation update
-& (Join-Path $SkillRoot 'scripts\manage_modding_api.ps1') -Operation update -DryRun
-& (Join-Path $SkillRoot 'scripts\manage_modding_api.ps1') -Operation check -Offline
+& $PYTHON3 (Join-Path $SkillRoot 'scripts\manage_modding_api.py') -Operation check
+& $PYTHON3 (Join-Path $SkillRoot 'scripts\manage_modding_api.py') -Operation update
+& $PYTHON3 (Join-Path $SkillRoot 'scripts\manage_modding_api.py') -Operation update -DryRun
+& $PYTHON3 (Join-Path $SkillRoot 'scripts\manage_modding_api.py') -Operation check -Offline
 ```
 
 Manager reads `modding_api_reference_path` and
