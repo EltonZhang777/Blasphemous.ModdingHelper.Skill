@@ -126,8 +126,7 @@ checkout pinned to stored selector. They also write sibling lock state
 `<reference-path>.lock`; lock is outside checkout and records the
 selector, resolved tag, resolved commit, check time, and supported repository:
 
-- Bash: `bash "$SKILL_ROOT/scripts/clone_modding_api.sh"`
-- PowerShell: `& (Join-Path $SkillRoot 'scripts\clone_modding_api.ps1')`
+- Python: `"$PYTHON3" "$SKILL_ROOT/scripts/clone_modding_api.py"`
 
 Tags and commits are detached; explicit branches track their corresponding
 `origin/<branch>`. Existing targets are not replaced.
@@ -136,10 +135,9 @@ Tags and commits are detached; explicit branches track their corresponding
 
 Agent MUST use lifecycle manager only when user explicitly asks to check or
 update local checkout. Ordinary ModdingAPI questions MUST NOT mutate the
-checkout. shared Skill-root `clone_modding_api.js` and
-`manage_modding_api.js` implementations own clone and lifecycle
-behavior; Bash and PowerShell expose thin equivalent entry points. Both
-script surfaces expose same operation model:
+checkout. Python `clone_modding_api.py` owns fresh-clone behavior.
+The staged lifecycle migration still uses `manage_modding_api.js`; its Bash
+and PowerShell entry points expose the existing operation model:
 
 ```bash
 bash "$SKILL_ROOT/scripts/manage_modding_api.sh" --operation check
