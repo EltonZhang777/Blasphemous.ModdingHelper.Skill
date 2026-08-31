@@ -16,10 +16,8 @@ import math
 import os
 import platform
 import re
-import signal
 import shutil
 import stat
-import subprocess
 import sys
 import tempfile
 import time
@@ -33,6 +31,21 @@ from pathlib import Path
 from pathlib import PurePosixPath
 from typing import ContextManager, Dict, Iterator, List, Optional, Sequence, Tuple
 
+_SCRIPT_DIRECTORY = Path(__file__).resolve().parent
+if str(_SCRIPT_DIRECTORY) not in sys.path:
+    sys.path.insert(0, str(_SCRIPT_DIRECTORY))
+
+from blasphemous_modding_helper import runtime as shared_runtime
+from blasphemous_modding_helper.platform_adapters import (
+    MacOSPlatformAdapter,
+    LinuxPlatformAdapter,
+    PlatformAdapter,
+    PlatformUnavailableError,
+    ProcessIdentity,
+    WindowsPlatformAdapter,
+    platform_adapter_for as _platform_adapter_for,
+)
+
 
 EXIT_SUCCESS = 0
 EXIT_USAGE = 2
@@ -44,15 +57,12 @@ EXIT_LAUNCH = 50
 EXIT_LOGS = 60
 EXIT_CLEAN = 70
 LAUNCH_GRACE_PERIOD_SECONDS = 0.5
-PROCESS_POLL_INTERVAL_SECONDS = 0.05
 DEFAULT_LOG_LINES = 200
 STARTUP_POLL_INTERVAL_SECONDS = 0.25
 MAX_EVIDENCE_HITS = 20
 MAX_EVIDENCE_TEXT = 240
 CLI_OUTPUT_ENCODING = "utf-8"
 CLI_OUTPUT_ERRORS = "backslashreplace"
-SUBPROCESS_OUTPUT_ENCODING = "utf-8"
-SUBPROCESS_OUTPUT_ERRORS = "replace"
 LOG_OUTPUT_ENCODING = "utf-8"
 LOG_OUTPUT_ERRORS = "replace"
 
@@ -150,13 +160,6 @@ class DeploymentResult:
 
 
 @dataclass(frozen=True)
-class ProcessIdentity:
-    pid: int
-    start_token: str
-    executable: Optional[Path]
-
-
-@dataclass(frozen=True)
 class LaunchResult:
     session_id: str
     state_path: Path
@@ -240,9 +243,18 @@ class DeploymentTransaction:
 class ProcessAdapter:
     """Public seam for process identity, launch, and process-tree lifecycle."""
 
+    def __init__(self, platform_adapter: Optional[PlatformAdapter] = None) -> None:
+        self._explicit_platform_adapter = platform_adapter
+
+    @property
+    def platform_adapter(self) -> PlatformAdapter:
+        if self._explicit_platform_adapter is not None:
+            return self._explicit_platform_adapter
+        return _default_process_platform_adapter()
+
     def find_conflict(self, launcher: Path) -> Optional[ProcessIdentity]:
         try:
-            return _find_conflicting_process(launcher)
+            return self.platform_adapter.find_conflict(launcher)
         except OSError as error:
             raise CliError(
                 EXIT_LAUNCH,
@@ -251,19 +263,7 @@ class ProcessAdapter:
             ) from error
 
     def start(self, launcher: Path, working_directory: Path) -> object:
-        options: Dict[str, object] = {
-            "cwd": str(working_directory),
-            "shell": False,
-        }
-        if os.name == "nt":
-            options["creationflags"] = getattr(
-                subprocess,
-                "CREATE_NEW_PROCESS_GROUP",
-                0,
-            )
-        else:
-            options["start_new_session"] = True
-        return subprocess.Popen([str(launcher)], **options)
+        return self.platform_adapter.start(launcher, working_directory)
 
     def identify(
         self,
@@ -271,7 +271,7 @@ class ProcessAdapter:
         *,
         strict: bool = False,
     ) -> Optional[ProcessIdentity]:
-        return _process_identity(pid, strict=strict)
+        return self.platform_adapter.identify(pid, strict=strict)
 
     def wait_for_alive(
         self,
@@ -279,18 +279,31 @@ class ProcessAdapter:
         *,
         timeout: float = LAUNCH_GRACE_PERIOD_SECONDS,
     ) -> Tuple[bool, Optional[ProcessIdentity]]:
-        return _wait_for_process_alive(identity, timeout=timeout)
+        return self.platform_adapter.wait_for_alive(identity, timeout=timeout)
 
     def is_alive(self, identity: ProcessIdentity) -> bool:
-        return _tracked_process_is_alive(identity)
+        try:
+            return self.platform_adapter.is_alive(identity)
+        except OSError as error:
+            message = str(error)
+            if "refusing" not in message.casefold():
+                message = (
+                    f"Could not inspect tracked process ID {identity.pid}: "
+                    f"{message}; refusing to stop it."
+                )
+            raise CliError(
+                EXIT_CLEAN,
+                "stop/clean",
+                message,
+            ) from error
 
     def snapshot_tree(self, identity: ProcessIdentity) -> Tuple[ProcessIdentity, ...]:
-        return _snapshot_process_tree(identity)
+        return self.platform_adapter.snapshot_tree(identity)
 
     def terminate_tree(self, identity: ProcessIdentity, *, force: bool = False) -> bool:
         """Request termination and report whether the helper found the root."""
 
-        return _terminate_process_tree(identity, force=force)
+        return self.platform_adapter.terminate_tree(identity, force=force)
 
     def wait_for_exit(
         self,
@@ -298,7 +311,7 @@ class ProcessAdapter:
         *,
         timeout: float = 1.0,
     ) -> bool:
-        return _wait_for_process_exit(identity, timeout=timeout)
+        return self.platform_adapter.wait_for_exit(identity, timeout=timeout)
 
 
 class FileAdapter:
@@ -495,6 +508,52 @@ def _preference_paths(cwd: Path, home: Path) -> Tuple[Tuple[str, Path], ...]:
     return (("project", cwd / relative_path), ("user", home / relative_path))
 
 
+def platform_adapter_for(environment: str) -> PlatformAdapter:
+    """Return one explicit native adapter or a stable usage failure."""
+
+    try:
+        return _platform_adapter_for(environment)
+    except PlatformUnavailableError as error:
+        raise CliError(
+            EXIT_USAGE,
+            "usage/configuration",
+            str(error),
+        ) from error
+
+
+def _default_process_platform_adapter() -> PlatformAdapter:
+    if os.name == "nt":
+        environment = "Windows"
+    else:
+        system = platform.system()
+        environment = "macOS" if system == "Darwin" else system
+    hooks: Dict[str, object] = {
+        "process_identity": lambda pid, strict=False: _process_identity(
+            pid,
+            strict=strict,
+        ),
+        "process_ids": lambda: _process_ids(),
+        "process_image_name": lambda pid, known_name=None: _process_image_name(
+            pid,
+            known_name,
+        ),
+        "process_parent_map": lambda: _process_parent_map(),
+    }
+    if environment == "Windows":
+        hooks["process_entries"] = lambda: _windows_process_entries()
+    try:
+        return _platform_adapter_for(
+            environment,
+            **hooks,
+        )
+    except PlatformUnavailableError as error:
+        raise CliError(
+            EXIT_USAGE,
+            "usage/configuration",
+            str(error),
+        ) from error
+
+
 def _parse_preferences(path: Path) -> Dict[str, str]:
     values: Dict[str, str] = {}
     try:
@@ -569,9 +628,7 @@ def load_preferences(cwd: Optional[Path] = None, home: Optional[Path] = None) ->
 
 
 def _unity_log_filenames(environment: str) -> Tuple[str, ...]:
-    if environment == "Windows":
-        return ("output_log.txt",)
-    return ("Player.log", "output_log.txt")
+    return platform_adapter_for(environment).unity_log_filenames()
 
 
 def resolve_unity_log_path(
@@ -964,26 +1021,20 @@ def build_project(project: Path, configuration: str, solution_root: Path) -> Non
     # property automatically. Keep the documented command unchanged while
     # supplying the deterministic solution root through MSBuild's environment.
     build_environment["SolutionDir"] = str(solution_root) + os.sep
-    try:
-        result = subprocess.run(
-            command,
-            cwd=solution_root,
-            env=build_environment,
-            capture_output=True,
-            text=True,
-            encoding=SUBPROCESS_OUTPUT_ENCODING,
-            errors=SUBPROCESS_OUTPUT_ERRORS,
-            check=False,
-        )
-    except OSError as error:
+    result = shared_runtime.run_command(
+        command,
+        cwd=solution_root,
+        env=build_environment,
+    )
+
+    if result.succeeded:
+        return
+    if result.error and result.returncode is None:
         raise CliError(
             EXIT_BUILD,
             "build",
-            f"Could not start dotnet build: {error}",
-        ) from error
-
-    if result.returncode == 0:
-        return
+            f"Could not start dotnet build: {result.error}",
+        )
     details = "\n".join(
         output.strip()
         for output in (result.stdout, result.stderr)
@@ -2324,419 +2375,6 @@ def _same_executable(first: Optional[Path], second: Optional[Path]) -> bool:
     return first_value.as_posix().casefold() == second_value.as_posix().casefold()
 
 
-def _windows_process_identity(
-    pid: int,
-    strict: bool = False,
-) -> Optional[ProcessIdentity]:
-    import ctypes
-    from ctypes import wintypes
-
-    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
-    kernel32.OpenProcess.argtypes = [
-        wintypes.DWORD,
-        wintypes.BOOL,
-        wintypes.DWORD,
-    ]
-    kernel32.OpenProcess.restype = wintypes.HANDLE
-    kernel32.GetProcessTimes.argtypes = [
-        wintypes.HANDLE,
-        ctypes.POINTER(wintypes.FILETIME),
-        ctypes.POINTER(wintypes.FILETIME),
-        ctypes.POINTER(wintypes.FILETIME),
-        ctypes.POINTER(wintypes.FILETIME),
-    ]
-    kernel32.GetProcessTimes.restype = wintypes.BOOL
-    kernel32.QueryFullProcessImageNameW.argtypes = [
-        wintypes.HANDLE,
-        wintypes.DWORD,
-        wintypes.LPWSTR,
-        ctypes.POINTER(wintypes.DWORD),
-    ]
-    kernel32.QueryFullProcessImageNameW.restype = wintypes.BOOL
-    kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
-    kernel32.CloseHandle.restype = wintypes.BOOL
-    handle = kernel32.OpenProcess(0x1000, False, pid)
-    if not handle:
-        error_code = ctypes.get_last_error()
-        if error_code == 5:
-            if strict:
-                raise PermissionError(error_code, "OpenProcess access denied")
-            return None
-        if error_code not in {2, 6, 87, 1168}:
-            raise OSError(error_code, "OpenProcess failed")
-        return None
-    try:
-        creation = wintypes.FILETIME()
-        exit_time = wintypes.FILETIME()
-        kernel_time = wintypes.FILETIME()
-        user_time = wintypes.FILETIME()
-        if not kernel32.GetProcessTimes(
-            handle,
-            ctypes.byref(creation),
-            ctypes.byref(exit_time),
-            ctypes.byref(kernel_time),
-            ctypes.byref(user_time),
-        ):
-            error_code = ctypes.get_last_error()
-            if error_code == 5:
-                if strict:
-                    raise PermissionError(error_code, "GetProcessTimes access denied")
-                return None
-            if error_code not in {2, 6, 87, 1168}:
-                raise OSError(error_code, "GetProcessTimes failed")
-            return None
-        if (
-            (int(exit_time.dwHighDateTime) << 32)
-            | int(exit_time.dwLowDateTime)
-        ):
-            return None
-        start_token = (
-            f"{creation.dwHighDateTime:08x}{creation.dwLowDateTime:08x}"
-        )
-        executable: Optional[Path] = None
-        buffer = ctypes.create_unicode_buffer(32768)
-        buffer_size = wintypes.DWORD(len(buffer))
-        if kernel32.QueryFullProcessImageNameW(
-            handle,
-            0,
-            buffer,
-            ctypes.byref(buffer_size),
-        ):
-            executable = _normalise_executable(Path(buffer.value))
-        return ProcessIdentity(pid, start_token, executable)
-    finally:
-        kernel32.CloseHandle(handle)
-
-
-def _proc_process_identity(
-    pid: int,
-    strict: bool = False,
-) -> Optional[ProcessIdentity]:
-    stat_path = Path("/proc") / str(pid) / "stat"
-    try:
-        contents = stat_path.read_text(encoding="utf-8")
-    except OSError as error:
-        if strict and getattr(error, "errno", None) == 13:
-            raise
-        return None
-    except UnicodeError:
-        return None
-    closing_parenthesis = contents.rfind(")")
-    if closing_parenthesis < 0:
-        return None
-    fields = contents[closing_parenthesis + 2 :].split()
-    if len(fields) < 20:
-        return None
-    try:
-        start_token = fields[19]
-    except IndexError:
-        return None
-    executable: Optional[Path] = None
-    executable_path = Path("/proc") / str(pid) / "exe"
-    try:
-        executable = _normalise_executable(executable_path.resolve(strict=True))
-    except OSError:
-        pass
-    return ProcessIdentity(pid, start_token, executable)
-
-
-def _ps_process_identity(
-    pid: int,
-    strict: bool = False,
-) -> Optional[ProcessIdentity]:
-    start_result = subprocess.run(
-        ["ps", "-p", str(pid), "-o", "lstart="],
-        capture_output=True,
-        text=True,
-        encoding=SUBPROCESS_OUTPUT_ENCODING,
-        errors=SUBPROCESS_OUTPUT_ERRORS,
-        check=False,
-    )
-    if start_result.returncode != 0 or not start_result.stdout.strip():
-        return None
-    command_result = subprocess.run(
-        ["ps", "-p", str(pid), "-o", "command="],
-        capture_output=True,
-        text=True,
-        encoding=SUBPROCESS_OUTPUT_ENCODING,
-        errors=SUBPROCESS_OUTPUT_ERRORS,
-        check=False,
-    )
-    command = command_result.stdout.strip()
-    executable: Optional[Path] = None
-    if command:
-        first_word = command.split()[0]
-        if "/" in first_word:
-            executable = _normalise_executable(Path(first_word))
-    return ProcessIdentity(pid, start_result.stdout.strip(), executable)
-
-
-def _process_identity(
-    pid: int,
-    strict: bool = False,
-) -> Optional[ProcessIdentity]:
-    if pid <= 0:
-        return None
-    if os.name == "nt":
-        return _windows_process_identity(pid, strict=strict)
-    if (Path("/proc")).is_dir():
-        return _proc_process_identity(pid, strict=strict)
-    return _ps_process_identity(pid, strict=strict)
-
-
-def _windows_process_entries() -> Tuple[Tuple[int, int, str], ...]:
-    import ctypes
-    from ctypes import wintypes
-
-    class ProcessEntry32W(ctypes.Structure):
-        _fields_ = [
-            ("dwSize", wintypes.DWORD),
-            ("cntUsage", wintypes.DWORD),
-            ("th32ProcessID", wintypes.DWORD),
-            ("th32DefaultHeapID", ctypes.c_size_t),
-            ("th32ModuleID", wintypes.DWORD),
-            ("cntThreads", wintypes.DWORD),
-            ("th32ParentProcessID", wintypes.DWORD),
-            ("pcPriClassBase", wintypes.LONG),
-            ("dwFlags", wintypes.DWORD),
-            ("szExeFile", wintypes.WCHAR * 260),
-        ]
-
-    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
-    kernel32.CreateToolhelp32Snapshot.argtypes = [
-        wintypes.DWORD,
-        wintypes.DWORD,
-    ]
-    kernel32.CreateToolhelp32Snapshot.restype = wintypes.HANDLE
-    kernel32.Process32FirstW.argtypes = [
-        wintypes.HANDLE,
-        ctypes.POINTER(ProcessEntry32W),
-    ]
-    kernel32.Process32FirstW.restype = wintypes.BOOL
-    kernel32.Process32NextW.argtypes = [
-        wintypes.HANDLE,
-        ctypes.POINTER(ProcessEntry32W),
-    ]
-    kernel32.Process32NextW.restype = wintypes.BOOL
-    kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
-    kernel32.CloseHandle.restype = wintypes.BOOL
-    snapshot = kernel32.CreateToolhelp32Snapshot(0x00000002, 0)
-    if snapshot in (None, ctypes.c_void_p(-1).value):
-        raise OSError(ctypes.get_last_error(), "CreateToolhelp32Snapshot failed")
-    try:
-        entry = ProcessEntry32W()
-        entry.dwSize = ctypes.sizeof(ProcessEntry32W)
-        entries: List[Tuple[int, int, str]] = []
-        if not kernel32.Process32FirstW(snapshot, ctypes.byref(entry)):
-            return ()
-        while True:
-            entries.append(
-                (
-                    int(entry.th32ProcessID),
-                    int(entry.th32ParentProcessID),
-                    str(entry.szExeFile),
-                )
-            )
-            if not kernel32.Process32NextW(snapshot, ctypes.byref(entry)):
-                break
-        return tuple(entries)
-    finally:
-        kernel32.CloseHandle(snapshot)
-
-
-def _process_ids() -> Tuple[int, ...]:
-    if os.name == "nt":
-        return tuple(pid for pid, _, _ in _windows_process_entries())
-
-    proc_root = Path("/proc")
-    if proc_root.is_dir():
-        process_ids = []
-        for candidate in proc_root.iterdir():
-            if candidate.name.isdigit():
-                process_ids.append(int(candidate.name))
-        return tuple(process_ids)
-
-    result = subprocess.run(
-        ["ps", "-axo", "pid="],
-        capture_output=True,
-        text=True,
-        encoding=SUBPROCESS_OUTPUT_ENCODING,
-        errors=SUBPROCESS_OUTPUT_ERRORS,
-        check=False,
-    )
-    if result.returncode != 0:
-        raise OSError(result.stderr.strip() or "ps failed")
-    process_ids = []
-    for line in result.stdout.splitlines():
-        try:
-            process_ids.append(int(line.strip()))
-        except ValueError:
-            continue
-    return tuple(process_ids)
-
-
-def _process_image_name(pid: int, known_name: Optional[str] = None) -> Optional[str]:
-    if known_name is not None:
-        return known_name
-    proc_name = Path("/proc") / str(pid) / "comm"
-    if proc_name.is_file():
-        try:
-            return proc_name.read_text(encoding="utf-8").strip().casefold()
-        except (OSError, UnicodeError):
-            return None
-    try:
-        result = subprocess.run(
-            ["ps", "-p", str(pid), "-o", "comm="],
-            capture_output=True,
-            text=True,
-            encoding=SUBPROCESS_OUTPUT_ENCODING,
-            errors=SUBPROCESS_OUTPUT_ERRORS,
-            check=False,
-        )
-    except OSError:
-        return None
-    if result.returncode != 0 or not result.stdout.strip():
-        return None
-    return Path(result.stdout.strip()).name.casefold()
-
-
-def _find_conflicting_process(launcher: Path) -> Optional[ProcessIdentity]:
-    current_pid = os.getpid()
-    if os.name == "nt":
-        process_entries = _windows_process_entries()
-        process_ids = tuple(pid for pid, _, _ in process_entries)
-        image_names = {
-            pid: image_name.casefold()
-            for pid, _, image_name in process_entries
-        }
-    else:
-        process_ids = _process_ids()
-        image_names = {}
-    for pid in process_ids:
-        if pid == current_pid:
-            continue
-        identity = _process_identity(pid)
-        if identity is not None and _same_executable(identity.executable, launcher):
-            return identity
-        if identity is not None and identity.executable is not None:
-            continue
-        image_name = _process_image_name(pid, image_names.get(pid))
-        if (
-            image_name == launcher.name.casefold()
-            and (identity is None or identity.executable is None)
-        ):
-            return identity or ProcessIdentity(pid, "uninspectable", None)
-    return None
-
-
-def _tracked_process_is_alive(identity: ProcessIdentity) -> bool:
-    try:
-        current = _process_identity(identity.pid, strict=True)
-    except OSError as error:
-        raise CliError(
-            EXIT_CLEAN,
-            "stop/clean",
-            f"Could not inspect tracked process ID {identity.pid}: {error}; refusing to stop it.",
-        ) from error
-    if current is None:
-        return False
-    if current.start_token != identity.start_token:
-        raise CliError(
-            EXIT_CLEAN,
-            "stop/clean",
-            f"Tracked process ID {identity.pid} was reused by another process; refusing to stop it.",
-        )
-    if identity.executable and current.executable and not _same_executable(
-        current.executable,
-        identity.executable,
-    ):
-        raise CliError(
-            EXIT_CLEAN,
-            "stop/clean",
-            f"Tracked process ID {identity.pid} no longer belongs to the selected launcher; refusing to stop it.",
-        )
-    return True
-
-
-def _process_parent_map() -> Dict[int, int]:
-    if os.name == "nt":
-        return {
-            pid: parent_pid
-            for pid, parent_pid, _ in _windows_process_entries()
-        }
-    proc_root = Path("/proc")
-    if proc_root.is_dir():
-        parents: Dict[int, int] = {}
-        for candidate in proc_root.iterdir():
-            if not candidate.name.isdigit():
-                continue
-            identity_path = candidate / "stat"
-            try:
-                contents = identity_path.read_text(encoding="utf-8")
-            except (OSError, UnicodeError):
-                continue
-            closing_parenthesis = contents.rfind(")")
-            if closing_parenthesis < 0:
-                continue
-            fields = contents[closing_parenthesis + 2 :].split()
-            if len(fields) < 4:
-                continue
-            try:
-                parents[int(candidate.name)] = int(fields[1])
-            except ValueError:
-                continue
-        return parents
-
-    result = subprocess.run(
-        ["ps", "-axo", "pid=,ppid="],
-        capture_output=True,
-        text=True,
-        encoding=SUBPROCESS_OUTPUT_ENCODING,
-        errors=SUBPROCESS_OUTPUT_ERRORS,
-        check=False,
-    )
-    if result.returncode != 0:
-        raise OSError(result.stderr.strip() or "ps failed")
-    parents = {}
-    for line in result.stdout.splitlines():
-        fields = line.split()
-        if len(fields) < 2:
-            continue
-        try:
-            parents[int(fields[0])] = int(fields[1])
-        except ValueError:
-            continue
-    return parents
-
-
-def _descendant_pids(root_pid: int) -> Tuple[int, ...]:
-    children: Dict[int, List[int]] = {}
-    for pid, parent_pid in _process_parent_map().items():
-        children.setdefault(parent_pid, []).append(pid)
-    descendants: List[int] = []
-    pending = list(children.get(root_pid, ()))
-    while pending:
-        pid = pending.pop(0)
-        descendants.append(pid)
-        pending.extend(children.get(pid, ()))
-    return tuple(descendants)
-
-
-def _wait_for_process_exit(identity: ProcessIdentity, timeout: float = 1.0) -> bool:
-    deadline = time.monotonic() + timeout
-    while True:
-        current = _process_identity(identity.pid, strict=True)
-        if current is None:
-            return True
-        if not _same_process_identity(identity, current):
-            raise OSError(
-                f"tracked process ID {identity.pid} changed before termination"
-            )
-        if time.monotonic() >= deadline:
-            return False
-        time.sleep(PROCESS_POLL_INTERVAL_SECONDS)
-
-
 def _same_process_identity(
     expected: ProcessIdentity,
     current: Optional[ProcessIdentity],
@@ -2842,93 +2480,42 @@ def _verify_tracked_children_stopped(
     return children
 
 
-def _wait_for_process_alive(
-    identity: ProcessIdentity,
-    timeout: float = LAUNCH_GRACE_PERIOD_SECONDS,
-) -> Tuple[bool, Optional[ProcessIdentity]]:
-    """Confirm that the launched identity remains alive through startup grace."""
-
-    deadline = time.monotonic() + timeout
-    while True:
-        current = _process_identity(identity.pid, strict=True)
-        if not _same_process_identity(identity, current):
-            return False, current
-        if time.monotonic() >= deadline:
-            return True, current
-        time.sleep(PROCESS_POLL_INTERVAL_SECONDS)
-
-
-def _snapshot_process_tree(identity: ProcessIdentity) -> Tuple[ProcessIdentity, ...]:
-    current = _process_identity(identity.pid, strict=True)
-    if current is None:
-        return ()
-    if not _same_process_identity(identity, current):
-        raise OSError(
-            f"tracked process ID {identity.pid} changed before termination"
-        )
-    tree = [current]
-    for pid in _descendant_pids(identity.pid):
-        child = _process_identity(pid, strict=True)
-        if child is not None:
-            tree.append(child)
-    return tuple(tree)
-
-
-def _terminate_process_tree(identity: ProcessIdentity, force: bool = False) -> bool:
-    tree = _snapshot_process_tree(identity)
-    if not tree:
-        return False
+def _native_process_environment() -> str:
     if os.name == "nt":
-        if not _same_process_identity(
-            identity,
-            _process_identity(identity.pid, strict=True),
-        ):
-            raise OSError(
-                f"tracked process ID {identity.pid} changed before taskkill"
-            )
-        command = ["taskkill", "/PID", str(identity.pid), "/T"]
-        if force:
-            command.append("/F")
-        result = subprocess.run(
-            command,
-            capture_output=True,
-            text=True,
-            encoding=SUBPROCESS_OUTPUT_ENCODING,
-            errors=SUBPROCESS_OUTPUT_ERRORS,
-            check=False,
-        )
-        if result.returncode == 0:
-            return True
-        current = _process_identity(identity.pid, strict=True)
-        if current is None:
-            return False
-        if not _same_process_identity(identity, current):
-            raise OSError(
-                f"tracked process ID {identity.pid} changed before taskkill"
-            )
-        raise OSError(result.stderr.strip() or result.stdout.strip() or "taskkill failed")
+        return "Windows"
+    system = platform.system()
+    return "macOS" if system == "Darwin" else system
 
-    termination_signal = signal.SIGKILL if force else signal.SIGTERM
-    root_requested = False
-    for process in reversed(tree):
-        current = _process_identity(process.pid, strict=True)
-        if current is None:
-            continue
-        if not _same_process_identity(process, current):
-            raise OSError(
-                f"process ID {process.pid} changed before termination"
-            )
-        try:
-            os.kill(current.pid, termination_signal)
-            if process.pid == identity.pid:
-                root_requested = True
-        except ProcessLookupError:
-            continue
-        except PermissionError as error:
-            raise OSError(
-                f"could not stop process {current.pid}: {error}"
-            ) from error
-    return root_requested
+
+def _native_platform_adapter() -> PlatformAdapter:
+    return _platform_adapter_for(_native_process_environment())
+
+
+# Preserve the old fixture hook names while delegating implementation to the
+# explicit platform adapters.
+def _process_identity(
+    pid: int,
+    strict: bool = False,
+) -> Optional[ProcessIdentity]:
+    if pid <= 0:
+        return None
+    return _native_platform_adapter().identify(pid, strict=strict)
+
+
+def _windows_process_entries() -> Tuple[Tuple[int, int, str], ...]:
+    return WindowsPlatformAdapter().process_entries()
+
+
+def _process_ids() -> Tuple[int, ...]:
+    return _native_platform_adapter().process_ids()
+
+
+def _process_image_name(pid: int, known_name: Optional[str] = None) -> Optional[str]:
+    return _native_platform_adapter().process_image_name(pid, known_name)
+
+
+def _process_parent_map() -> Dict[int, int]:
+    return _native_platform_adapter().process_parent_map()
 
 
 def _update_process_state(
@@ -4005,8 +3592,10 @@ def detect_supported_environment() -> str:
 
     system = platform.system()
     if system == "Windows":
+        platform_adapter_for("Windows")
         return "Windows"
     if system == "Darwin":
+        platform_adapter_for("macOS")
         return "macOS"
     if system == "Linux":
         release = platform.release().lower()
@@ -4020,6 +3609,7 @@ def detect_supported_environment() -> str:
                 "usage/configuration",
                 "Unsupported environment: use native Linux Bash instead of WSL.",
             )
+        platform_adapter_for("Linux")
         return "Linux"
     raise CliError(
         EXIT_USAGE,
@@ -4065,14 +3655,7 @@ def _require_file(path: Path, label: str) -> None:
 
 
 def _launcher_candidates(profile: Path, environment: str) -> Tuple[Path, ...]:
-    if environment == "Windows":
-        return (profile / "Blasphemous.exe",)
-    if environment == "Linux":
-        return (profile / "Blasphemous.x86_64", profile / "Blasphemous")
-    return (
-        profile / "Blasphemous.app" / "Contents" / "MacOS" / "Blasphemous",
-        profile / "Blasphemous",
-    )
+    return platform_adapter_for(environment).launcher_candidates(profile)
 
 
 def _is_within(path: Path, parent: Path) -> bool:
@@ -4088,6 +3671,7 @@ def _resolve_launcher(
     environment: str,
     explicit_launcher: Optional[str],
 ) -> Tuple[Path, Tuple[str, ...]]:
+    adapter = platform_adapter_for(environment)
     warnings: List[str] = []
     if explicit_launcher:
         launcher_value = Path(
@@ -4108,7 +3692,7 @@ def _resolve_launcher(
                 "profile/preferences",
                 f"The selected game launcher is empty: {launcher}",
             )
-        if environment != "Windows" and not os.access(launcher, os.X_OK):
+        if adapter.requires_executable_bit and not os.access(launcher, os.X_OK):
             raise CliError(
                 EXIT_PROFILE,
                 "profile/preferences",
@@ -4122,7 +3706,7 @@ def _resolve_launcher(
             warnings.append(f"Using explicit launcher override: {launcher}")
         return launcher, tuple(warnings)
 
-    candidates = _launcher_candidates(profile, environment)
+    candidates = adapter.launcher_candidates(profile)
     for candidate in candidates:
         if not candidate.is_file():
             continue
@@ -4133,7 +3717,8 @@ def _resolve_launcher(
         if not _is_within(resolved_candidate, profile):
             continue
         if resolved_candidate.stat().st_size > 0 and (
-            environment == "Windows" or os.access(resolved_candidate, os.X_OK)
+            not adapter.requires_executable_bit
+            or os.access(resolved_candidate, os.X_OK)
         ):
             return resolved_candidate, tuple(warnings)
     candidate_text = ", ".join(str(candidate) for candidate in candidates)

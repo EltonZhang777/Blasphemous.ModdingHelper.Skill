@@ -152,6 +152,22 @@ class PythonRuntimeTests(unittest.TestCase):
 
         self.assertEqual(runner.call_args.kwargs["env"], {"ONLY_FOR_FIXTURE": "1"})
 
+    def test_process_start_uses_argument_array_and_shell_false(self):
+        with mock.patch.object(runtime.subprocess, "Popen", return_value=mock.Mock()) as starter:
+            runtime.start_process(
+                ("fixture", "value with spaces"),
+                cwd=self.root,
+                start_new_session=True,
+            )
+
+        self.assertEqual(
+            starter.call_args.args[0],
+            ["fixture", "value with spaces"],
+        )
+        self.assertEqual(starter.call_args.kwargs["cwd"], str(self.root))
+        self.assertTrue(starter.call_args.kwargs["start_new_session"])
+        self.assertFalse(starter.call_args.kwargs["shell"])
+
     def test_compatible_release_constraint_uses_the_next_significant_component(self):
         self.assertTrue(runtime._satisfies_version("1.4.9", "~=", "1.4"))
         self.assertFalse(runtime._satisfies_version("2.0.0", "~=", "1.4"))

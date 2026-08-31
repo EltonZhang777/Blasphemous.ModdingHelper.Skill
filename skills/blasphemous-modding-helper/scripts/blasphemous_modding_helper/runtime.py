@@ -308,6 +308,39 @@ def run_command(
     )
 
 
+def start_process(
+    command: Sequence[CommandPart],
+    *,
+    cwd: Optional[CommandPart] = None,
+    env: Optional[Mapping[str, str]] = None,
+    environment: Optional[Mapping[str, str]] = None,
+    creationflags: int = 0,
+    start_new_session: bool = False,
+) -> subprocess.Popen:
+    """Start one direct, shell-free process with an argument sequence.
+
+    Platform adapters choose the small set of process-group options they need;
+    this function keeps argument validation and shell handling in one place.
+    """
+
+    if isinstance(command, (str, bytes)) or not command:
+        raise TypeError("command must be a non-empty argument sequence")
+    if env is not None and environment is not None:
+        raise TypeError("pass only one of env or environment")
+    argv = [str(part) for part in command]
+    options = {
+        "cwd": str(cwd) if cwd is not None else None,
+        "env": dict(env if env is not None else environment)
+        if env is not None or environment is not None
+        else None,
+        "shell": False,
+        "start_new_session": start_new_session,
+    }
+    if creationflags:
+        options["creationflags"] = creationflags
+    return subprocess.Popen(argv, **options)
+
+
 def require_success(result: CommandResult, operation: str = "External command") -> CommandResult:
     """Raise a domain command error when a caller explicitly requires success."""
 
