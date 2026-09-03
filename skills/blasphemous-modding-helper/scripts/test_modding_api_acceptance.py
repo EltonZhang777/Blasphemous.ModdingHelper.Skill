@@ -249,8 +249,16 @@ def check_clean_worktree() -> None:
         raise AcceptanceError(f"worktree is not clean:\n{result.stdout}")
 
 
+def configure_output_streams() -> None:
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is not None:
+            reconfigure(encoding="utf-8", errors="replace")
+
+
 def main(argv: Optional[Sequence[str]] = None) -> int:
     args = build_parser().parse_args(argv)
+    configure_output_streams()
     print("Acceptance runner: native Python")
     print(f"Platform: {platform.system()}")
     print(f"Python: {args.python_executable}")
