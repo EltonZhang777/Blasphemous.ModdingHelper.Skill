@@ -1338,9 +1338,11 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
 
     def test_logs_groups_target_framework_baseline_and_new_diagnostics(self):
         module, session, deployment, profile_preflight, process, identity = self.create_launched_session(
+            prelaunch_bepinex_log="[Warning : LegacyPlugin] pre-session profile warning\n",
             project_kwargs={"assembly_name": "RuntimeMod"}
         )
         (profile_preflight.bepinex_root / "LogOutput.log").write_text(
+            "[Warning : LegacyPlugin] pre-session profile warning\n"
             "[Info : BepInEx] Chainloader initialized\n"
             "[Info : ModdingAPI] Registered Mod: RuntimeMod\n"
             "[Warning : BepInEx] framework warning\n"
@@ -1368,9 +1370,22 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
         self.assertIn("  unknown:", result.stdout)
         self.assertIn("target logger failed", result.stdout)
         self.assertIn("newly observed profile warning", result.stdout)
+        self.assertIn("pre-session profile warning", result.stdout)
         payload = json.loads(deployment.state_path.read_text(encoding="utf-8"))
         groups = {hit["group"] for hit in payload["evidence"]["hits"]}
         self.assertEqual(groups, {"target", "framework", "baseline", "unknown"})
+        rewired_hit = next(
+            hit
+            for hit in payload["evidence"]["hits"]
+            if "Rewired_Windows_Lib.resources" in hit["text"]
+        )
+        self.assertEqual(rewired_hit["group"], "framework")
+        baseline_hit = next(
+            hit
+            for hit in payload["evidence"]["hits"]
+            if "pre-session profile warning" in hit["text"]
+        )
+        self.assertEqual(baseline_hit["group"], "baseline")
         localization_hit = next(
             hit
             for hit in payload["evidence"]["hits"]

@@ -44,20 +44,17 @@ hits with an ownership group:
 | --- | --- |
 | `target` | The record contains a derived target runtime alias and is relevant to the target Mod. |
 | `framework` | The record belongs to a recognized BepInEx, ModdingAPI, Unity, or related framework source and is not target-owned. |
-| `baseline` | The record matches a documented profile fingerprint known to be unrelated to the target Mod. |
-| `unknown` | The record is not target-owned and has no known framework or baseline fingerprint; it remains visible without an ownership claim. |
+| `baseline` | The record is a structured warning/error within the exact pre-session byte prefix retained by the current log. This is provenance, not a harmlessness claim. |
+| `unknown` | The record is not target-owned, is not from a recognized framework source, and has no proven session baseline; it remains visible without an ownership claim. |
 
-Known baseline fingerprints currently documented from the approved Blasphemous
-profile are:
-
-| Fingerprint | Classification |
-| --- | --- |
-| `Rewired_Windows_Lib.resources` | Rewired resource warning |
-
-Baseline labels do not suppress or delete log lines. Newly observed warnings and
-errors remain visible as `framework` or `unknown` evidence, and target-owned
-errors remain beside the startup result. The report stays bounded and does not
-persist a complete log copy.
+The launcher captures only pre-session file metadata (including size, digest, and
+line count). A current source receives `baseline` labels only when its retained
+prefix still matches that digest and ends at a complete line boundary; a
+rewritten, truncated, missing, or otherwise unproven prefix receives no
+baseline labels. Baseline labels do not suppress or delete log lines. Newly
+observed warnings and errors remain visible as `framework` or `unknown`
+evidence, and target-owned errors remain beside the startup result. The report
+stays bounded and does not persist a complete log copy.
 
 ## Completion criteria
 

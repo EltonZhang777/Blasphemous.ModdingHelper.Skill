@@ -174,7 +174,7 @@ class BlasphemousModdingLogsTests(unittest.TestCase):
         self.assertEqual(by_text[lines[0]].kind, "warning")
         self.assertEqual(by_text[lines[0]].reason, "target-owned warning")
         self.assertEqual(by_text[lines[1]].group, "framework")
-        self.assertEqual(by_text[lines[2]].group, "baseline")
+        self.assertEqual(by_text[lines[2]].group, "framework")
         self.assertEqual(by_text[lines[3]].group, "framework")
         self.assertEqual(by_text[lines[4]].group, "unknown")
         self.assertEqual(by_text[lines[5]].group, "unknown")
@@ -182,12 +182,86 @@ class BlasphemousModdingLogsTests(unittest.TestCase):
         self.assertEqual(by_text[lines[7]].group, "unknown")
         self.assertEqual(by_text[lines[8]].group, "target")
         self.assertEqual(by_text[lines[9]].group, "unknown")
+        self.assertFalse(any(hit.group == "baseline" for hit in hits))
         self.assertFalse(
             any(
                 hit.group == "target" and "RuntimeProject.dll" in hit.text
                 for hit in hits
             )
         )
+
+    def test_session_prefix_derives_baseline_without_log_fingerprints(self):
+        prelaunch = "[Warning : LegacyPlugin] pre-session profile warning\n"
+        self.bepinex.write_text(prelaunch, encoding="utf-8")
+        self.unity.write_text("Unity startup\n", encoding="utf-8")
+        process_state = self.current_process_state()
+
+        self.bepinex.write_text(
+            prelaunch
+            + "[Warning : LegacyPlugin] current profile warning\n"
+            + "[Warning : BepInEx] current framework warning\n"
+            + "[Error : RuntimeProject] current target failure\n",
+            encoding="utf-8",
+        )
+        report = logs.collect_log_evidence(
+            self.bepinex,
+            self.unity,
+            process_state,
+            "RuntimeProject",
+            ("RuntimeProject",),
+        )
+
+        self.assertEqual(report.sources[0].baseline_line_count, 1)
+        by_text = {hit.text: hit for hit in report.hits}
+        self.assertEqual(by_text[prelaunch.rstrip("\n")].group, "baseline")
+        self.assertEqual(
+            by_text["[Warning : LegacyPlugin] current profile warning"].group,
+            "unknown",
+        )
+        self.assertEqual(
+            by_text["[Warning : BepInEx] current framework warning"].group,
+            "framework",
+        )
+        self.assertEqual(
+            by_text["[Error : RuntimeProject] current target failure"].group,
+            "target",
+        )
+
+        self.bepinex.write_text(
+            "[Warning : LegacyPlugin] rewritten profile warning\n",
+            encoding="utf-8",
+        )
+        rewritten = logs.collect_log_evidence(
+            self.bepinex,
+            self.unity,
+            process_state,
+            "RuntimeProject",
+            ("RuntimeProject",),
+        )
+
+        self.assertIsNone(rewritten.sources[0].baseline_line_count)
+        self.assertEqual(rewritten.hits[0].group, "unknown")
+
+    def test_session_baseline_requires_a_pre_session_line_boundary(self):
+        prelaunch = "[Warning : LegacyPlugin] pre-session profile warning"
+        self.bepinex.write_text(prelaunch, encoding="utf-8")
+        self.unity.write_text("Unity startup\n", encoding="utf-8")
+        process_state = self.current_process_state()
+
+        self.bepinex.write_text(
+            prelaunch + "\n[Warning : LegacyPlugin] current profile warning\n",
+            encoding="utf-8",
+        )
+        report = logs.collect_log_evidence(
+            self.bepinex,
+            self.unity,
+            process_state,
+            "RuntimeProject",
+            ("RuntimeProject",),
+        )
+
+        self.assertIsNone(report.sources[0].baseline_line_count)
+        self.assertFalse(any(hit.group == "baseline" for hit in report.hits))
 
 
 if __name__ == "__main__":

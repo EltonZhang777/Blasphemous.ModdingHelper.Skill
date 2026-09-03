@@ -102,7 +102,7 @@ The workflow stores only temporary session state for process ownership, deployme
 - Safe clean restores overwritten files and preserves new deployment files by default. Removing new files and handling files changed during testing require explicit user approval.
 - Stop and clean refuse to operate while the tracked game process is running. Stop is idempotent when the tracked process has already exited.
 - The evidence state is split into launched, ready, and mod loaded. Ready uses current BepInEx chainloader completion evidence; mod loaded uses target-mod loading evidence. A timeout preserves the process and session for diagnosis.
-- Structured warning and error evidence is grouped as target-owned, framework-owned, known baseline, or unknown. Known baseline fingerprints are documented labels only; they never suppress newly observed or target-owned diagnostics.
+- Structured warning and error evidence is grouped as target-owned, framework-owned, session baseline, or unknown. A session-baseline label is derived only when the current log retains a byte prefix ending at a complete line boundary and proven equal to the pre-session log; concrete warning text is never a built-in baseline rule. Labels never suppress newly observed or target-owned diagnostics.
 - The BepInEx log is profile-relative. The Unity log directory is an optional preferences field. When it is missing, the agent asks the user and writes the answer to the active preferences scope; the CLI itself does not conduct the conversational update.
 - Logs are read from their existing system locations. Default output is bounded; full output is explicit. No persistent log report is created.
 - User-facing CLI output is UTF-8, and subprocess text is decoded explicitly with safe replacement for undecodable bytes. Unicode and space-containing path values remain intact across the lifecycle; replacement applies only to undecodable subprocess or log text.
@@ -119,7 +119,7 @@ The workflow stores only temporary session state for process ownership, deployme
 - Fixture tests cover overwriting an existing file, restoring the previous file, retaining new files, protecting files modified during testing, explicit new-file removal, per-file cleanup outcomes, post-clean status, process-exit cleanup, and rollback failure reporting.
 - Fixture tests cover repeated sessions, archived-session warnings, newest-first cleanup, status output, idempotent stop, and refusal to clean while a newer session is active.
 - Fixture tests cover launched, ready, mod-loaded, timeout, missing BepInEx log, missing Unity log, and preferences update handoff behavior.
-- Fixture tests cover target, framework, known baseline, unknown, unrelated-error, and newly observed warning classification without creating persistent log copies.
+- Fixture tests cover target, framework, dynamically derived session baseline, unknown, rewritten-prefix fallback, unrelated-error, and newly observed warning classification without creating persistent log copies.
 - Fixture tests cover Unicode and space-containing paths through dry-run, build errors, run, logs, status, stop, and clean, including undecodable log bytes.
 - Parser-level tests cover valid invocations, reject misplaced cross-command options, and assert root/subcommand help for the canonical workflow and limited stop contract.
 - The same user-visible contract is checked through the Python acceptance surface on native Windows, Linux, and macOS environments. Platform-specific launcher resolution is tested with profile fixtures rather than Steam.

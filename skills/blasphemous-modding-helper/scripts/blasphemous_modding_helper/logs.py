@@ -24,12 +24,6 @@ LOG_OUTPUT_ENCODING = "utf-8"
 LOG_OUTPUT_ERRORS = "replace"
 EVIDENCE_GROUP_ORDER = ("target", "framework", "baseline", "unknown")
 
-_BASELINE_FINGERPRINTS = (
-    (
-        "Rewired resource warning",
-        re.compile(r"Rewired_Windows_Lib\.resources", re.IGNORECASE),
-    ),
-)
 _FRAMEWORK_SOURCE_TOKENS = (
     "bepinex",
     "chainloader",
@@ -53,6 +47,7 @@ class LogEvidenceSource:
     output_lines: Tuple[str, ...]
     evidence_lines: Tuple[str, ...]
     warning: Optional[str]
+    baseline_line_count: Optional[int] = None
 
 
 @dataclass(frozen=True)
@@ -148,9 +143,15 @@ def log_signature(path: Path) -> Optional[Dict[str, object]]:
             return None
         stat_result = path.stat()
         digest = hashlib.sha256()
+        byte_count = 0
+        newline_count = 0
+        last_byte = b""
         with path.open("rb") as stream:
             for chunk in iter(lambda: stream.read(1024 * 1024), b""):
                 digest.update(chunk)
+                byte_count += len(chunk)
+                newline_count += chunk.count(b"\n")
+                last_byte = chunk[-1:]
     except OSError:
         return None
     return {
@@ -158,6 +159,10 @@ def log_signature(path: Path) -> Optional[Dict[str, object]]:
         "mtime_ns": int(stat_result.st_mtime_ns),
         "size": int(stat_result.st_size),
         "sha256": digest.hexdigest(),
+        "line_count": newline_count + int(
+            bool(byte_count and last_byte != b"\n")
+        ),
+        "ends_with_newline": last_byte == b"\n",
     }
 
 
@@ -173,8 +178,64 @@ def capture_log_baselines(paths: Sequence[Path]) -> Dict[str, Dict[str, object]]
             "exists": False,
             "mtime_ns": None,
             "size": None,
+            "line_count": None,
+            "ends_with_newline": None,
         }
     return baselines
+
+
+def _log_baseline(
+    path: Path,
+    process_state: Mapping[str, object],
+    baseline_key: str,
+) -> Optional[Mapping[str, object]]:
+    baseline_value = process_state.get("log_baseline")
+    if not isinstance(baseline_value, Mapping):
+        return None
+    raw_baseline = baseline_value.get(baseline_key)
+    if raw_baseline is None:
+        raw_baseline = baseline_value.get(str(path.resolve(strict=False)))
+    return raw_baseline if isinstance(raw_baseline, Mapping) else None
+
+
+def _session_baseline_line_count(
+    path: Path,
+    process_state: Mapping[str, object],
+    baseline_key: str,
+) -> Optional[int]:
+    """Prove that the current log retains its pre-session prefix."""
+
+    baseline = _log_baseline(path, process_state, baseline_key)
+    if baseline is None or not bool(baseline.get("exists")):
+        return None
+    baseline_digest = baseline.get("sha256")
+    try:
+        baseline_size = int(baseline["size"])
+        baseline_line_count = int(baseline["line_count"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    if (
+        not isinstance(baseline_digest, str)
+        or baseline_size < 0
+        or baseline_line_count < 0
+        or not bool(baseline.get("ends_with_newline"))
+    ):
+        return None
+    try:
+        if path.stat().st_size < baseline_size:
+            return None
+        digest = hashlib.sha256()
+        remaining = baseline_size
+        with path.open("rb") as stream:
+            while remaining:
+                chunk = stream.read(min(1024 * 1024, remaining))
+                if not chunk:
+                    return None
+                digest.update(chunk)
+                remaining -= len(chunk)
+    except OSError:
+        return None
+    return baseline_line_count if digest.hexdigest() == baseline_digest else None
 
 
 def log_is_current(
@@ -188,14 +249,7 @@ def log_is_current(
     if signature is None:
         return False
 
-    baseline_value = process_state.get("log_baseline")
-    baseline: Optional[Dict[str, object]] = None
-    if isinstance(baseline_value, dict):
-        raw_baseline = baseline_value.get(baseline_key)
-        if raw_baseline is None:
-            raw_baseline = baseline_value.get(str(path.resolve(strict=False)))
-        if isinstance(raw_baseline, dict):
-            baseline = raw_baseline
+    baseline = _log_baseline(path, process_state, baseline_key)
     if baseline is not None:
         if not bool(baseline.get("exists")):
             return True
@@ -268,6 +322,11 @@ def read_log_source(
         )
 
     current = log_is_current(normalized, process_state, baseline_key)
+    baseline_line_count = (
+        _session_baseline_line_count(normalized, process_state, baseline_key)
+        if current
+        else None
+    )
     warning = configured_warning
     if not current:
         warning = (
@@ -285,6 +344,7 @@ def read_log_source(
         selected_lines,
         tuple(lines),
         warning,
+        baseline_line_count,
     )
 
 
@@ -569,19 +629,13 @@ def _framework_source(source: str) -> bool:
     )
 
 
-def _baseline_fingerprint(line: str) -> Optional[str]:
-    for name, fingerprint in _BASELINE_FINGERPRINTS:
-        if fingerprint.search(line):
-            return name
-    return None
-
-
 def classify_log_diagnostics(
     lines: Sequence[str],
     aliases: Sequence[str] = (),
     source: str = "BepInEx",
     source_path: Optional[Path] = None,
     excluded_line_numbers: Sequence[int] = (),
+    baseline_line_count: Optional[int] = None,
 ) -> Tuple[EvidenceHit, ...]:
     """Classify bounded warning/error records without suppressing new noise."""
 
@@ -606,12 +660,14 @@ def classify_log_diagnostics(
         ):
             group = "target"
             reason = f"target-owned {kind}"
+        elif (
+            baseline_line_count is not None
+            and line_number <= baseline_line_count
+        ):
+            group = "baseline"
+            reason = "session baseline"
         else:
-            baseline_name = _baseline_fingerprint(line)
-            if baseline_name is not None:
-                group = "baseline"
-                reason = f"known baseline: {baseline_name}"
-            elif _framework_source(record.group("source")):
+            if _framework_source(record.group("source")):
                 group = "framework"
                 reason = f"framework {kind}"
             else:
@@ -752,6 +808,7 @@ def collect_log_evidence(
                 source=source.label,
                 source_path=source.path,
                 excluded_line_numbers=excluded_lines,
+                baseline_line_count=source.baseline_line_count,
             )
         )
     hits = select_evidence_hits(
