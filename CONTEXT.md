@@ -118,6 +118,14 @@ _Avoid_: gameplay verified
 The configured directory that contains the Unity player log for the selected game profile and platform.
 _Avoid_: Unity log path (when the stored value is a directory)
 
+**Session baseline**:
+Structured log evidence that existed before the current Test session started; it does not mean that the evidence is harmless.
+_Avoid_: known warning, suppressed log, baseline fingerprint
+
+**Diagnostic ownership**:
+The evidence-based attribution of a log record to the target Mod, the framework, the session baseline, or an unknown source.
+_Avoid_: error blame, warning suppression
+
 ## Lifecycle vocabulary
 
 **`BlasMod` lifecycle**:

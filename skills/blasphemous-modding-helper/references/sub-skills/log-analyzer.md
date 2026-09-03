@@ -35,6 +35,30 @@ This step is complete only when CLI resolves Unity log or warning remains visibl
 
 `launched`, `ready`, and `mod_loaded` are startup states. They MUST NOT be used to verify visual, input, combat, menu, save, or other gameplay behavior. After startup evidence is collected, agent MUST ask player to operate game and report observed behavior in natural language; agent MUST treat that report as manual gameplay evidence.
 
+## Startup diagnostic ownership
+
+The `logs` operation keeps structured warning and error records as bounded evidence
+hits with an ownership group:
+
+| Group | Meaning |
+| --- | --- |
+| `target` | The record contains a derived target runtime alias and is relevant to the target Mod. |
+| `framework` | The record belongs to a recognized BepInEx, ModdingAPI, Unity, or related framework source and is not target-owned. |
+| `baseline` | The record matches a documented profile fingerprint known to be unrelated to the target Mod. |
+| `unknown` | The record is not target-owned and has no known framework or baseline fingerprint; it remains visible without an ownership claim. |
+
+Known baseline fingerprints currently documented from the approved Blasphemous
+profile are:
+
+| Fingerprint | Classification |
+| --- | --- |
+| `Rewired_Windows_Lib.resources` | Rewired resource warning |
+
+Baseline labels do not suppress or delete log lines. Newly observed warnings and
+errors remain visible as `framework` or `unknown` evidence, and target-owned
+errors remain beside the startup result. The report stays bounded and does not
+persist a complete log copy.
+
 ## Completion criteria
 
 Agent MUST mark log analysis complete only when report contains all of these:

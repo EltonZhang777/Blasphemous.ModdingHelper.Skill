@@ -188,6 +188,8 @@ Unity:   <unity_log_dir>/Player.log           (native Linux/macOS, then output_l
 
 Package `TargetName` identifies the publish package, not necessarily the runtime Mod identity. The CLI persists bounded runtime aliases derived from `TargetName`, an explicit project `AssemblyName`, and the project name. Structured ModdingAPI or Mod Loader registration evidence exposes the canonical `mod_id`; standard BepInEx `Loading`/`Loaded` evidence exposes the human-readable `mod_name`. Mod Loader identity is preferred for target matching. A BepInEx display name participates only through an explicit display-name alias or as corroborating context; it is never rewritten as a canonical ID. Positive target evidence requires a current BepInEx chainloader readiness record plus an exact structured target record. Paths, errors, and unstructured mentions do not count. A target error before positive registration prevents promotion; a later target error is retained as diagnostic metadata without demoting an already established load. The session manifest retains bounded source, path, line, reason, kind, text, and available identity metadata for matched evidence; it never copies a log.
 
+Structured warning and error evidence is grouped as `target`, `framework`, `baseline`, or `unknown`. Known baseline fingerprints are labels only: they remain visible and do not suppress newly observed or target-owned diagnostics. See the [log analyzer ownership rules](log-analyzer.md) for the documented profile fingerprints.
+
 Startup states are deliberately narrower than gameplay results:
 
 | State | Automated evidence |

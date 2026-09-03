@@ -76,6 +76,7 @@ DEFAULT_LOG_LINES = log_diagnostics.DEFAULT_LOG_LINES
 STARTUP_POLL_INTERVAL_SECONDS = log_diagnostics.STARTUP_POLL_INTERVAL_SECONDS
 MAX_EVIDENCE_HITS = log_diagnostics.MAX_EVIDENCE_HITS
 MAX_EVIDENCE_TEXT = log_diagnostics.MAX_EVIDENCE_TEXT
+EVIDENCE_GROUP_ORDER = log_diagnostics.EVIDENCE_GROUP_ORDER
 LOG_OUTPUT_ENCODING = log_diagnostics.LOG_OUTPUT_ENCODING
 LOG_OUTPUT_ERRORS = log_diagnostics.LOG_OUTPUT_ERRORS
 
@@ -1735,6 +1736,7 @@ def _update_evidence_state(state_path: Path, report: EvidenceReport) -> None:
                 "line": hit.line_number,
                 "reason": hit.reason,
                 "kind": hit.kind,
+                "group": hit.group,
                 "text": hit.text,
                 "path": str(hit.path) if hit.path is not None else None,
                 "mod_id": hit.mod_id,
@@ -3468,18 +3470,23 @@ def _print_evidence_report(
     print(f"Mod-loaded state: {'loaded' if report.mod_loaded else 'not-loaded'}")
     if report.hits:
         print("Evidence hits:")
-        for hit in report.hits:
-            identities = []
-            if hit.mod_id is not None:
-                identities.append(f"mod_id={hit.mod_id}")
-            if hit.mod_name is not None:
-                identities.append(f"mod_name={hit.mod_name}")
-            identity_text = f" [{', '.join(identities)}]" if identities else ""
-            print(
-                f"  - {hit.source}:{hit.line_number} [{hit.kind}] "
-                f"{hit.reason}{identity_text} "
-                f"({hit.path or 'path unavailable'}): {hit.text}"
-            )
+        for group in EVIDENCE_GROUP_ORDER:
+            group_hits = tuple(hit for hit in report.hits if hit.group == group)
+            if not group_hits:
+                continue
+            print(f"  {group}:")
+            for hit in group_hits:
+                identities = []
+                if hit.mod_id is not None:
+                    identities.append(f"mod_id={hit.mod_id}")
+                if hit.mod_name is not None:
+                    identities.append(f"mod_name={hit.mod_name}")
+                identity_text = f" [{', '.join(identities)}]" if identities else ""
+                print(
+                    f"    - {hit.source}:{hit.line_number} [{hit.kind}] "
+                    f"{hit.reason}{identity_text} "
+                    f"({hit.path or 'path unavailable'}): {hit.text}"
+                )
     for source in report.sources:
         path = str(source.path) if source.path is not None else "not configured"
         if not source.exists:

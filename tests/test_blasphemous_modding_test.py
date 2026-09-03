@@ -1336,6 +1336,58 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
         payload = json.loads(deployment.state_path.read_text(encoding="utf-8"))
         self.assertTrue(any(hit["kind"] == "error" for hit in payload["evidence"]["hits"]))
 
+    def test_logs_groups_target_framework_baseline_and_new_diagnostics(self):
+        module, session, deployment, profile_preflight, process, identity = self.create_launched_session(
+            project_kwargs={"assembly_name": "RuntimeMod"}
+        )
+        (profile_preflight.bepinex_root / "LogOutput.log").write_text(
+            "[Info : BepInEx] Chainloader initialized\n"
+            "[Info : ModdingAPI] Registered Mod: RuntimeMod\n"
+            "[Warning : BepInEx] framework warning\n"
+            "[Warning : Rewired] Could not load Rewired_Windows_Lib.resources\n"
+            "[Error : Localization Patcher] Could not load vonwaonbitmap-16px.json\n"
+            "[Warning : Game] Teleport_Pontiff has no UniqueId\n"
+            "[Warning : NewPlugin] newly observed profile warning\n"
+            "[Error : OtherPlugin] Failed to load C:/mods/RuntimeMod.dll\n"
+            "[Error : RuntimeMod] target logger failed\n",
+            encoding="utf-8",
+        )
+
+        result = self.run_module_cli(
+            module,
+            "logs",
+            deployment.session_id,
+            session=session,
+        )
+
+        self.assert_success(result)
+        self.assertIn("Startup state: mod_loaded", result.stdout)
+        self.assertIn("  target:", result.stdout)
+        self.assertIn("  framework:", result.stdout)
+        self.assertIn("  baseline:", result.stdout)
+        self.assertIn("  unknown:", result.stdout)
+        self.assertIn("target logger failed", result.stdout)
+        self.assertIn("newly observed profile warning", result.stdout)
+        payload = json.loads(deployment.state_path.read_text(encoding="utf-8"))
+        groups = {hit["group"] for hit in payload["evidence"]["hits"]}
+        self.assertEqual(groups, {"target", "framework", "baseline", "unknown"})
+        localization_hit = next(
+            hit
+            for hit in payload["evidence"]["hits"]
+            if "vonwaonbitmap-16px.json" in hit["text"]
+        )
+        self.assertEqual(localization_hit["group"], "framework")
+        teleport_hit = next(
+            hit
+            for hit in payload["evidence"]["hits"]
+            if "Teleport_Pontiff" in hit["text"]
+        )
+        self.assertEqual(teleport_hit["group"], "unknown")
+        path_error = next(
+            hit for hit in payload["evidence"]["hits"] if "RuntimeMod.dll" in hit["text"]
+        )
+        self.assertEqual(path_error["group"], "unknown")
+
     def test_timeout_rechecks_evidence_at_deadline(self):
         module, session, deployment, profile_preflight, process, identity = self.create_launched_session()
         not_loaded = module.EvidenceReport("ready", True, False, False, (), ())

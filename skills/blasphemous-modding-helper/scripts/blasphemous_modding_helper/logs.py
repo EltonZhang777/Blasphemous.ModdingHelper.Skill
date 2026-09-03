@@ -22,6 +22,25 @@ MAX_EVIDENCE_HITS = 20
 MAX_EVIDENCE_TEXT = 240
 LOG_OUTPUT_ENCODING = "utf-8"
 LOG_OUTPUT_ERRORS = "replace"
+EVIDENCE_GROUP_ORDER = ("target", "framework", "baseline", "unknown")
+
+_BASELINE_FINGERPRINTS = (
+    (
+        "Rewired resource warning",
+        re.compile(r"Rewired_Windows_Lib\.resources", re.IGNORECASE),
+    ),
+)
+_FRAMEWORK_SOURCE_TOKENS = (
+    "bepinex",
+    "chainloader",
+    "fmod",
+    "framework",
+    "localization",
+    "mod loader",
+    "moddingapi",
+    "rewired",
+    "unity",
+)
 
 
 @dataclass(frozen=True)
@@ -46,6 +65,7 @@ class EvidenceHit:
     path: Optional[Path] = None
     mod_id: Optional[str] = None
     mod_name: Optional[str] = None
+    group: str = "target"
 
 
 @dataclass(frozen=True)
@@ -399,6 +419,28 @@ def _line_mentions_alias(line: str, aliases: Sequence[str]) -> bool:
     )
 
 
+def _target_diagnostic_match(
+    source: str,
+    message: str,
+    aliases: Sequence[str],
+) -> bool:
+    """Match a target logger or a framework record led by the target alias."""
+
+    normalized_source = _normalize_log_source(source).casefold()
+    normalized_aliases = tuple(
+        alias.strip().casefold() for alias in aliases if alias.strip()
+    )
+    if any(normalized_source == alias for alias in normalized_aliases):
+        return True
+    message_start = message.lstrip().casefold()
+    return any(
+        message_start == alias
+        or message_start.startswith(alias + " ")
+        or message_start.startswith(alias + ":")
+        for alias in normalized_aliases
+    )
+
+
 def target_mod_evidence(
     lines: Sequence[str],
     aliases: Sequence[str],
@@ -463,6 +505,7 @@ def bepinex_context_evidence(
                 kind="context",
                 path=source_path,
                 mod_name=record.mod_name,
+                group="framework",
             )
         )
     return tuple(hits[:MAX_EVIDENCE_HITS])
@@ -483,7 +526,11 @@ def target_error_evidence(
             record
             and record.group("level").strip().casefold()
             in {"error", "exception", "fatal"}
-            and _line_mentions_alias(line[record.end() :], aliases)
+            and _target_diagnostic_match(
+                record.group("source"),
+                line[record.end() :],
+                aliases,
+            )
         ):
             hits.append(
                 EvidenceHit(
@@ -493,8 +540,94 @@ def target_error_evidence(
                     line[:MAX_EVIDENCE_TEXT],
                     "error",
                     path=source_path,
+                    group="target",
                 )
             )
+    return tuple(hits[:MAX_EVIDENCE_HITS])
+
+
+_DIAGNOSTIC_RECORD = re.compile(
+    r"^\s*\[(?P<level>[^:\]]+)\s*:\s*(?P<source>[^\]]+)\]\s*",
+    re.IGNORECASE,
+)
+_DIAGNOSTIC_LEVELS = {
+    "warning": "warning",
+    "warn": "warning",
+    "error": "error",
+    "exception": "error",
+    "fatal": "error",
+}
+
+
+def _framework_source(source: str) -> bool:
+    normalized = _normalize_log_source(source).casefold()
+    return any(
+        normalized == token
+        or normalized.startswith(token + " ")
+        or normalized.startswith(token + ".")
+        for token in _FRAMEWORK_SOURCE_TOKENS
+    )
+
+
+def _baseline_fingerprint(line: str) -> Optional[str]:
+    for name, fingerprint in _BASELINE_FINGERPRINTS:
+        if fingerprint.search(line):
+            return name
+    return None
+
+
+def classify_log_diagnostics(
+    lines: Sequence[str],
+    aliases: Sequence[str] = (),
+    source: str = "BepInEx",
+    source_path: Optional[Path] = None,
+    excluded_line_numbers: Sequence[int] = (),
+) -> Tuple[EvidenceHit, ...]:
+    """Classify bounded warning/error records without suppressing new noise."""
+
+    normalized_aliases = tuple(alias.strip() for alias in aliases if alias.strip())
+    excluded = set(excluded_line_numbers)
+    hits = []
+    for line_number, line in enumerate(lines, start=1):
+        if line_number in excluded:
+            continue
+        record = _DIAGNOSTIC_RECORD.match(line)
+        if record is None:
+            continue
+        kind = _DIAGNOSTIC_LEVELS.get(record.group("level").strip().casefold())
+        if kind is None:
+            continue
+
+        message = line[record.end() :]
+        if _target_diagnostic_match(
+            record.group("source"),
+            message,
+            normalized_aliases,
+        ):
+            group = "target"
+            reason = f"target-owned {kind}"
+        else:
+            baseline_name = _baseline_fingerprint(line)
+            if baseline_name is not None:
+                group = "baseline"
+                reason = f"known baseline: {baseline_name}"
+            elif _framework_source(record.group("source")):
+                group = "framework"
+                reason = f"framework {kind}"
+            else:
+                group = "unknown"
+                reason = f"unclassified {kind}"
+        hits.append(
+            EvidenceHit(
+                source,
+                line_number,
+                reason,
+                line[:MAX_EVIDENCE_TEXT],
+                kind=kind,
+                path=source_path,
+                group=group,
+            )
+        )
     return tuple(hits[:MAX_EVIDENCE_HITS])
 
 
@@ -502,11 +635,12 @@ def select_evidence_hits(
     positive_hits: Sequence[EvidenceHit],
     error_hits: Sequence[EvidenceHit],
     context_hits: Sequence[EvidenceHit] = (),
+    diagnostic_hits: Sequence[EvidenceHit] = (),
 ) -> Tuple[EvidenceHit, ...]:
     """Keep bounded evidence while retaining positive and error context."""
 
     ordered_hits = sorted(
-        [*positive_hits, *error_hits, *context_hits],
+        [*positive_hits, *error_hits, *context_hits, *diagnostic_hits],
         key=lambda hit: hit.line_number,
     )
     required_hits = []
@@ -514,6 +648,13 @@ def select_evidence_hits(
         required_hits.append(positive_hits[0])
     if error_hits:
         required_hits.append(error_hits[0])
+    for group in EVIDENCE_GROUP_ORDER:
+        first_group_hit = next(
+            (hit for hit in diagnostic_hits if hit.group == group),
+            None,
+        )
+        if first_group_hit is not None:
+            required_hits.append(first_group_hit)
 
     selected = []
     for hit in [*required_hits, *ordered_hits]:
@@ -594,7 +735,31 @@ def collect_log_evidence(
         positive_hits,
         source_path=bepinex_source.path,
     )
-    hits = select_evidence_hits(positive_hits, error_hits, context_hits)
+    diagnostic_hits = []
+    for source in sources:
+        source_lines = (
+            source.evidence_lines if source.exists and source.current else ()
+        )
+        excluded_lines = (
+            tuple(hit.line_number for hit in error_hits)
+            if source.label == "BepInEx"
+            else ()
+        )
+        diagnostic_hits.extend(
+            classify_log_diagnostics(
+                source_lines,
+                aliases,
+                source=source.label,
+                source_path=source.path,
+                excluded_line_numbers=excluded_lines,
+            )
+        )
+    hits = select_evidence_hits(
+        positive_hits,
+        error_hits,
+        context_hits,
+        diagnostic_hits,
+    )
     first_positive_line = (
         min(hit.line_number for hit in positive_hits)
         if positive_hits
@@ -671,6 +836,7 @@ __all__ = [
     "STARTUP_POLL_INTERVAL_SECONDS",
     "MAX_EVIDENCE_HITS",
     "MAX_EVIDENCE_TEXT",
+    "EVIDENCE_GROUP_ORDER",
     "LOG_OUTPUT_ENCODING",
     "LOG_OUTPUT_ERRORS",
     "LogEvidenceSource",
@@ -686,6 +852,7 @@ __all__ = [
     "target_mod_evidence",
     "bepinex_context_evidence",
     "target_error_evidence",
+    "classify_log_diagnostics",
     "select_evidence_hits",
     "target_mod_loaded",
     "collect_log_evidence",

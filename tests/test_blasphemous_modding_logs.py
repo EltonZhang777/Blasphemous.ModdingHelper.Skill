@@ -149,6 +149,46 @@ class BlasphemousModdingLogsTests(unittest.TestCase):
             self.assertEqual(resolved, expected)
             self.assertIsNone(warning)
 
+    def test_classifies_target_framework_baseline_and_new_diagnostics(self):
+        lines = (
+            "[Warning : ModdingAPI] RuntimeProject optional warning\n",
+            "[Warning : BepInEx] Chainloader framework warning\n",
+            "[Warning : Rewired] Could not load Rewired_Windows_Lib.resources\n",
+            "[Error : Localization Patcher] Could not load vonwaonbitmap-16px.json\n",
+            "[Warning : Game] Teleport_Pontiff has no UniqueId\n",
+            "[Warning : NewPlugin] newly observed profile warning\n",
+            "[Error : BepInEx] OtherProject failed to load\n",
+            "[Error : OtherPlugin] Failed to load C:/mods/RuntimeProject.dll\n",
+            "[Error : RuntimeProject] target logger failed\n",
+            "[Warning : UnityTweaks] similarly named plugin warning\n",
+        )
+
+        hits = logs.classify_log_diagnostics(
+            lines,
+            ("RuntimeProject",),
+            source_path=self.bepinex,
+        )
+
+        by_text = {hit.text: hit for hit in hits}
+        self.assertEqual(by_text[lines[0]].group, "target")
+        self.assertEqual(by_text[lines[0]].kind, "warning")
+        self.assertEqual(by_text[lines[0]].reason, "target-owned warning")
+        self.assertEqual(by_text[lines[1]].group, "framework")
+        self.assertEqual(by_text[lines[2]].group, "baseline")
+        self.assertEqual(by_text[lines[3]].group, "framework")
+        self.assertEqual(by_text[lines[4]].group, "unknown")
+        self.assertEqual(by_text[lines[5]].group, "unknown")
+        self.assertEqual(by_text[lines[6]].group, "framework")
+        self.assertEqual(by_text[lines[7]].group, "unknown")
+        self.assertEqual(by_text[lines[8]].group, "target")
+        self.assertEqual(by_text[lines[9]].group, "unknown")
+        self.assertFalse(
+            any(
+                hit.group == "target" and "RuntimeProject.dll" in hit.text
+                for hit in hits
+            )
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
