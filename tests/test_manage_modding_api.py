@@ -21,7 +21,7 @@ GIT = shutil.which("git") or "git"
 
 class ManageModdingApiContractTests(unittest.TestCase):
     def setUp(self):
-        self.root = Path(tempfile.mkdtemp(prefix="modding-api-manager-python-"))
+        self.root = Path(tempfile.mkdtemp(prefix="modding-api-manager-python-")).resolve()
         self.remote = self.root / "modding-api.git"
         self.seed = self.root / "seed"
         self.metadata = self.root / "latest.json"
@@ -77,6 +77,7 @@ class ManageModdingApiContractTests(unittest.TestCase):
             str(self.metadata),
         )
         self.assertEqual(clone.returncode, 0, clone.stderr)
+        self._configure_git_identity(self.target)
 
     def tearDown(self):
         shutil.rmtree(self.root, ignore_errors=True)
@@ -102,6 +103,10 @@ class ManageModdingApiContractTests(unittest.TestCase):
             errors="replace",
             check=False,
         )
+
+    def _configure_git_identity(self, repository):
+        self._git(repository, "config", "user.email", "test@example.invalid")
+        self._git(repository, "config", "user.name", "ModdingAPI test")
 
     def _environment(self, **updates):
         environment = os.environ.copy()
@@ -142,6 +147,7 @@ class ManageModdingApiContractTests(unittest.TestCase):
             arguments.extend(("--metadata-file", str(metadata)))
         result = self.run_cloner(*arguments)
         self.assertEqual(result.returncode, 0, result.stderr)
+        self._configure_git_identity(target)
         return target
 
     def advance_dev(self, message, contents):

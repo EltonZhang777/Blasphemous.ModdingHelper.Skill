@@ -20,7 +20,7 @@ GIT = shutil.which("git") or "git"
 
 class CloneModdingApiContractTests(unittest.TestCase):
     def setUp(self):
-        self.root = Path(tempfile.mkdtemp(prefix="modding-api-clone-python-"))
+        self.root = Path(tempfile.mkdtemp(prefix="modding-api-clone-python-")).resolve()
         self.remote = self.root / "modding-api.git"
         self.seed = self.root / "seed"
         self.project = self.root / "project"

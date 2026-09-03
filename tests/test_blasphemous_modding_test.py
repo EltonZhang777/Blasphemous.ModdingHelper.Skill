@@ -30,7 +30,7 @@ SCRIPT = (
 class BlasphemousModdingTestCliTests(unittest.TestCase):
     def setUp(self):
         self.temp_dir = tempfile.TemporaryDirectory()
-        self.root = Path(self.temp_dir.name)
+        self.root = Path(self.temp_dir.name).resolve()
         self.home = self.root / "home"
         self.home.mkdir()
         self.environment = os.environ.copy()
@@ -1816,32 +1816,26 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
 
     def test_windows_taskkill_not_found_race_records_exited(self):
         module, session, deployment, profile_preflight, process, identity = self.create_launched_session()
-        session.process_adapter = module.ProcessAdapter()
+        session.process_adapter = module.ProcessAdapter(
+            module.WindowsPlatformAdapter(
+                process_identity=lambda pid, strict=False: next(observed_identities),
+                process_entries=lambda: (),
+            )
+        )
         observed_identities = iter(
             (identity, identity, identity, None, None)
         )
 
-        with mock.patch.object(module.os, "name", "nt"):
-            with mock.patch.object(
-                module,
-                "_windows_process_entries",
-                return_value=(),
-            ):
-                with mock.patch.object(
-                    module,
-                    "_process_identity",
-                    side_effect=lambda pid, strict=False: next(observed_identities),
-                ):
-                    with mock.patch.object(
-                        module.shared_runtime.subprocess,
-                        "run",
-                        return_value=SimpleNamespace(
-                            returncode=1281,
-                            stdout="",
-                            stderr="The process was not found.",
-                        ),
-                    ) as taskkill:
-                        result = session.stop(deployment.session_id)
+        with mock.patch.object(
+            module.shared_runtime.subprocess,
+            "run",
+            return_value=SimpleNamespace(
+                returncode=1281,
+                stdout="",
+                stderr="The process was not found.",
+            ),
+        ) as taskkill:
+            result = session.stop(deployment.session_id)
 
         self.assertEqual(result.state, "exited")
         taskkill.assert_called_once()
@@ -1860,7 +1854,12 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
 
     def test_windows_taskkill_race_refuses_reused_pid(self):
         module, session, deployment, profile_preflight, process, identity = self.create_launched_session()
-        session.process_adapter = module.ProcessAdapter()
+        session.process_adapter = module.ProcessAdapter(
+            module.WindowsPlatformAdapter(
+                process_identity=lambda pid, strict=False: next(observed_identities),
+                process_entries=lambda: (),
+            )
+        )
         reused = module.ProcessIdentity(
             identity.pid,
             "reused-start-token",
@@ -1870,28 +1869,17 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
             (identity, identity, identity, reused)
         )
 
-        with mock.patch.object(module.os, "name", "nt"):
-            with mock.patch.object(
-                module,
-                "_windows_process_entries",
-                return_value=(),
-            ):
-                with mock.patch.object(
-                    module,
-                    "_process_identity",
-                    side_effect=lambda pid, strict=False: next(observed_identities),
-                ):
-                    with mock.patch.object(
-                        module.shared_runtime.subprocess,
-                        "run",
-                        return_value=SimpleNamespace(
-                            returncode=1281,
-                            stdout="",
-                            stderr="The process was not found.",
-                        ),
-                    ) as taskkill:
-                        with self.assertRaises(module.CliError) as failure:
-                            session.stop(deployment.session_id)
+        with mock.patch.object(
+            module.shared_runtime.subprocess,
+            "run",
+            return_value=SimpleNamespace(
+                returncode=1281,
+                stdout="",
+                stderr="The process was not found.",
+            ),
+        ) as taskkill:
+            with self.assertRaises(module.CliError) as failure:
+                session.stop(deployment.session_id)
 
         self.assertEqual(failure.exception.code, module.EXIT_CLEAN)
         self.assertIn("changed", str(failure.exception))
@@ -1927,9 +1915,10 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
             return 1
 
         kernel32.GetProcessTimes.side_effect = fill_process_times
-        with mock.patch.object(module.os, "name", "nt"):
-            with mock.patch.object(ctypes, "WinDLL", return_value=kernel32):
-                identity = module.ProcessAdapter().identify(1234, strict=True)
+        with mock.patch.object(ctypes, "WinDLL", return_value=kernel32, create=True):
+            identity = module.ProcessAdapter(
+                module.WindowsPlatformAdapter()
+            ).identify(1234, strict=True)
 
         self.assertIsNone(identity)
         self.assertEqual(

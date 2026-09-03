@@ -65,7 +65,7 @@ class FixtureCommands:
 class DecompilerWorkflowTests(unittest.TestCase):
     def setUp(self):
         self.temp_dir = tempfile.TemporaryDirectory()
-        self.root = Path(self.temp_dir.name)
+        self.root = Path(self.temp_dir.name).resolve()
         self.home = self.root / "home"
         self.home.mkdir()
         self.game = self.root / "game"

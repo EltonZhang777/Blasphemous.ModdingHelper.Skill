@@ -18,7 +18,7 @@ from blasphemous_modding_helper import logs  # noqa: E402
 class BlasphemousModdingLogsTests(unittest.TestCase):
     def setUp(self):
         self.temp_dir = tempfile.TemporaryDirectory()
-        self.root = Path(self.temp_dir.name)
+        self.root = Path(self.temp_dir.name).resolve()
         self.bepinex = self.root / "BepInEx" / "LogOutput.log"
         self.unity = self.root / "Unity" / "Player.log"
         self.bepinex.parent.mkdir(parents=True)

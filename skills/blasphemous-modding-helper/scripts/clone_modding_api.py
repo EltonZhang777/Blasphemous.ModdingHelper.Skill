@@ -448,8 +448,13 @@ def resolve_reference(state: CloneState) -> None:
 
 
 def path_identity(path: Path) -> Tuple[int, int, int, int]:
-    stat = os.lstat(path)
-    return (stat.st_dev, stat.st_ino, stat.st_ctime_ns, stat.st_mode)
+    info = os.lstat(path)
+    # POSIX changes directory ctime when checkout entries are moved into it.
+    # ponytail: directory identity omits ctime; dev/file-id/mode catch normal
+    # replacement, while an open-handle or file-generation check would cover
+    # the rare file-index-reuse edge.
+    ctime = 0 if stat.S_ISDIR(info.st_mode) else info.st_ctime_ns
+    return (info.st_dev, info.st_ino, ctime, info.st_mode)
 
 
 def same_path_identity(path: Path, identity: Tuple[int, int, int, int]) -> bool:
