@@ -73,6 +73,18 @@ class PythonAcceptanceEntryPointTests(unittest.TestCase):
         self.assertIn("opt-in", result.stderr)
         self.assertEqual(result.stdout, "")
 
+    def test_legacy_skill_scripts_and_test_runners_are_absent(self):
+        legacy_scripts = sorted(
+            path.relative_to(SCRIPT_TESTS).as_posix()
+            for path in SCRIPT_TESTS.rglob("*")
+            if path.is_file() and path.suffix.lower() in {".js", ".ps1", ".sh"}
+        )
+        self.assertEqual(legacy_scripts, [])
+        for suffix in (".ps1", ".sh"):
+            self.assertFalse(
+                (REPOSITORY_ROOT / "tests" / f"run_blasphemous_modding_test{suffix}").exists()
+            )
+
 
 if __name__ == "__main__":
     unittest.main()
