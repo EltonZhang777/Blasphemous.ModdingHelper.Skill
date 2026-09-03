@@ -27,7 +27,7 @@ class PublicLifecycleContractTests(unittest.TestCase):
 
     def setUp(self):
         self.temp_dir = tempfile.TemporaryDirectory(prefix="modding-api-lifecycle-")
-        self.root = Path(self.temp_dir.name)
+        self.root = Path(self.temp_dir.name).resolve()
         self.remote = self.root / "modding-api.git"
         self.seed = self.root / "seed"
         self.metadata = self.root / "latest.json"

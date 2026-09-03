@@ -2285,6 +2285,7 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
         (profile / "Modding").mkdir(parents=True)
         (profile / "BepInEx").mkdir()
         launcher = self.launcher_path(profile)
+        launcher.parent.mkdir(parents=True, exist_ok=True)
         launcher.write_bytes(b"launcher")
         if platform.system() != "Windows":
             launcher.chmod(0o755)
