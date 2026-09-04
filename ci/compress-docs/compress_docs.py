@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Preview one Skill Markdown document through the local Codex CLI."""
+"""Preview Skill Markdown documents through the local Codex CLI."""
 
 import argparse
 import datetime as dt
@@ -14,6 +14,7 @@ import subprocess
 import sys
 import tempfile
 import uuid
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
 
@@ -52,6 +53,12 @@ class PreflightError(WorkflowError):
 
 class CandidateError(WorkflowError):
     """A candidate cannot safely enter the run."""
+
+
+@dataclass
+class DocumentTarget:
+    path: Path
+    relative: str
 
 
 def repository_root() -> Path:
@@ -129,6 +136,79 @@ def validate_selected_path(root: Path, selection: str) -> Tuple[Path, str]:
     if info.st_size > MAX_FILE_BYTES:
         raise PreflightError("selected document exceeds the 500,000-byte limit")
     return unresolved, relative.as_posix()
+
+
+def _relative_path(root: Path, path: Path) -> str:
+    return Path(os.path.relpath(str(path), str(root))).as_posix()
+
+
+def discover_documents(root: Path) -> Tuple[List[DocumentTarget], List[Dict[str, str]]]:
+    boundary = root / "skills"
+    if _is_link_or_junction(boundary):
+        raise PreflightError("the repository's skills directory cannot be a symlink or junction")
+    if not boundary.is_dir():
+        raise PreflightError("the repository's skills directory does not exist")
+
+    documents: List[DocumentTarget] = []
+    skipped: List[Dict[str, str]] = []
+    resolved_boundary = boundary.resolve()
+    for directory, directory_names, file_names in os.walk(str(resolved_boundary), topdown=True, followlinks=False):
+        current = Path(directory)
+        kept_directories = []
+        for name in sorted(directory_names, key=lambda value: value.casefold()):
+            path = current / name
+            relative = Path(_relative_path(root, path))
+            if name.startswith(".") or name.lower() in EXCLUDED_DIRECTORIES:
+                skipped.append({"path": relative.as_posix(), "status": "skipped", "reason": "excluded directory"})
+                continue
+            if _is_link_or_junction(path):
+                skipped.append({"path": relative.as_posix(), "status": "skipped", "reason": "symlink or junction"})
+                continue
+            kept_directories.append(name)
+        directory_names[:] = kept_directories
+
+        for name in sorted(file_names, key=lambda value: value.casefold()):
+            if not name.lower().endswith(".md"):
+                continue
+            path = current / name
+            relative = Path(_relative_path(root, path))
+            if _is_excluded_path(relative):
+                skipped.append({"path": relative.as_posix(), "status": "skipped", "reason": "excluded document"})
+                continue
+            if _is_sensitive_path(relative):
+                skipped.append({"path": relative.as_posix(), "status": "skipped", "reason": "sensitive document name"})
+                continue
+            if _is_link_or_junction(path):
+                skipped.append({"path": relative.as_posix(), "status": "skipped", "reason": "symlink or junction"})
+                continue
+            try:
+                info = path.stat()
+                if not stat.S_ISREG(info.st_mode):
+                    raise OSError("not a regular file")
+                resolved = path.resolve(strict=False)
+                resolved.relative_to(resolved_boundary)
+            except (OSError, ValueError):
+                skipped.append({"path": relative.as_posix(), "status": "skipped", "reason": "unreadable or outside boundary"})
+                continue
+            documents.append(DocumentTarget(path, relative.as_posix()))
+
+    documents.sort(key=lambda target: target.relative)
+    skipped.sort(key=lambda item: item["path"])
+    return documents, skipped
+
+
+def _preview_targets(root: Path, selections: Optional[Sequence[str]]) -> Tuple[List[DocumentTarget], List[Dict[str, str]]]:
+    if not selections:
+        return discover_documents(root)
+    targets = []
+    seen = set()
+    for selection in selections:
+        path, relative = validate_selected_path(root, selection)
+        if relative in seen:
+            raise PreflightError("--file cannot select the same document twice")
+        seen.add(relative)
+        targets.append(DocumentTarget(path, relative))
+    return targets, []
 
 
 def _resolve_codex(value: str) -> List[str]:
@@ -255,21 +335,32 @@ def _write_json(path: Path, value: Dict[str, object]) -> None:
     _atomic_write(path, (json.dumps(value, ensure_ascii=False, indent=2) + "\n").encode("utf-8"))
 
 
-def _write_run_state(run_dir: Path, manifest: Dict[str, object], diagnostics: List[str]) -> Path:
+def _write_run_state(run_dir: Path, manifest: Dict[str, object], diagnostics: Optional[List[str]] = None) -> Path:
+    diagnostics = [str(item)[:MAX_DIAGNOSTIC_BYTES] for item in (diagnostics or [])]
     _write_json(run_dir / "manifest.json", manifest)
     _atomic_write(run_dir / "diagnostics.log", ("\n".join(diagnostics) + "\n").encode("utf-8"))
-    document = manifest["documents"][0]
+    documents = manifest.get("documents", [])
+    statuses = [str(document.get("status")) for document in documents]
+    counts = {status: statuses.count(status) for status in sorted(set(statuses))}
     lines = [
         "# Compression preview",
         "",
         "- Run: " + str(manifest["run_id"]),
         "- Status: " + str(manifest["status"]),
-        "- Document: " + str(document["path"]),
+        "- Documents: " + str(len(documents)),
     ]
-    if document.get("source_sha256"):
-        lines.append("- Source SHA-256: " + str(document["source_sha256"]))
-    if document.get("candidate"):
-        lines.append("- Candidate: " + str(document["candidate"]))
+    if counts:
+        lines.append("- Outcomes: " + ", ".join(name + "=" + str(count) for name, count in counts.items()))
+    lines.extend(["", "## Documents", ""])
+    for document in documents:
+        line = "- " + str(document["path"]) + ": " + str(document["status"])
+        if document.get("candidate"):
+            line += " (`" + str(document["candidate"]) + "`)"
+        lines.append(line)
+    skipped = manifest.get("skipped", [])
+    if skipped:
+        lines.extend(["", "## Skipped discovery entries", ""])
+        lines.extend("- " + str(item["path"]) + ": " + str(item["reason"]) for item in skipped)
     if diagnostics:
         lines.extend(["", "## Diagnostics", ""])
         lines.extend("- " + item for item in diagnostics)
@@ -278,7 +369,12 @@ def _write_run_state(run_dir: Path, manifest: Dict[str, object], diagnostics: Li
     return summary
 
 
-def _new_run(root: Path, relative: str, git_state: Dict[str, object]) -> Tuple[RunLock, Path, Dict[str, object]]:
+def _new_run(
+    root: Path,
+    targets: Sequence[DocumentTarget],
+    skipped: Sequence[Dict[str, str]],
+    git_state: Dict[str, object],
+) -> Tuple[RunLock, Path, Dict[str, object]]:
     runs = root / "ci" / "compress-docs" / ".runs"
     runs.mkdir(parents=True, exist_ok=True)
     lock = RunLock(runs / ".lock")
@@ -287,16 +383,32 @@ def _new_run(root: Path, relative: str, git_state: Dict[str, object]) -> Tuple[R
         run_id = dt.datetime.now(dt.timezone.utc).strftime("%Y%m%dT%H%M%SZ") + "-" + uuid.uuid4().hex[:12]
         run_dir = runs / run_id
         run_dir.mkdir()
-        (run_dir / "workspace").mkdir()
+        documents = []
+        multiple = len(targets) > 1
+        for index, target in enumerate(targets, start=1):
+            artifact_dir = run_dir if not multiple else run_dir / "documents" / ("%04d" % index)
+            if multiple:
+                artifact_dir.mkdir(parents=True, exist_ok=False)
+            (artifact_dir / "workspace").mkdir()
+            artifact_name = "." if not multiple else (Path("documents") / ("%04d" % index)).as_posix()
+            documents.append(
+                {
+                    "path": target.relative,
+                    "status": "discovered",
+                    "artifact_dir": artifact_name,
+                    "diagnostics": (artifact_name + "/diagnostics.log") if artifact_name != "." else "diagnostics.log",
+                }
+            )
         manifest = {
             "schema_version": 1,
             "run_id": run_id,
             "operation": "preview",
             "prompt_version": PROMPT_VERSION,
             "created_at": dt.datetime.now(dt.timezone.utc).isoformat(),
-            "status": "preflight",
+            "status": "discovered",
             "git": git_state,
-            "documents": [{"path": relative, "status": "preflight"}],
+            "documents": documents,
+            "skipped": list(skipped),
         }
         _write_json(run_dir / "manifest.json", manifest)
         return lock, run_dir, manifest
@@ -448,184 +560,243 @@ def _call_codex(command: Sequence[str], workspace: Path, prompt: bytes, timeout:
     return result.stdout
 
 
-def preview(root: Path, selection: str, codex_value: str, timeout: int) -> int:
-    if sys.version_info < (3, 9):
-        raise PreflightError("Python 3.9 or newer is required")
-    selected, relative = validate_selected_path(root, selection)
-    command = _resolve_codex(codex_value)
-    git_state = _git_metadata(root)
-    lock, run_dir, manifest = _new_run(root, relative, git_state)
+def _artifact_dir(run_dir: Path, document: Dict[str, object]) -> Path:
+    name = str(document["artifact_dir"])
+    return run_dir if name == "." else run_dir / Path(name)
+
+
+def _artifact_name(document: Dict[str, object], name: str) -> str:
+    base = str(document["artifact_dir"])
+    return name if base == "." else (Path(base) / name).as_posix()
+
+
+def _persist_document(run_dir: Path, manifest: Dict[str, object], document: Dict[str, object], diagnostics: List[str]) -> None:
+    artifact_dir = _artifact_dir(run_dir, document)
+    bounded = [str(item)[:MAX_DIAGNOSTIC_BYTES] for item in diagnostics]
+    _atomic_write(artifact_dir / "diagnostics.log", ("\n".join(bounded) + "\n").encode("utf-8"))
+    _write_json(run_dir / "manifest.json", manifest)
+
+
+def _process_document(
+    target: DocumentTarget,
+    document: Dict[str, object],
+    run_dir: Path,
+    manifest: Dict[str, object],
+    command: Sequence[str],
+    timeout: int,
+) -> str:
+    artifact_dir = _artifact_dir(run_dir, document)
+    workspace = artifact_dir / "workspace"
     diagnostics: List[str] = []
-    summary = run_dir / "summary.md"
+
+    def finish(status: str, message: Optional[str] = None, validation_errors: Optional[Sequence[str]] = None) -> str:
+        document["status"] = status
+        if message:
+            diagnostics.append(str(message)[:MAX_DIAGNOSTIC_BYTES])
+        if validation_errors is not None:
+            document["validation_errors"] = list(validation_errors)
+            document["validation"] = {
+                "errors": list(validation_errors),
+                "warnings": [],
+                "repair_attempts": document.get("repair_attempts", 0),
+            }
+        document["error_count"] = len(diagnostics)
+        _persist_document(run_dir, manifest, document, diagnostics)
+        return status
+
+    document["status"] = "reading"
+    _persist_document(run_dir, manifest, document, diagnostics)
     try:
-        try:
-            _run_auth_status(command, run_dir / "workspace")
-        except PreflightError as error:
-            manifest["status"] = "preflight_failed"
-            manifest["documents"][0]["status"] = "preflight_failed"
-            diagnostics.append(str(error))
-            summary = _write_run_state(run_dir, manifest, diagnostics)
-            print("Status: preflight_failed")
-            print("Summary: " + str(summary))
-            return 2
-
-        try:
-            raw = selected.read_bytes()
-            raw.decode("utf-8")
-        except UnicodeDecodeError:
-            manifest["status"] = "rejected"
-            manifest["documents"][0]["status"] = "rejected"
-            diagnostics.append("selected document is not valid UTF-8")
-            summary = _write_run_state(run_dir, manifest, diagnostics)
-            print("Status: rejected")
-            print("Summary: " + str(summary))
-            return 1
-        except OSError as error:
-            manifest["status"] = "failed"
-            manifest["documents"][0]["status"] = "failed"
-            diagnostics.append("selected document could not be read: " + str(error))
-            summary = _write_run_state(run_dir, manifest, diagnostics)
-            print("Status: failed")
-            print("Summary: " + str(summary))
-            return 1
-
-        if len(raw) > MAX_FILE_BYTES:
-            manifest["status"] = "rejected"
-            manifest["documents"][0]["status"] = "rejected"
-            diagnostics.append("selected document exceeds the 500,000-byte limit")
-            summary = _write_run_state(run_dir, manifest, diagnostics)
-            print("Status: rejected")
-            print("Summary: " + str(summary))
-            return 1
-
-        bom, frontmatter, body = _split_frontmatter(raw)
-        if not body.strip():
-            manifest["status"] = "rejected"
-            manifest["documents"][0]["status"] = "rejected"
-            diagnostics.append("selected document has an empty body after frontmatter")
-            summary = _write_run_state(run_dir, manifest, diagnostics)
-            print("Status: rejected")
-            print("Summary: " + str(summary))
-            return 1
-
-        source_digest = hashlib.sha256(raw).hexdigest()
-        document = manifest["documents"][0]
+        raw = target.path.read_bytes()
         document.update(
             {
-                "status": "generating",
                 "source_bytes": len(raw),
-                "source_sha256": source_digest,
-                "bom": bool(bom),
-                "newline_style": _newline_style(raw),
-                "frontmatter_bytes": len(frontmatter),
+                "source_sha256": hashlib.sha256(raw).hexdigest(),
             }
         )
-        _write_json(run_dir / "manifest.json", manifest)
+        raw.decode("utf-8")
+    except UnicodeDecodeError:
+        return finish("rejected", "selected document is not valid UTF-8")
+    except OSError as error:
+        return finish("failed", "selected document could not be read: " + str(error))
+    if len(raw) > MAX_FILE_BYTES:
+        return finish("rejected", "selected document exceeds the 500,000-byte limit")
 
-        repair_attempts = 0
-        last_errors: List[str] = []
-        try:
-            body_text = body.decode("utf-8")
-            protected_reference = build_protected_reference(body_text)
-            output = _call_codex(command, run_dir / "workspace", _build_prompt(body_text), timeout)
-            candidate_body: Optional[str] = None
-            while True:
-                candidate_context: Optional[str]
-                try:
-                    candidate_body = _normalize_newlines(_parse_candidate(output), document["newline_style"])
-                    candidate_context = candidate_body
-                except CandidateError as error:
-                    candidate_body = None
-                    candidate_context = _candidate_context(output)
-                    last_errors = [str(error)]
+    bom, frontmatter, body = _split_frontmatter(raw)
+    if not body.strip():
+        return finish("rejected", "selected document has an empty body after frontmatter")
 
-                candidate = None
-                if candidate_body is not None:
-                    candidate = bom + frontmatter + candidate_body.encode("utf-8")
-                    if len(candidate) > MAX_FILE_BYTES:
-                        last_errors = ["Codex candidate exceeds the 500,000-byte limit"]
-                    else:
-                        validation = validate_candidate(raw, candidate)
-                        if validation.is_valid:
-                            document["validation"] = {
-                                "errors": [],
-                                "warnings": validation.warnings,
-                                "repair_attempts": repair_attempts,
-                            }
-                            break
-                        last_errors = validation.errors
+    document.update(
+        {
+            "status": "generating",
+            "bom": bool(bom),
+            "newline_style": _newline_style(raw),
+            "frontmatter_bytes": len(frontmatter),
+        }
+    )
+    _persist_document(run_dir, manifest, document, diagnostics)
 
-                if candidate_context is None:
-                    raise CandidateError("candidate cannot be repaired because it is not valid UTF-8")
-                if repair_attempts >= MAX_REPAIRS:
-                    raise CandidateError(
-                        "candidate validation failed after "
-                        + str(MAX_REPAIRS)
-                        + " repairs: "
-                        + "; ".join(last_errors)
-                    )
-                if candidate is not None:
-                    _atomic_write(run_dir / ("attempt-" + str(repair_attempts) + ".md"), candidate)
-                repair_attempts += 1
-                document["status"] = "repairing"
-                document["repair_attempts"] = repair_attempts
-                document["validation_errors"] = last_errors
-                _write_json(run_dir / "manifest.json", manifest)
-                output = _call_codex(
-                    command,
-                    run_dir / "workspace",
-                    _build_repair_prompt(candidate_context, last_errors, protected_reference),
-                    timeout,
+    repair_attempts = 0
+    last_errors: List[str] = []
+    try:
+        body_text = body.decode("utf-8")
+        protected_reference = build_protected_reference(body_text)
+        output = _call_codex(command, workspace, _build_prompt(body_text), timeout)
+        candidate_body: Optional[str] = None
+        while True:
+            candidate_context: Optional[str]
+            try:
+                candidate_body = _normalize_newlines(_parse_candidate(output), document["newline_style"])
+                candidate_context = candidate_body
+            except CandidateError as error:
+                candidate_body = None
+                candidate_context = _candidate_context(output)
+                last_errors = [str(error)]
+
+            candidate = None
+            if candidate_body is not None:
+                candidate = bom + frontmatter + candidate_body.encode("utf-8")
+                if len(candidate) > MAX_FILE_BYTES:
+                    last_errors = ["Codex candidate exceeds the 500,000-byte limit"]
+                else:
+                    validation = validate_candidate(raw, candidate)
+                    if validation.is_valid:
+                        document["validation"] = {
+                            "errors": [],
+                            "warnings": validation.warnings,
+                            "repair_attempts": repair_attempts,
+                        }
+                        break
+                    last_errors = validation.errors
+
+            if candidate_context is None:
+                raise CandidateError("candidate cannot be repaired because it is not valid UTF-8")
+            if repair_attempts >= MAX_REPAIRS:
+                raise CandidateError(
+                    "candidate validation failed after "
+                    + str(MAX_REPAIRS)
+                    + " repairs: "
+                    + "; ".join(last_errors)
                 )
-        except CandidateError as error:
-            manifest["status"] = "rejected"
-            document["status"] = "rejected"
+            if candidate is not None:
+                _atomic_write(artifact_dir / ("attempt-" + str(repair_attempts) + ".md"), candidate)
+            repair_attempts += 1
+            document["status"] = "repairing"
             document["repair_attempts"] = repair_attempts
-            document["validation_errors"] = last_errors or [str(error)]
-            document["validation"] = {
-                "errors": document["validation_errors"],
-                "warnings": [],
-                "repair_attempts": repair_attempts,
-            }
-            diagnostics.append(str(error))
-            summary = _write_run_state(run_dir, manifest, diagnostics)
-            print("Status: rejected")
-            print("Summary: " + str(summary))
-            return 1
-        except WorkflowError as error:
-            manifest["status"] = "failed"
-            document["status"] = "failed"
-            diagnostics.append(str(error))
-            summary = _write_run_state(run_dir, manifest, diagnostics)
-            print("Status: failed")
-            print("Summary: " + str(summary))
-            return 1
+            document["validation_errors"] = last_errors
+            _persist_document(run_dir, manifest, document, diagnostics)
+            output = _call_codex(
+                command,
+                workspace,
+                _build_repair_prompt(candidate_context, last_errors, protected_reference),
+                timeout,
+            )
+    except CandidateError as error:
+        document["repair_attempts"] = repair_attempts
+        return finish("rejected", str(error), last_errors or [str(error)])
+    except WorkflowError as error:
+        return finish("failed", str(error))
 
-        _atomic_write(run_dir / "candidate.md", candidate)
+    if candidate is None:
+        return finish("rejected", "candidate was not produced", last_errors or ["candidate was not produced"])
+    candidate_path = artifact_dir / "candidate.md"
+    patch_path = artifact_dir / "candidate.patch"
+    try:
+        _atomic_write(candidate_path, candidate)
         source_text = raw.decode("utf-8")
         candidate_text = candidate.decode("utf-8")
         diff = difflib.unified_diff(
             source_text.splitlines(keepends=True),
             candidate_text.splitlines(keepends=True),
-            fromfile=relative,
-            tofile=relative + ".candidate",
+            fromfile=target.relative,
+            tofile=target.relative + ".candidate",
         )
-        _atomic_write(run_dir / "candidate.patch", "".join(diff).encode("utf-8"))
-        manifest["status"] = "accepted"
-        document.update(
-            {
-                "status": "accepted",
-                "candidate": "candidate.md",
-                "candidate_sha256": hashlib.sha256(candidate).hexdigest(),
-                "diff": "candidate.patch",
-                "repair_attempts": repair_attempts,
-            }
+        _atomic_write(patch_path, "".join(diff).encode("utf-8"))
+    except OSError as error:
+        return finish("failed", "candidate artifact could not be written: " + str(error))
+
+    document.update(
+        {
+            "status": "accepted",
+            "candidate": _artifact_name(document, "candidate.md"),
+            "candidate_sha256": hashlib.sha256(candidate).hexdigest(),
+            "diff": _artifact_name(document, "candidate.patch"),
+            "repair_attempts": repair_attempts,
+        }
+    )
+    _persist_document(run_dir, manifest, document, diagnostics)
+    return "accepted"
+
+
+def preview(root: Path, selections: Optional[Sequence[str]], codex_value: str, timeout: int) -> int:
+    if sys.version_info < (3, 9):
+        raise PreflightError("Python 3.9 or newer is required")
+    targets, skipped = _preview_targets(root, selections)
+    command = _resolve_codex(codex_value)
+    git_state = _git_metadata(root)
+    lock, run_dir, manifest = _new_run(root, targets, skipped, git_state)
+    diagnostics: List[str] = []
+    try:
+        if not targets:
+            manifest["status"] = "skipped"
+            summary = _write_run_state(run_dir, manifest, diagnostics)
+            print("Status: skipped")
+            print("Run: " + str(manifest["run_id"]))
+            print("Summary: " + str(summary))
+            return 0
+
+        manifest["status"] = "preflight"
+        _write_json(run_dir / "manifest.json", manifest)
+        try:
+            _run_auth_status(command, _artifact_dir(run_dir, manifest["documents"][0]) / "workspace")
+        except PreflightError as error:
+            message = str(error)
+            diagnostics.append(message)
+            manifest["status"] = "preflight_failed"
+            for document in manifest["documents"]:
+                document["status"] = "failed"
+                document["error_count"] = 1
+                _atomic_write(_artifact_dir(run_dir, document) / "diagnostics.log", (message + "\n").encode("utf-8"))
+            summary = _write_run_state(run_dir, manifest, diagnostics)
+            print("Status: preflight_failed")
+            print("Summary: " + str(summary))
+            return 2
+
+        manifest["status"] = "running"
+        _write_json(run_dir / "manifest.json", manifest)
+        for target, document in zip(targets, manifest["documents"]):
+            try:
+                _process_document(target, document, run_dir, manifest, command, timeout)
+            except KeyboardInterrupt:
+                raise
+            except (OSError, WorkflowError) as error:
+                document["status"] = "failed"
+                document["error_count"] = 1
+                diagnostics.append((target.relative + ": " + str(error))[:MAX_DIAGNOSTIC_BYTES])
+                _persist_document(run_dir, manifest, document, [str(error)])
+
+        statuses = [str(document["status"]) for document in manifest["documents"]]
+        has_failures = any(status in ("failed", "rejected") for status in statuses)
+        manifest["status"] = (
+            statuses[0]
+            if len(statuses) == 1 and has_failures
+            else ("completed_with_failures" if has_failures else "accepted")
         )
         summary = _write_run_state(run_dir, manifest, diagnostics)
-        print("Status: accepted")
+        print("Status: " + str(manifest["status"]))
         print("Run: " + str(manifest["run_id"]))
         print("Summary: " + str(summary))
-        return 0
+        return 1 if has_failures else 0
+    except KeyboardInterrupt:
+        manifest["status"] = "interrupted"
+        for document in manifest.get("documents", []):
+            if document.get("status") in ("discovered", "reading", "generating", "repairing"):
+                document["status"] = "interrupted"
+        diagnostics.append("preview interrupted; run artifacts were retained")
+        summary = _write_run_state(run_dir, manifest, diagnostics)
+        print("Status: interrupted")
+        print("Summary: " + str(summary))
+        return 130
     finally:
         lock.release()
 
@@ -643,8 +814,12 @@ def _positive_timeout(value: str) -> int:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="compress-docs")
     commands = parser.add_subparsers(dest="command", required=True)
-    preview_parser = commands.add_parser("preview", help="preview one live Skill Markdown document")
-    preview_parser.add_argument("--file", required=True, help="repository-relative Markdown path under skills/")
+    preview_parser = commands.add_parser("preview", help="preview Skill Markdown documents")
+    preview_parser.add_argument(
+        "--file",
+        action="append",
+        help="repository-relative Markdown path under skills/ (repeat; omit to scan skills/)",
+    )
     preview_parser.add_argument("--codex-executable", default="codex", help=argparse.SUPPRESS)
     preview_parser.add_argument(
         "--timeout-seconds",

@@ -1,11 +1,15 @@
+import contextlib
 import hashlib
+import io
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 
@@ -13,6 +17,8 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 SCRIPT = REPO_ROOT / "ci" / "compress-docs" / "compress_docs.py"
 PYTHON = Path(sys.executable)
 TARGET = REPO_ROOT / "skills" / "blasphemous-modding-helper" / "SKILL.md"
+sys.path.insert(0, str(SCRIPT.parent))
+import compress_docs
 
 
 FAKE_CODEX = r'''
@@ -41,6 +47,10 @@ if sys.argv[1:2] == ["exec"]:
     events[-1]["prompt_has_frontmatter"] = b"name: blasphemous-modding-helper" in prompt_bytes
     events[-1]["repair_prompt"] = b"<validation-errors>" in prompt_bytes
     log_path.write_text(json.dumps(events), encoding="utf-8")
+    exec_count = sum(event["argv"][:1] == ["exec"] for event in events)
+    if os.environ.get("FAKE_CODEX_MODE") == "fail-first" and exec_count == 1:
+        print("synthetic first-document failure", file=sys.stderr)
+        raise SystemExit(7)
     if os.environ.get("FAKE_CODEX_MODE") == "malformed":
         sys.stdout.write("Here is the compressed document:\n```markdown\n# Wrong\n```\n")
     else:
@@ -82,19 +92,22 @@ class PreviewCliTests(unittest.TestCase):
             }
         )
         env.update(env_overrides)
-        return subprocess.run(
+        command = [str(PYTHON), str(SCRIPT), "preview"]
+        if selection is not None:
+            selections = selection if isinstance(selection, (list, tuple)) else [selection]
+            for item in selections:
+                command.extend(["--file", item])
+        command.extend(
             [
-                str(PYTHON),
-                str(SCRIPT),
-                "preview",
-                "--file",
-                selection,
                 "--codex-executable",
                 str(self.fake),
                 "--timeout-seconds",
                 "5",
                 *args,
-            ],
+            ]
+        )
+        return subprocess.run(
+            command,
             cwd=str(REPO_ROOT),
             env=env,
             stdout=subprocess.PIPE,
@@ -143,8 +156,6 @@ class PreviewCliTests(unittest.TestCase):
         self.assertIn("--cd", events[1]["argv"])
         self.assertFalse(events[1]["prompt_has_frontmatter"])
 
-        import shutil
-
         shutil.rmtree(summary.parent)
 
     def test_authentication_failure_stops_before_exec(self):
@@ -154,9 +165,8 @@ class PreviewCliTests(unittest.TestCase):
         summary = self.summary_path(result.stdout)
         manifest = json.loads((summary.parent / "manifest.json").read_text(encoding="utf-8"))
         self.assertEqual(manifest["status"], "preflight_failed")
+        self.assertEqual(manifest["documents"][0]["status"], "failed")
         self.assertEqual(len(self.read_events()), 1)
-
-        import shutil
 
         shutil.rmtree(summary.parent)
 
@@ -172,8 +182,6 @@ class PreviewCliTests(unittest.TestCase):
         self.assertEqual(manifest["status"], "rejected")
         self.assertFalse((summary.parent / "candidate.md").exists())
         self.assertEqual(sum(event["argv"][:1] == ["exec"] for event in self.read_events()), 3)
-
-        import shutil
 
         shutil.rmtree(summary.parent)
 
@@ -195,7 +203,86 @@ class PreviewCliTests(unittest.TestCase):
         self.assertEqual(len(repair_events), 1)
         self.assertFalse(repair_events[0]["prompt_has_frontmatter"])
 
-        import shutil
+        shutil.rmtree(summary.parent)
+
+    def test_preview_without_file_scans_future_skill_and_excludes_non_live_files(self):
+        future_dir = REPO_ROOT / "skills" / "compress_docs_future_test"
+        future_file = future_dir / "SKILL.md"
+        hidden_file = REPO_ROOT / "skills" / "blasphemous-modding-helper" / ".hidden-compress-test.md"
+        backup_file = REPO_ROOT / "skills" / "blasphemous-modding-helper" / "SKILL.original.md"
+        future_dir.mkdir()
+        future_file.write_text("# Future skill\n\nFuture prose.\n", encoding="utf-8")
+        hidden_file.write_text("# Hidden\n", encoding="utf-8")
+        backup_file.write_text("# Backup\n", encoding="utf-8")
+        try:
+            expected = sorted(
+                str(path.relative_to(REPO_ROOT)).replace("\\", "/")
+                for path in REPO_ROOT.joinpath("skills").rglob("*.md")
+                if path not in (hidden_file, backup_file)
+            )
+            result = self.run_cli(selection=None)
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            summary = self.summary_path(result.stdout)
+            manifest = json.loads((summary.parent / "manifest.json").read_text(encoding="utf-8"))
+            paths = [document["path"] for document in manifest["documents"]]
+            self.assertEqual(paths, expected)
+            self.assertIn("skills/compress_docs_future_test/SKILL.md", paths)
+            self.assertNotIn("skills/blasphemous-modding-helper/.hidden-compress-test.md", paths)
+            self.assertNotIn("skills/blasphemous-modding-helper/SKILL.original.md", paths)
+            self.assertEqual([document["status"] for document in manifest["documents"]], ["accepted"] * len(paths))
+            self.assertEqual(sum(event["argv"][:1] == ["exec"] for event in self.read_events()), len(paths))
+            self.assertTrue(manifest["git"]["dirty"])
+            self.assertTrue(manifest["skipped"])
+            self.assertTrue(all((summary.parent / document["candidate"]).is_file() for document in manifest["documents"]))
+            shutil.rmtree(summary.parent)
+        finally:
+            shutil.rmtree(future_dir, ignore_errors=True)
+            hidden_file.unlink(missing_ok=True)
+            backup_file.unlink(missing_ok=True)
+
+    def test_batch_continues_after_document_process_failure(self):
+        selections = [
+            "skills/blasphemous-modding-helper/SKILL.md",
+            "skills/blasphemous-modding-helper/references/requirement-levels-definitions.md",
+        ]
+
+        result = self.run_cli(selection=selections, FAKE_CODEX_MODE="fail-first")
+
+        self.assertNotEqual(result.returncode, 0)
+        summary = self.summary_path(result.stdout)
+        manifest = json.loads((summary.parent / "manifest.json").read_text(encoding="utf-8"))
+        self.assertEqual([document["status"] for document in manifest["documents"]], ["failed", "accepted"])
+        self.assertEqual(sum(event["argv"][:1] == ["exec"] for event in self.read_events()), 2)
+        self.assertFalse((summary.parent / manifest["documents"][0].get("candidate", "missing")).exists())
+        self.assertTrue((summary.parent / manifest["documents"][1]["candidate"]).is_file())
+
+        shutil.rmtree(summary.parent)
+
+    def test_interruption_retains_inspectable_run_without_resuming(self):
+        output = io.StringIO()
+        environment = {
+            "FAKE_CODEX_LOG": str(self.log),
+            "FAKE_CODEX_AUTH": "ok",
+            "FAKE_CODEX_MODE": "body",
+        }
+        with mock.patch.dict(os.environ, environment, clear=False):
+            with mock.patch.object(compress_docs, "_process_document", side_effect=KeyboardInterrupt):
+                with contextlib.redirect_stdout(output):
+                    result = compress_docs.preview(
+                        REPO_ROOT,
+                        ["skills/blasphemous-modding-helper/SKILL.md"],
+                        str(self.fake),
+                        5,
+                    )
+
+        self.assertEqual(result, 130)
+        summary = self.summary_path(output.getvalue())
+        manifest = json.loads((summary.parent / "manifest.json").read_text(encoding="utf-8"))
+        self.assertEqual(manifest["status"], "interrupted")
+        self.assertEqual(manifest["documents"][0]["status"], "interrupted")
+        self.assertIn("run artifacts were retained", (summary.parent / "diagnostics.log").read_text(encoding="utf-8"))
+        self.assertFalse((summary.parent.parent / ".lock").exists())
 
         shutil.rmtree(summary.parent)
 
@@ -209,9 +296,8 @@ class PreviewCliTests(unittest.TestCase):
             summary = self.summary_path(result.stdout)
             manifest = json.loads((summary.parent / "manifest.json").read_text(encoding="utf-8"))
             self.assertEqual(manifest["status"], "preflight_failed")
+            self.assertEqual(manifest["documents"][0]["status"], "failed")
             self.assertEqual(len(self.read_events()), 1)
-
-            import shutil
 
             shutil.rmtree(summary.parent)
         finally:
