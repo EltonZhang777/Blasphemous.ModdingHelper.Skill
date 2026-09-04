@@ -35,13 +35,16 @@ Use this read-only branch for a natural-language request to identify, explain, c
    - `Localization evidence`: wording, labels, translated names, and textual descriptions from the TSV.
    - `Gameplay evidence`: runtime behavior, mechanics, values, and code relationships. The localization row does not establish these facts.
 7. If several rows match or the wording is ordinary prose, report candidates and the ambiguity. Do not force a canonical game concept from a weak text match. If no row matches:
-   - When `semantic-aliases.md` is present, consult it before source analysis and preserve its confidence and context rules.
+   - Search `references/localization/semantic-aliases.md` with `rg` and inspect matching aliases before source analysis. Apply only light normalization of case, surrounding whitespace, and common punctuation. Preserve the original alias and translation wording.
+   - Use the alias's positive and negative context to decide whether it applies. One alias may return multiple candidates when context is insufficient.
+   - Apply `high-confidence` aliases directly when their context matches. A `medium-confidence` alias requires an explicit mapping note. Keep `low-confidence` aliases as candidates only.
+   - AI may propose a new alias, but it MUST receive explicit user confirmation before writing to the alias document.
    - If the user explicitly presents the term as a code identifier, or it has a clearly code-like form such as `Namespace.Type`, `METHOD_NAME`, or `ClassName`, pass it to [Source analyzer](source-analyzer.md) after the localization stage. Follow that branch's source-path and preferences preflight.
    - Report source-derived runtime behavior, mechanics, values, and code relationships as `Gameplay evidence`. Keep the localization rows under `Localization evidence`.
    - If the source evidence supports a relationship between the code identifier and a localized concept, label it explicitly as an `Inference` and cite both sides. Do not create a persistent code-name-to-translation mapping table.
    - A natural-language term that is not code-like remains a candidate or an actionable unresolved result. Do not turn it into an automatic source or web-search guess.
 
-The lookup order is localized text, semantic aliases when available, then controlled source analysis for code-like or explicitly unresolved identifiers. An unmatched natural-language term is not an automatic source or web-search guess.
+The lookup order is localized text, semantic aliases, then controlled source analysis for code-like or explicitly unresolved identifiers. An unmatched natural-language term is not an automatic source or web-search guess.
 
 ## Completion criteria
 

@@ -56,6 +56,16 @@ class LocalizationLookupDocumentationTests(unittest.TestCase):
         self.assertIn("inference", lookup)
         self.assertIn("natural-language term", lookup)
 
+    def test_lookup_documents_reviewed_alias_stage(self):
+        lookup = LOOKUP_SKILL.read_text(encoding="utf-8").casefold()
+
+        self.assertIn("semantic-aliases.md", lookup)
+        self.assertIn("light normalization", lookup)
+        self.assertIn("high-confidence", lookup)
+        self.assertIn("medium-confidence", lookup)
+        self.assertIn("low-confidence", lookup)
+        self.assertIn("user confirmation", lookup)
+
 
 if __name__ == "__main__":
     unittest.main()
