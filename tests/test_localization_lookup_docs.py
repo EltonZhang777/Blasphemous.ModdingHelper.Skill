@@ -47,6 +47,15 @@ class LocalizationLookupDocumentationTests(unittest.TestCase):
         self.assertIn("full comparison", lookup)
         self.assertIn("instruction language", lookup)
 
+    def test_lookup_documents_controlled_source_analysis_fallback(self):
+        lookup = LOOKUP_SKILL.read_text(encoding="utf-8").casefold()
+
+        self.assertIn("source-analyzer.md", lookup)
+        self.assertIn("code identifier", lookup)
+        self.assertIn("gameplay evidence", lookup)
+        self.assertIn("inference", lookup)
+        self.assertIn("natural-language term", lookup)
+
 
 if __name__ == "__main__":
     unittest.main()
