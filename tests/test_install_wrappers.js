@@ -80,7 +80,7 @@ function createFixture() {
     FAKE_NPX_SCRIPT: fakeNpxScript.path,
     WRAPPER_CAPTURE: capture,
     WRAPPER_EXIT: "0",
-    CI: "",
+    CI: "1",
   };
   if (process.platform === "win32") env.Path = env.PATH;
 
