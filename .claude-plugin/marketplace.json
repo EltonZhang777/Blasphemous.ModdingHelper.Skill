@@ -1,0 +1,16 @@
+{
+  "name": "blasphemous-modding-helper-marketplace",
+  "owner": {
+    "name": "EltonZhang777"
+  },
+  "plugins": [
+    {
+      "name": "blasphemous-modding-helper",
+      "source": {
+        "source": "github",
+        "repo": "EltonZhang777/Blasphemous.ModdingHelper.Skill"
+      },
+      "description": "Blasphemous modding development helper skill"
+    }
+  ]
+}

@@ -9,6 +9,7 @@ const { spawnSync } = require("node:child_process");
 const REPO_ROOT = path.resolve(__dirname, "..");
 const INSTALLER = path.join(REPO_ROOT, "bin", "install.js");
 const SKILL_SOURCE = path.join(REPO_ROOT, "skills", "blasphemous-modding-helper");
+const REPOSITORY = "EltonZhang777/Blasphemous.ModdingHelper.Skill";
 
 function createFailingClaudeCommand(directory) {
   if (process.platform === "win32") {
@@ -25,6 +26,39 @@ function createFailingClaudeCommand(directory) {
 function prependPath(directory) {
   const separator = process.platform === "win32" ? ";" : ":";
   return `${directory}${separator}${process.env.PATH || ""}`;
+}
+
+function createSuccessfulCommand(directory, name) {
+  if (process.platform === "win32") {
+    fs.writeFileSync(path.join(directory, `${name}.cmd`), "@echo off\r\nexit /b 0\r\n");
+    return;
+  }
+
+  const command = path.join(directory, name);
+  fs.writeFileSync(command, "#!/bin/sh\nexit 0\n");
+  fs.chmodSync(command, 0o755);
+}
+
+function isolatedInstallerEnv(home, commandDirectory) {
+  const separator = process.platform === "win32" ? ";" : ":";
+  const systemPath = process.platform === "win32"
+    ? path.join(process.env.SystemRoot || "C:\\Windows", "System32")
+    : "/usr/bin:/bin";
+  const pathValue = `${commandDirectory}${separator}${systemPath}`;
+  const env = {
+    ...process.env,
+    HOME: home,
+    USERPROFILE: home,
+    APPDATA: path.join(home, "AppData", "Roaming"),
+    LOCALAPPDATA: path.join(home, "AppData", "Local"),
+    XDG_CONFIG_HOME: path.join(home, ".config"),
+    CLAUDE_CONFIG_DIR: path.join(home, ".claude"),
+    CODEX_HOME: path.join(home, ".codex"),
+    HERMES_HOME: path.join(home, ".hermes"),
+    PATH: pathValue,
+  };
+  if (process.platform === "win32") env.Path = pathValue;
+  return env;
 }
 
 function runInstaller(args, options = {}) {
@@ -282,3 +316,228 @@ function testCustomPathHelp() {
 
 testCustomPathHelp();
 console.log("Custom-path help test passed.");
+
+function testCanonicalProviderCommands() {
+  const fixtureRoot = fs.mkdtempSync(path.join(os.tmpdir(), "blasphemous-provider-contract-test-"));
+  const home = path.join(fixtureRoot, "home");
+  const commandDirectory = path.join(fixtureRoot, "commands");
+  fs.mkdirSync(home, { recursive: true });
+  fs.mkdirSync(commandDirectory);
+  const env = isolatedInstallerEnv(home, commandDirectory);
+
+  try {
+    for (const [canonical, alias, label] of [
+      ["codex", "codex-cli", "Codex CLI"],
+      ["hermes-agent", "hermes", "Hermes Agent"],
+    ]) {
+      for (const id of [canonical, alias]) {
+        const result = runInstaller(["--only", id, "--dry-run"], { env });
+        const output = `${result.stdout || ""}\n${result.stderr || ""}`;
+
+        assert.equal(result.status, 0, `Provider selection failed for ${id}.\n${output}`);
+        assert.match(output, new RegExp(label));
+        assert.match(output, new RegExp(`npx -y skills add ${REPOSITORY.replace(/[.*+?^${}()|[\\]\\]/g, "\\\\$&")} -a ${canonical} -g -y`));
+        assert.match(output, /Scope: user-level/i);
+        assert.doesNotMatch(output, new RegExp(`-a ${alias}(?:\\s|$)`));
+      }
+    }
+
+    const uninstall = runInstaller(["--only", "codex", "--uninstall", "--dry-run"], { env });
+    const uninstallOutput = `${uninstall.stdout || ""}\n${uninstall.stderr || ""}`;
+    assert.equal(uninstall.status, 0, `Canonical uninstall failed.\n${uninstallOutput}`);
+    assert.match(uninstallOutput, /skills remove blasphemous-modding-helper -a codex -g -y/);
+  } finally {
+    fs.rmSync(fixtureRoot, { recursive: true, force: true });
+  }
+}
+
+testCanonicalProviderCommands();
+console.log("Canonical provider command tests passed.");
+
+function runDetectionFixture(name, setup, expected) {
+  const fixtureRoot = fs.mkdtempSync(path.join(os.tmpdir(), `blasphemous-detection-${name}-`));
+  const home = path.join(fixtureRoot, "home");
+  const commandDirectory = path.join(fixtureRoot, "commands");
+  fs.mkdirSync(home, { recursive: true });
+  fs.mkdirSync(commandDirectory);
+  const env = isolatedInstallerEnv(home, commandDirectory);
+
+  try {
+    setup(home, commandDirectory);
+    const result = runInstaller(["--dry-run"], { env });
+    const output = `${result.stdout || ""}\n${result.stderr || ""}`;
+
+    assert.equal(result.status, 0, `${name} detection failed.\n${output}`);
+    assert.match(output, expected, `${name} was not detected as expected.\n${output}`);
+    assert.doesNotMatch(output, /Your choice \(default: all\)/i);
+  } finally {
+    fs.rmSync(fixtureRoot, { recursive: true, force: true });
+  }
+}
+
+function testPlatformNativeDetection() {
+  runDetectionFixture(
+    "trae-cn",
+    (home) => fs.mkdirSync(path.join(home, ".trae-cn", "skills"), { recursive: true }),
+    /Detected agents: Trae IDE \(Trae-CN\)[\s\S]*Target:[\s\S]*Scope: user-level/i
+  );
+
+  runDetectionFixture(
+    "cursor-config",
+    (home) => fs.mkdirSync(path.join(home, ".cursor")),
+    /Detected agents: Cursor[\s\S]*-a cursor -g -y/i
+  );
+
+  runDetectionFixture(
+    "windsurf-config",
+    (home) => fs.mkdirSync(path.join(home, ".codeium", "windsurf"), { recursive: true }),
+    /Detected agents: Windsurf[\s\S]*-a windsurf -g -y/i
+  );
+
+  runDetectionFixture(
+    "cline-extension",
+    (home) => fs.mkdirSync(path.join(home, ".vscode", "extensions", "saoudrizwan.claude-dev-3.0.0"), { recursive: true }),
+    /Detected agents: Cline[\s\S]*-a cline -g -y/i
+  );
+
+  runDetectionFixture(
+    "opencode-config",
+    (home) => fs.mkdirSync(path.join(home, ".config", "opencode"), { recursive: true }),
+    /Detected agents: opencode[\s\S]*-a opencode -g -y/i
+  );
+
+  runDetectionFixture(
+    "codex-config",
+    (home) => fs.mkdirSync(path.join(home, ".codex")),
+    /Detected agents: Codex CLI[\s\S]*-a codex -g -y/i
+  );
+
+  runDetectionFixture(
+    "hermes-config",
+    (home) => fs.mkdirSync(path.join(home, ".hermes")),
+    /Detected agents: Hermes Agent[\s\S]*-a hermes-agent -g -y/i
+  );
+
+  runDetectionFixture(
+    "cursor-command",
+    (_home, commandDirectory) => createSuccessfulCommand(commandDirectory, "cursor"),
+    /Detected agents: Cursor[\s\S]*-a cursor -g -y/i
+  );
+}
+
+testPlatformNativeDetection();
+console.log("Platform-native detection tests passed.");
+
+function testTraeRequiresSkillDirectory() {
+  const fixtureRoot = fs.mkdtempSync(path.join(os.tmpdir(), "blasphemous-trae-signal-test-"));
+  const home = path.join(fixtureRoot, "home");
+  const commandDirectory = path.join(fixtureRoot, "commands");
+  fs.mkdirSync(path.join(home, ".trae-cn"), { recursive: true });
+  fs.mkdirSync(commandDirectory);
+
+  try {
+    const result = runInstaller(["--dry-run"], {
+      env: isolatedInstallerEnv(home, commandDirectory),
+    });
+    const output = `${result.stdout || ""}\n${result.stderr || ""}`;
+
+    assert.equal(result.status, 1, `Empty Trae-CN config was treated as installed.\n${output}`);
+    assert.match(output, /No supported AI coding agents detected/i);
+  } finally {
+    fs.rmSync(fixtureRoot, { recursive: true, force: true });
+  }
+}
+
+testTraeRequiresSkillDirectory();
+console.log("Trae-CN signal tests passed.");
+
+function testUnixCommandRequiresExecutableBit() {
+  if (process.platform === "win32") {
+    console.log("Unix executable-bit test skipped on Windows.");
+    return;
+  }
+
+  const fixtureRoot = fs.mkdtempSync(path.join(os.tmpdir(), "blasphemous-executable-test-"));
+  const home = path.join(fixtureRoot, "home");
+  const commandDirectory = path.join(fixtureRoot, "commands");
+  fs.mkdirSync(home, { recursive: true });
+  fs.mkdirSync(commandDirectory);
+
+  try {
+    fs.writeFileSync(path.join(commandDirectory, "cursor"), "#!/bin/sh\nexit 0\n");
+    const result = runInstaller(["--dry-run"], {
+      env: isolatedInstallerEnv(home, commandDirectory),
+    });
+    const output = `${result.stdout || ""}\n${result.stderr || ""}`;
+
+    assert.equal(result.status, 1, `Non-executable command was detected.\n${output}`);
+    assert.match(output, /No supported AI coding agents detected/i);
+  } finally {
+    fs.rmSync(fixtureRoot, { recursive: true, force: true });
+  }
+}
+
+testUnixCommandRequiresExecutableBit();
+console.log("Command executable-bit tests passed.");
+
+function testNativeProviderDryRuns() {
+  const fixtureRoot = fs.mkdtempSync(path.join(os.tmpdir(), "blasphemous-native-provider-test-"));
+  const home = path.join(fixtureRoot, "home");
+  const commandDirectory = path.join(fixtureRoot, "commands");
+  fs.mkdirSync(home, { recursive: true });
+  fs.mkdirSync(commandDirectory);
+  const env = isolatedInstallerEnv(home, commandDirectory);
+
+  try {
+    for (const [id, expected, extra] of [
+      [
+        "claude-code",
+        /plugin marketplace add EltonZhang777\/Blasphemous\.ModdingHelper\.Skill --scope user/,
+        /plugin install "?blasphemous-modding-helper@blasphemous-modding-helper-marketplace"? --scope user/,
+      ],
+      ["gemini-cli", /extensions install https:\/\/github\.com\/EltonZhang777\/Blasphemous\.ModdingHelper\.Skill --consent --skip-settings/],
+      ["trae-cn", /Target:/],
+    ]) {
+      const result = runInstaller(["--only", id, "--dry-run"], { env });
+      const output = `${result.stdout || ""}\n${result.stderr || ""}`;
+
+      assert.equal(result.status, 0, `${id} dry-run failed.\n${output}`);
+      assert.match(output, expected);
+      if (extra) assert.match(output, extra);
+      assert.match(output, /Scope: user-level/i);
+    }
+
+    const claudeUninstall = runInstaller(["--only", "claude-code", "--uninstall", "--dry-run"], { env });
+    const claudeUninstallOutput = `${claudeUninstall.stdout || ""}\n${claudeUninstall.stderr || ""}`;
+    assert.match(claudeUninstallOutput, /plugin uninstall blasphemous-modding-helper --scope user --yes/);
+
+    const geminiUninstall = runInstaller(["--only", "gemini-cli", "--uninstall", "--dry-run"], { env });
+    const geminiUninstallOutput = `${geminiUninstall.stdout || ""}\n${geminiUninstall.stderr || ""}`;
+    assert.match(geminiUninstallOutput, /extensions uninstall blasphemous-modding-helper/);
+
+    const traeUninstall = runInstaller(["--only", "trae-cn", "--uninstall", "--dry-run"], { env });
+    const traeUninstallOutput = `${traeUninstall.stdout || ""}\n${traeUninstall.stderr || ""}`;
+    assert.match(traeUninstallOutput, /Target:[\s\S]*Scope: user-level[\s\S]*remove/i);
+  } finally {
+    fs.rmSync(fixtureRoot, { recursive: true, force: true });
+  }
+}
+
+testNativeProviderDryRuns();
+console.log("Native provider dry-run tests passed.");
+
+function testClaudeMarketplaceManifest() {
+  const manifestPath = path.join(REPO_ROOT, ".claude-plugin", "marketplace.json");
+  const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+
+  assert.equal(manifest.name, "blasphemous-modding-helper-marketplace");
+  assert.equal(manifest.plugins.length, 1);
+  assert.equal(manifest.plugins[0].name, "blasphemous-modding-helper");
+  assert.deepEqual(manifest.plugins[0].source, {
+    source: "github",
+    repo: REPOSITORY,
+  });
+}
+
+testClaudeMarketplaceManifest();
+console.log("Claude marketplace manifest test passed.");

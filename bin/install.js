@@ -25,12 +25,13 @@
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
-const { execSync, spawnSync } = require("child_process");
+const { execSync } = require("child_process");
 const readline = require("readline");
 
 const REPO = "EltonZhang777/Blasphemous.ModdingHelper.Skill";
 const REPO_URL = `https://github.com/${REPO}`;
 const SKILL_NAME = "blasphemous-modding-helper";
+const CLAUDE_MARKETPLACE = "blasphemous-modding-helper-marketplace";
 const REPOSITORY_ROOT = path.resolve(__dirname, "..");
 const SKILL_SOURCE_DIR = path.join(REPOSITORY_ROOT, "skills", SKILL_NAME);
 
@@ -39,181 +40,246 @@ const SKILL_SOURCE_DIR = path.join(REPOSITORY_ROOT, "skills", SKILL_NAME);
 // Referenced from superpowers-zh (https://github.com/jnMetaCode/superpowers-zh)
 // and caveman (https://github.com/JuliusBrussee/caveman).
 //
-// detect rules:
-//   "command:<bin>"       — binary on PATH (most reliable)
-//   "dir:<path>"          — directory existence (for dir-only agents like Trae-CN)
-//   "vscode-ext:<id>"     — VSCode extension directory match
-//   "cursor-ext:<id>"     — Cursor extension directory match
-//
-// `soft: true` means the provider is excluded from auto-detect and only
-// installs when the user passes `--only <id>`. This prevents false positives
-// from stale config dirs.
+// detect rules are structured objects:
+//   { type: "command", value: "<bin>" } — binary on PATH
+//   { type: "dir", value: "<path>" }     — config/application directory
+//   { type: "file", value: "<path>" }    — config file
+//   { type: "vscode-ext", value: "<id>" } — VSCode extension directory
+//   { type: "cursor-ext", value: "<id>" } — Cursor extension directory
 //
 // When a provider has a `profile` its install is delegated to `npx skills add`;
 // otherwise the installer uses a native mechanism (e.g. claude plugin, trae dir copy).
 const HOME = os.homedir();
+const CONFIG_HOME = process.env.XDG_CONFIG_HOME?.trim() || (
+  process.platform === "win32"
+    ? process.env.APPDATA?.trim() || path.join(HOME, "AppData", "Roaming")
+    : path.join(HOME, ".config")
+);
+const CLAUDE_HOME = process.env.CLAUDE_CONFIG_DIR?.trim() || path.join(HOME, ".claude");
+const CODEX_HOME = process.env.CODEX_HOME?.trim() || path.join(HOME, ".codex");
+const HERMES_HOME = process.env.HERMES_HOME?.trim() || path.join(HOME, ".hermes");
+
+function commandRule(value) {
+  return { type: "command", value };
+}
+
+function directoryRule(value) {
+  return { type: "dir", value };
+}
+
+function fileRule(value) {
+  return { type: "file", value };
+}
+
+function vscodeExtensionRule(value) {
+  return { type: "vscode-ext", value };
+}
+
+function cursorExtensionRule(value) {
+  return { type: "cursor-ext", value };
+}
+
 const PROVIDERS = [
   // ── Native installers ──────────────────────────────────────────────────
   {
     id: "trae-cn",
     label: "Trae IDE (Trae-CN)",
-    detect: `dir:${HOME}\\.trae-cn\\skills`,
+    detect: [directoryRule(path.join(HOME, ".trae-cn", "skills"))],
   },
   {
     id: "claude-code",
     label: "Claude Code",
-    detect: "command:claude",
+    detect: [commandRule("claude"), directoryRule(CLAUDE_HOME)],
     profile: "claude-code",
   },
   {
     id: "gemini-cli",
     label: "Gemini CLI",
-    detect: "command:gemini",
+    detect: [commandRule("gemini"), directoryRule(path.join(HOME, ".gemini"))],
     profile: "gemini-cli",
   },
   // ── CLI agents (npx skills add) ────────────────────────────────────────
   {
     id: "cursor",
     label: "Cursor",
-    detect: "command:cursor",
+    detect: [commandRule("cursor"), directoryRule(path.join(HOME, ".cursor"))],
     profile: "cursor",
   },
   {
     id: "windsurf",
     label: "Windsurf",
-    detect: "command:windsurf",
+    detect: [commandRule("windsurf"), directoryRule(path.join(HOME, ".codeium", "windsurf"))],
     profile: "windsurf",
   },
   {
     id: "cline",
     label: "Cline",
-    detect: "command:cline",
+    detect: [
+      commandRule("cline"),
+      directoryRule(path.join(HOME, ".cline")),
+      vscodeExtensionRule("saoudrizwan.claude-dev"),
+    ],
     profile: "cline",
   },
   {
     id: "opencode",
     label: "opencode",
-    detect: "command:opencode",
+    detect: [commandRule("opencode"), directoryRule(path.join(CONFIG_HOME, "opencode"))],
     profile: "opencode",
   },
   {
     id: "continue",
     label: "Continue",
-    detect: "command:continue",
+    detect: [commandRule("continue"), directoryRule(path.join(HOME, ".continue"))],
     profile: "continue",
   },
   {
-    id: "codex-cli",
+    id: "codex",
     label: "Codex CLI",
-    detect: "command:codex",
-    profile: "codex-cli",
+    detect: [commandRule("codex"), directoryRule(CODEX_HOME)],
+    profile: "codex",
+    aliases: ["codex-cli"],
   },
   {
     id: "kiro",
     label: "Kiro CLI",
-    detect: "command:kiro",
+    detect: [commandRule("kiro"), directoryRule(path.join(HOME, ".kiro"))],
     profile: "kiro-cli",
   },
   {
-    id: "hermes",
+    id: "hermes-agent",
     label: "Hermes Agent",
-    detect: "command:hermes",
-    profile: "hermes",
+    detect: [commandRule("hermes"), directoryRule(HERMES_HOME)],
+    profile: "hermes-agent",
+    aliases: ["hermes"],
   },
   {
     id: "aider-desk",
     label: "Aider Desk",
-    detect: "command:aider",
+    detect: [commandRule("aider"), directoryRule(path.join(HOME, ".aider-desk"))],
     profile: "aider-desk",
   },
   {
     id: "qwen-code",
     label: "Qwen Code",
-    detect: "command:qwen",
+    detect: [commandRule("qwen"), directoryRule(path.join(HOME, ".qwen"))],
     profile: "qwen-code",
   },
   {
     id: "openclaw",
     label: "OpenClaw",
-    detect: `command:openclaw||dir:${HOME}\\.openclaw`,
+    detect: [
+      commandRule("openclaw"),
+      directoryRule(path.join(HOME, ".openclaw")),
+      directoryRule(path.join(HOME, ".clawdbot")),
+      directoryRule(path.join(HOME, ".moltbot")),
+    ],
     profile: "openclaw",
   },
   {
     id: "warp",
     label: "Warp",
-    detect: "command:warp",
+    detect: [commandRule("warp"), directoryRule(path.join(HOME, ".warp"))],
     profile: "warp",
   },
   {
     id: "replit",
     label: "Replit Agent",
-    detect: "command:replit",
+    detect: [commandRule("replit"), fileRule(path.join(process.cwd(), ".replit"))],
     profile: "replit",
   },
   {
     id: "claw-code",
     label: "Claw Code",
-    detect: "command:claw||vscode-ext:claw",
+    detect: [commandRule("claw"), vscodeExtensionRule("claw")],
     profile: "claw-code",
   },
   // ── VSCode / Cursor extension-based agents ─────────────────────────────
   {
     id: "roo",
     label: "Roo Code",
-    detect: "vscode-ext:roo||vscode-ext:rooveterinaryinc.roo-cline||cursor-ext:roo",
+    detect: [
+      directoryRule(path.join(HOME, ".roo")),
+      vscodeExtensionRule("rooveterinaryinc.roo-cline"),
+      cursorExtensionRule("roo"),
+    ],
     profile: "roo",
   },
   {
     id: "kilo",
     label: "Kilo Code",
-    detect: "vscode-ext:kilocode",
+    detect: [directoryRule(path.join(HOME, ".kilocode")), vscodeExtensionRule("kilocode")],
     profile: "kilo",
   },
   {
     id: "augment",
     label: "Augment Code",
-    detect: "vscode-ext:augment",
+    detect: [directoryRule(path.join(HOME, ".augment")), vscodeExtensionRule("augment")],
     profile: "augment",
   },
   {
     id: "copilot",
     label: "GitHub Copilot",
-    detect: "vscode-ext:github.copilot||vscode-ext:github.copilot-chat",
+    detect: [
+      directoryRule(path.join(HOME, ".copilot")),
+      vscodeExtensionRule("github.copilot"),
+      vscodeExtensionRule("github.copilot-chat"),
+    ],
     profile: "github-copilot",
   },
-  // ── Soft agents (opt-in via --only only) ───────────────────────────────
+  // ── Config-directory agents ────────────────────────────────────────────
   {
     id: "qoder",
     label: "Qoder",
-    detect: `dir:${HOME}\\.qoder`,
+    detect: [directoryRule(path.join(HOME, ".qoder"))],
     profile: "qoder",
-    soft: true,
   },
   {
     id: "antigravity",
     label: "Google Antigravity",
-    detect: `dir:${HOME}\\.gemini\\antigravity`,
+    detect: [directoryRule(path.join(HOME, ".gemini", "antigravity"))],
     profile: "antigravity",
-    soft: true,
   },
 ];
 
 // ── Detection helpers ───────────────────────────────────────────────────────
 
 function hasCommand(cmd) {
-  try {
-    if (process.platform === "win32") {
-      return spawnSync("where", [cmd], { stdio: "ignore" }).status === 0;
+  const pathValue = process.env.PATH || process.env.Path || "";
+  const extensions = process.platform === "win32" && path.extname(cmd) === ""
+    ? (process.env.PATHEXT || ".COM;.EXE;.BAT;.CMD").split(";")
+    : [""];
+  const commandName = path.isAbsolute(cmd) ? null : cmd;
+  const directories = pathValue.split(path.delimiter).filter(Boolean);
+
+  for (const directory of directories) {
+    for (const extension of extensions) {
+      const candidate = commandName === null
+        ? cmd
+        : path.join(directory, `${cmd}${extension}`);
+      try {
+        if (!fs.statSync(candidate).isFile()) continue;
+        if (process.platform !== "win32") fs.accessSync(candidate, fs.constants.X_OK);
+        return true;
+      } catch {
+        // Continue through PATH entries and PATHEXT variants.
+      }
     }
-    return spawnSync("sh", ["-c", `command -v ${cmd}`], { stdio: "ignore" }).status === 0;
-  } catch {
-    return false;
   }
+  return false;
 }
 
 function hasDir(dirPath) {
   try {
     return fs.existsSync(dirPath) && fs.statSync(dirPath).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+function hasFile(filePath) {
+  try {
+    return fs.existsSync(filePath) && fs.statSync(filePath).isFile();
   } catch {
     return false;
   }
@@ -276,22 +342,22 @@ function detectAgent(provider) {
   // Soft agents are never auto-detected
   if (provider.soft) return false;
 
-  const rules = provider.detect.split("||");
-  for (const rule of rules) {
-    const [type, ...rest] = rule.split(":");
-    const value = rest.join(":");
-    switch (type) {
+  for (const rule of provider.detect) {
+    switch (rule.type) {
       case "command":
-        if (hasCommand(value)) return true;
+        if (hasCommand(rule.value)) return true;
         break;
       case "dir":
-        if (hasDir(value)) return true;
+        if (hasDir(rule.value)) return true;
+        break;
+      case "file":
+        if (hasFile(rule.value)) return true;
         break;
       case "vscode-ext":
-        if (hasVscodeExt(value)) return true;
+        if (hasVscodeExt(rule.value)) return true;
         break;
       case "cursor-ext":
-        if (hasCursorExt(value)) return true;
+        if (hasCursorExt(rule.value)) return true;
         break;
     }
   }
@@ -305,28 +371,35 @@ function detectAgents(onlyIds) {
   return PROVIDERS.filter((p) => detectAgent(p));
 }
 
+function findProvider(id) {
+  const normalized = id.toLowerCase();
+  return PROVIDERS.find((p) => p.id === normalized || (p.aliases || []).includes(normalized));
+}
+
 // ── Installation handlers ───────────────────────────────────────────────────
 
 function installClaudeCode(action) {
   let success = true;
+  info("Scope: user-level (plugin marketplace)");
   if (action === "install") {
     info("Installing for Claude Code via plugin marketplace...");
-    success = run(`claude plugin marketplace add ${REPO}`, "Claude Code marketplace add") && success;
-    success = run(`claude plugin install "${SKILL_NAME}@${REPO}"`, "Claude Code plugin install") && success;
+    success = run(`claude plugin marketplace add ${REPO} --scope user`, "Claude Code marketplace add") && success;
+    success = run(`claude plugin install "${SKILL_NAME}@${CLAUDE_MARKETPLACE}" --scope user`, "Claude Code plugin install") && success;
   } else {
     info("Uninstalling from Claude Code...");
-    success = run(`claude plugin uninstall ${SKILL_NAME}`, "Claude Code uninstall") && success;
+    success = run(`claude plugin uninstall ${SKILL_NAME} --scope user --yes`, "Claude Code uninstall") && success;
   }
   return success;
 }
 
 function installGeminiCli(action) {
+  info("Scope: user-level (Gemini extension)");
   if (action === "install") {
     info("Installing for Gemini CLI...");
-    return run(`gemini extensions install ${REPO_URL}`, "Gemini CLI install");
+    return run(`gemini extensions install ${REPO_URL} --consent --skip-settings`, "Gemini CLI install");
   } else {
     info("Uninstalling from Gemini CLI...");
-    return run(`gemini extensions uninstall ${REPO_URL}`, "Gemini CLI uninstall");
+    return run(`gemini extensions uninstall ${SKILL_NAME}`, "Gemini CLI uninstall");
   }
 }
 
@@ -337,6 +410,7 @@ function installTraeCn(action) {
   if (action === "install") {
     info(`Installing for Trae IDE (Trae-CN)...`);
     info(`Target: ${targetDir}`);
+    info("Scope: user-level");
 
     if (DRY_RUN) {
       console.log(`  copy "${SKILL_SOURCE_DIR}" → "${targetDir}"`);
@@ -373,7 +447,13 @@ function installTraeCn(action) {
     }
   } else {
     info("Uninstalling from Trae IDE (Trae-CN)...");
-    if (DRY_RUN || !fs.existsSync(targetDir)) {
+    info(`Target: ${targetDir}`);
+    info("Scope: user-level");
+    if (DRY_RUN) {
+      console.log(`  remove "${targetDir}"`);
+      return true;
+    }
+    if (!fs.existsSync(targetDir)) {
       return true;
     }
     try {
@@ -388,10 +468,13 @@ function installTraeCn(action) {
 }
 
 function runViaNpx(agent, action) {
-  const cmd = action === "install" ? "add" : "remove";
+  const cmd = action === "install"
+    ? `npx -y skills add ${REPO} -a ${agent.profile} -g -y`
+    : `npx -y skills remove ${SKILL_NAME} -a ${agent.profile} -g -y`;
   const noun = action === "install" ? "Installing" : "Uninstalling";
   info(`${noun} for ${agent.label} via npx skills...`);
-  return run(`npx skills ${cmd} ${REPO} -a ${agent.profile}`, `${noun} for ${agent.label}`);
+  info("Scope: user-level");
+  return run(cmd, `${noun} for ${agent.label}`);
 }
 
 function isSameOrWithin(parent, candidate) {
@@ -670,7 +753,7 @@ function run(cmd, desc) {
 
 async function promptSelectAgent(detected) {
   const sorted = [...detected];
-  const allIds = new Set(PROVIDERS.map((p) => p.id));
+  const allIds = new Set(PROVIDERS.flatMap((p) => [p.id, ...(p.aliases || [])]));
 
   // Show the available options
   function showMenu() {
@@ -742,7 +825,7 @@ async function promptSelectAgent(detected) {
         }
         // Try ID match (case-insensitive)
         const match = sorted.find(
-          (p) => p.id.toLowerCase() === token
+          (p) => p.id === token || (p.aliases || []).includes(token)
         );
         if (match) {
           selected.push(match);
@@ -856,8 +939,11 @@ function showHelp() {
     Install preserves unrelated entries; uninstall removes only Skill files
     and removes the directory only when it becomes empty.
 
-  Supported agents:
-${PROVIDERS.map((p) => `    ${p.id.padEnd(15)} ${p.label}`).join("\n")}
+Supported agents:
+${PROVIDERS.map((p) => {
+  const aliases = p.aliases ? ` (aliases: ${p.aliases.join(", ")})` : "";
+  return `    ${p.id.padEnd(15)} ${p.label}${aliases}`;
+}).join("\n")}
 `);
 }
 
@@ -908,9 +994,18 @@ async function main() {
   let targets;
   if (ONLY_AGENTS.length > 0) {
     // --only was specified: validate and use those
-    targets = PROVIDERS.filter((p) => ONLY_AGENTS.includes(p.id));
-    if (targets.length === 0) {
-      err(`Unknown agent(s): ${ONLY_AGENTS.join(", ")}`);
+    targets = [];
+    const unknown = [];
+    for (const id of ONLY_AGENTS) {
+      const provider = findProvider(id);
+      if (!provider) {
+        unknown.push(id);
+      } else if (!targets.includes(provider)) {
+        targets.push(provider);
+      }
+    }
+    if (unknown.length > 0) {
+      err(`Unknown agent(s): ${unknown.join(", ")}`);
       info(`Use --help to see supported agents.`);
       process.exit(1);
     }

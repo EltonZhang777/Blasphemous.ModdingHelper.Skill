@@ -26,7 +26,7 @@ If any selected agent installation or uninstallation fails, the installer exits 
 
 | Agent | Command |
 |-------|---------|
-| **Claude Code** | `/plugin marketplace add EltonZhang777/Blasphemous.ModdingHelper.Skill` then `/plugin install blasphemous-modding-helper@EltonZhang777/Blasphemous.ModdingHelper.Skill` |
+| **Claude Code** | `/plugin marketplace add EltonZhang777/Blasphemous.ModdingHelper.Skill` then `/plugin install blasphemous-modding-helper@blasphemous-modding-helper-marketplace` |
 | **Gemini CLI** | `gemini extensions install https://github.com/EltonZhang777/Blasphemous.ModdingHelper.Skill` |
 | **Codex CLI** | Clone repo → symlink `skills/blasphemous-modding-helper` to `~/.agents/skills/` |
 | **Cursor / Windsurf / Cline** | `npx skills add EltonZhang777/Blasphemous.ModdingHelper.Skill -a <agent>` |
@@ -47,6 +47,8 @@ pwsh .\install.ps1 --path "$PWD\custom-harness\blasphemous-modding-helper"
 The installer does not append another directory name. `--path` cannot be combined with `--all` or `--only`. Installation preserves unrelated entries; custom-path uninstall removes only Skill files and removes the directory only when it becomes empty.
 
 The destination must be outside this repository and must not pass through a symbolic link or junction; unsafe source, repository, and replacement targets are rejected.
+
+Automatic provider installs use user-level scope and non-interactive flags. The delegated provider IDs for Codex and Hermes are `codex` and `hermes-agent`; legacy `codex-cli` and `hermes` values remain accepted by `--only` and normalize to those canonical IDs.
 
 ### Manual install
 
