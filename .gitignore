@@ -3,6 +3,7 @@
 skills/blasphemous-modding-helper/scripts/testdata/
 docs/handoff/
 .wt/
+ci/compress-docs/.runs/
 .serena/
 .temp/
 
