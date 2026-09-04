@@ -17,24 +17,20 @@
   Wrapping in a function and forwarding $args keeps one script working
   for both the pipe path and the local-clone path.
 
-.PARAMETER InstallerArgs
-  Pass flags to the Node installer as a string array.
-  Examples:
-    -InstallerArgs "--dry-run"
-    -InstallerArgs "--only trae-cn"
-    -InstallerArgs "--all"
-
 .EXAMPLE
   irm https://raw.githubusercontent.com/EltonZhang777/Blasphemous.ModdingHelper.Skill/main/install.ps1 | iex
 
 .EXAMPLE
-  .\install.ps1 -InstallerArgs "--dry-run"
+  .\install.ps1 --dry-run
 
 .EXAMPLE
-  .\install.ps1 -InstallerArgs "--only trae-cn"
+  .\install.ps1 --only trae-cn
 
 .EXAMPLE
-  .\install.ps1 -InstallerArgs "--uninstall"
+  .\install.ps1 --uninstall
+
+.EXAMPLE
+  .\install.ps1 --dry-run --path "$PWD\custom-harness\blasphemous-modding-helper"
 #>
 
 function Install-Skill {
@@ -47,6 +43,9 @@ function Install-Skill {
 
   # ── Helper to wait for key press (handles non-interactive terminals) ──────
   function Wait-ForKeyPress {
+    if ($env:CI -or [Console]::IsInputRedirected -or $Host.Name -eq "ServerRemoteHost") {
+      return
+    }
     try {
       $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
     } catch {

@@ -21,6 +21,7 @@ REPOSITORY_ROOT = SKILL_ROOT.parents[1]
 ROOT_RUNNER = REPOSITORY_ROOT / "tests" / "run_blasphemous_modding_test.py"
 INSTALLER = REPOSITORY_ROOT / "bin" / "install.js"
 INSTALLER_TEST = REPOSITORY_ROOT / "tests" / "test_installer.js"
+WRAPPER_TEST = REPOSITORY_ROOT / "tests" / "test_install_wrappers.js"
 
 
 class AcceptanceError(RuntimeError):
@@ -117,6 +118,10 @@ def run_installer_surface(node_executable: str) -> None:
     run_command(
         "Node installer regression test",
         (node_executable, str(INSTALLER_TEST)),
+    )
+    run_command(
+        "Installer wrapper contract test",
+        (node_executable, str(WRAPPER_TEST)),
     )
     for agent in ("trae-cn", "claude-code"):
         run_command(

@@ -44,6 +44,8 @@ bash install.sh --path "$PWD/custom-harness/blasphemous-modding-helper"
 pwsh .\install.ps1 --path "$PWD\custom-harness\blasphemous-modding-helper"
 ```
 
+PowerShell forwards installer flags directly; use `--dry-run`, `--only`, `--uninstall`, and `--path` as shown. Non-interactive runs do not wait for a keypress.
+
 The installer does not append another directory name. `--path` cannot be combined with `--all` or `--only`. Installation preserves unrelated entries; custom-path uninstall removes only Skill files and removes the directory only when it becomes empty.
 
 The destination must be outside this repository and must not pass through a symbolic link or junction; unsafe source, repository, and replacement targets are rejected.
