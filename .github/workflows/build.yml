@@ -3,14 +3,21 @@ name: Build
 on:
   push:
     tags: [ "**" ]
-    branches: [ "main", "test-ci" ]
+    branches: [ "main", "test-ci", "experimental" ]
 
 jobs:
   modding-api-regression:
+    name: Acceptance (${{ matrix.os }} / ${{ matrix.shell }})
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        include:
+        - os: ubuntu-latest
+          shell: bash
+        - os: windows-latest
+          shell: pwsh
+        - os: macos-latest
+          shell: bash
     runs-on: ${{ matrix.os }}
 
     steps:
@@ -27,7 +34,9 @@ jobs:
       with:
         node-version: "18"
 
-    - name: Run native Python acceptance surface
+    # The acceptance runner includes the Node installer and wrapper contracts.
+    - name: Run Python and Node installer acceptance surface
+      shell: ${{ matrix.shell }}
       run: python skills/blasphemous-modding-helper/scripts/test_modding_api_acceptance.py --python python --require-clean
 
   build:
