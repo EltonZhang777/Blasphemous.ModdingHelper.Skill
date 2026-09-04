@@ -5,7 +5,9 @@ description: Shared command context, preferences gate, recovery, and completion 
 
 # Invocation preflight
 
-This reference is the single source of truth for the shared preflight contract of every `blasphemous-modding-helper` invocation. It owns command context, preference scope selection, first-time setup, path-failure recovery, the tracked-session stop exception, and preflight completion. The top-level [Skill](../../SKILL.md) remains the sole cross-branch router. Specialized references MUST link here and MUST add only their own requirements and evidence.
+This reference is the single source of truth for the shared preflight contract of every operational `blasphemous-modding-helper` invocation. It owns command context, preference scope selection, first-time setup, path-failure recovery, the tracked-session stop exception, and preflight completion. The top-level [Skill](../../SKILL.md) remains the sole cross-branch router. Specialized references MUST link here and MUST add only their own requirements and evidence.
+
+The read-only [localization lookup branch](../sub-skills/localization-lookup.md) is the documented preference exception. It reads the bundled localization index as text and does not run Skill scripts, inspect a Modding profile, or inspect source code. It confirms the index path and file readability, then follows its own completion criteria.
 
 ## Command context
 
@@ -53,7 +55,7 @@ When check finds no file, agent MUST enter [First-Time Setup](first-time-setup.m
 
 [First-Time Setup](first-time-setup.md) owns setup questions, validation, scope save, and optional local ModdingAPI checkout. shared gate above owns when setup is required; this section owns common blocking and recovery contract:
 
-- Missing preferences MUST block every normal branch until setup succeeds. setup failure MUST be reported with its error and retry path.
+- Missing preferences MUST block every operational branch until setup succeeds. The read-only localization lookup branch does not require preferences and remains available when no preference file exists. Setup failure MUST be reported with its error and retry path.
 - Only preflight exception is `/blasphemous-modding-test stop SESSION_ID`. It MUST use only recorded session identity, MUST address only that tracked process tree, and MUST not read or edit preferences when normal context preflight is unavailable.
 - Source-code or modding path failure MUST use this exact handoff: "Some operations failed using the saved paths in `preferences.md`. Would you like to re-run the first-time setup to update them?"
 - If user answers Yes, agent MUST delete active `preferences.md` and return to [First-Time Setup](first-time-setup.md). If user answers No, agent MUST continue with current paths and report specific failure.
@@ -64,8 +66,8 @@ After this contract completes, agent MUST return to top-level Skill's workflow. 
 
 Shared preflight is complete only when all applicable conditions below hold:
 
-1. Command context is ready, including installed Skill root, caller Mod repository, resolved Python interpreter, and supported native host.
-2. Preference check has selected and applied project or user file, or First-Time Setup has reported success.
-3. Selected branch has received active preferences file and can state its additional required fields before mutating files, launching process, or relying on source or log path.
-4. For tracked-session stop exception, recorded process is stopped or confirmed gone and no unrelated process was touched.
-5. For declined path recovery, specific failure and next action have been reported. successful setup instead returns validated preferences file to main workflow.
+1. An operational branch has a ready command context, including installed Skill root, caller Mod repository, resolved Python interpreter, and supported native host; or the localization branch has a confirmed bundled index path and readable file.
+2. An operational branch has a selected and applied project or user preference file, or First-Time Setup has reported success. The localization branch has no preference requirement.
+3. The selected branch has received its required context before mutating files, launching a process, or relying on source or log paths.
+4. For the tracked-session stop exception, the recorded process is stopped or confirmed gone and no unrelated process was touched.
+5. For declined path recovery, the specific failure and next action have been reported. Successful setup instead returns a validated preference file to the main workflow.
