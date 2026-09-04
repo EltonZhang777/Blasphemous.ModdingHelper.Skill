@@ -505,6 +505,17 @@ function resolveRealPathForSafety(targetDir) {
   return path.resolve(fs.realpathSync(existingPath), ...missingSegments);
 }
 
+function isAllowedSystemSymlink(linkPath) {
+  if (process.platform !== "darwin") return false;
+  const root = path.parse(linkPath).root;
+  if (linkPath !== path.join(root, "var")) return false;
+  try {
+    return fs.realpathSync(linkPath) === path.join(root, "private", "var");
+  } catch {
+    return false;
+  }
+}
+
 function findSymbolicLinkAncestor(targetDir) {
   const root = path.parse(targetDir).root;
   const segments = path.relative(root, targetDir).split(path.sep).filter(Boolean);
@@ -513,7 +524,9 @@ function findSymbolicLinkAncestor(targetDir) {
   for (const segment of segments) {
     currentPath = path.join(currentPath, segment);
     try {
-      if (fs.lstatSync(currentPath).isSymbolicLink()) return currentPath;
+      if (fs.lstatSync(currentPath).isSymbolicLink() && !isAllowedSystemSymlink(currentPath)) {
+        return currentPath;
+      }
     } catch (e) {
       if (e.code === "ENOENT" || e.code === "ENOTDIR") break;
       throw e;
