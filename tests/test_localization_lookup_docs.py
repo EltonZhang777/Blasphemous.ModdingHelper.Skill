@@ -19,6 +19,7 @@ class LocalizationLookupDocumentationTests(unittest.TestCase):
         self.assertIn("localization-lookup.md", main)
         self.assertIn("natural-language", main)
         self.assertIn("read-only localization", main)
+        self.assertIn("identify or translate a Blasphemous 1 term", main)
 
     def test_lookup_branch_defines_default_text_search_and_evidence_boundary(self):
         lookup = LOOKUP_SKILL.read_text(encoding="utf-8").casefold()

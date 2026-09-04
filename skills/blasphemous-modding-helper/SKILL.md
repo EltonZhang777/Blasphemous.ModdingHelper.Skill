@@ -1,6 +1,6 @@
 ---
 name: blasphemous-modding-helper
-description: Blasphemous modding development helper. Use when the user wants to build, deploy, launch, inspect startup evidence, stop, clean, or perform Manual verification for a Blasphemous mod; develop a mod, analyze Blasphemous decompiled source code, or debug mod-related logs (BepInEx / Unity).
+description: Blasphemous modding development helper. Use when the user wants to build, deploy, launch, inspect startup evidence, stop, clean, or perform Manual verification for a Blasphemous mod; identify or translate a Blasphemous 1 term; develop a mod, analyze Blasphemous decompiled source code, or debug mod-related logs (BepInEx / Unity).
 ---
 
 # Blasphemous modding helper
@@ -56,7 +56,7 @@ Agent MUST analyze user question to determine user intent and task to perform, e
 - Whether user request asks to identify, explain, compare, or translate a Blasphemous 1 term, name, UI phrase, or textual reference in natural language.
   - If yes, agent MUST route to [Localization lookup](references/sub-skills/localization-lookup.md) before using source analysis or an operational branch.
 
-**Done when**: user question is classified into one or more of four branches (source code analysis, log analysis, mod testing, or general modding question), and every applicable specialized branch has been routed to its authoritative sub-skill or analysis task.
+**Done when**: user question is classified into one or more applicable branches (localization lookup, source code analysis, log analysis, mod testing, or general modding question), and every applicable specialized branch has been routed to its authoritative sub-skill or analysis task.
 
 ### Step 3: Use Tools to Gather Information
 

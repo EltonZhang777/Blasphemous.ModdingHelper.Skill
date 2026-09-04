@@ -5,7 +5,7 @@ Use this read-only branch for a natural-language request to identify, explain, c
 ## Procedure
 
 1. Identify the user's instruction language, requested source language, requested target language, and whether the user asks for a full comparison. Use the instruction language for the explanation. Keep source values in their original languages and keep translated output separate from the explanation.
-2. Select the index:
+2. Resolve the installed Skill root, then select the index relative to that root:
    - Use `references/localization/blasphemous1_zh-en-es.tsv` as the core index by default.
    - Use `references/localization/blasphemous1_all.tsv` only when the request names a source language, target language, or comparison outside Chinese, English, and Spanish, or explicitly asks for a full comparison.
    - A request such as “用中文解释，再翻译成日文” keeps the explanation in Chinese and loads the all-language index for the Japanese translation output.
@@ -26,7 +26,7 @@ Use this read-only branch for a natural-language request to identify, explain, c
 4. Extract distinctive words or phrases from the user's natural-language description. Search the selected TSV values directly with `rg`, for example:
 
    ```text
-   rg -n -i --fixed-strings -- "distinctive phrase" skills/blasphemous-modding-helper/references/localization/blasphemous1_zh-en-es.tsv
+   rg -n -i --fixed-strings -- "distinctive phrase" "<SkillRoot>/references/localization/blasphemous1_zh-en-es.tsv"
    ```
 
    Search the description; do not require the user to provide a complete localization key. If the user supplies a key, use it as an additional search term, not as a prerequisite.
@@ -35,7 +35,7 @@ Use this read-only branch for a natural-language request to identify, explain, c
    - `Localization evidence`: wording, labels, translated names, and textual descriptions from the TSV.
    - `Gameplay evidence`: runtime behavior, mechanics, values, and code relationships. The localization row does not establish these facts.
 7. If several rows match or the wording is ordinary prose, report candidates and the ambiguity. Do not force a canonical game concept from a weak text match. If no row matches:
-   - Search `references/localization/semantic-aliases.md` with `rg` and inspect matching aliases before source analysis. Apply only light normalization of case, surrounding whitespace, and common punctuation. Preserve the original alias and translation wording.
+   - Search `<SkillRoot>/references/localization/semantic-aliases.md` with `rg` and inspect matching aliases before source analysis. Apply only light normalization of case, surrounding whitespace, and common punctuation. Preserve the original alias and translation wording.
    - Use the alias's positive and negative context to decide whether it applies. One alias may return multiple candidates when context is insufficient.
    - Apply `high-confidence` aliases directly when their context matches. A `medium-confidence` alias requires an explicit mapping note. Keep `low-confidence` aliases as candidates only.
    - AI may propose a new alias, but it MUST receive explicit user confirmation before writing to the alias document.
@@ -44,7 +44,7 @@ Use this read-only branch for a natural-language request to identify, explain, c
    - If the source evidence supports a relationship between the code identifier and a localized concept, label it explicitly as an `Inference` and cite both sides. Do not create a persistent code-name-to-translation mapping table.
    - A natural-language term that is not code-like remains a candidate or an actionable unresolved result. Do not turn it into an automatic source or web-search guess.
 
-The lookup order is localized text, semantic aliases, then controlled source analysis for code-like or explicitly unresolved identifiers. An unmatched natural-language term is not an automatic source or web-search guess.
+The lookup order is localized text, semantic aliases, then controlled source analysis for code-like identifiers or terms the user explicitly presents as source references. An unmatched natural-language term is not an automatic source or web-search guess.
 
 ## Completion criteria
 
