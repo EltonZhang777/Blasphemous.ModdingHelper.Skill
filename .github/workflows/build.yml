@@ -34,8 +34,14 @@ jobs:
         node-version: "18"
 
     # The acceptance runner includes the Node installer and wrapper contracts.
-    - name: Run Python and Node installer acceptance surface
-      shell: ${{ matrix.shell_name }}
+    - name: Run acceptance surface (Bash)
+      if: matrix.shell_name == 'bash'
+      shell: bash
+      run: python skills/blasphemous-modding-helper/scripts/test_modding_api_acceptance.py --python python --require-clean
+
+    - name: Run acceptance surface (PowerShell)
+      if: matrix.shell_name == 'pwsh'
+      shell: pwsh
       run: python skills/blasphemous-modding-helper/scripts/test_modding_api_acceptance.py --python python --require-clean
 
   build:
