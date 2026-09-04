@@ -38,6 +38,15 @@ class LocalizationLookupDocumentationTests(unittest.TestCase):
         self.assertIn("localization lookup branch", preflight)
         self.assertIn("read-only", preflight)
 
+    def test_lookup_documents_on_demand_all_language_selection(self):
+        lookup = LOOKUP_SKILL.read_text(encoding="utf-8").casefold()
+
+        self.assertIn("blasphemous1_all.tsv", lookup)
+        self.assertIn("core index by default", lookup)
+        self.assertIn("requested target language", lookup)
+        self.assertIn("full comparison", lookup)
+        self.assertIn("instruction language", lookup)
+
 
 if __name__ == "__main__":
     unittest.main()
