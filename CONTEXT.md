@@ -38,6 +38,48 @@ _Avoid_: mod folder (when the target must be precise)
 The plugins directory inside the modding root. A package's plugin files are mapped here without changing their package-relative names.
 _Avoid_: DLL folder
 
+## Blasphemous localization
+
+**Blasphemous 1 localization corpus**:
+A localized game-text corpus for Blasphemous 1. Blasphemous 2 remains outside this context.
+_Avoid_: Blasphemous localization in general, Blasphemous 2 terms
+
+**Localization record**:
+A translation key, language, and value from the Blasphemous 1 localization corpus.
+_Avoid_: canonical game concept, glossary entry
+
+**Translation variant**:
+A localized wording that represents a concept in a particular language or UI context.
+_Avoid_: canonical game concept
+
+**Code identifier**:
+A name in decompiled game or Mod source that may refer to a canonical game concept.
+_Avoid_: translation key, official localized name
+
+**Localization evidence**:
+Evidence for a game's wording, labels, translated names, and textual descriptions.
+_Avoid_: runtime behavior evidence
+
+**Gameplay evidence**:
+Evidence for runtime behavior, mechanics, values, and code relationships from game or Mod source.
+_Avoid_: translation evidence
+
+**Canonical game concept**:
+A semantic game object, resource, character, place, or mechanic supported by localization records, source-code identifiers, or aliases.
+_Avoid_: translation value, localization key
+
+**Community alias**:
+A user or community expression for a canonical game concept.
+_Avoid_: official translation, global synonym
+
+**Fervour (`FERVOR`)**:
+The in-game resource represented by the game's `FERVOR` localization terms.
+_Avoid_: treating a community alias as its official name
+
+**Guilt Fragment**:
+The guilt drop and recovery object associated with the Penitent One's death.
+_Avoid_: corpse, generic body
+
 ## Standards routing vocabulary
 
 **Coding-standards sub-skill**:
@@ -131,3 +173,21 @@ _Avoid_: error blame, warning suppression
 **`BlasMod` lifecycle**:
 The current ModdingAPI callback vocabulary for Mod startup, service registration, frames, levels, game sessions, and shutdown.
 _Avoid_: Unity lifecycle, legacy `Mod` lifecycle
+
+## Skill-document compression
+
+**Live skill document**:
+A Markdown document under the repository's `skills` tree that is part of an installed Skill and can be reviewed for compression.
+_Avoid_: source code, caller document
+
+**Candidate document**:
+A compressed Markdown document produced for review that has not replaced its live skill document.
+_Avoid_: final document, compressed source
+
+**Compression run**:
+A single identified lifecycle that discovers live skill documents, produces candidates, records review evidence, and may apply approved candidates.
+_Avoid_: Test session, test run
+
+**Protected content**:
+Document content whose exact text, structure, or token identity must survive compression so that Skill behavior and operational guidance remain trustworthy.
+_Avoid_: immutable prose
