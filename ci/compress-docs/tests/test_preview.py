@@ -5,6 +5,7 @@ import json
 import os
 import re
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -58,6 +59,8 @@ if sys.argv[1:2] == ["exec"]:
         start = marker.end()
         length = int(marker.group(1))
         body = prompt_bytes[start : start + length]
+        if os.environ.get("FAKE_CODEX_MODE") == "compress":
+            body = body.replace(b"Original prose.", b"Compressed prose.", 1)
         if os.environ.get("FAKE_CODEX_MODE") == "repair":
             exec_count = sum(event["argv"][:1] == ["exec"] for event in events)
             if exec_count == 1:
@@ -114,6 +117,37 @@ class PreviewCliTests(unittest.TestCase):
             stderr=subprocess.PIPE,
             text=True,
         )
+
+    def run_apply(self, run_id, *args):
+        return subprocess.run(
+            [str(PYTHON), str(SCRIPT), "apply", "--run", run_id, *args],
+            cwd=str(REPO_ROOT),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+
+    def run_clean(self, run_id):
+        return subprocess.run(
+            [str(PYTHON), str(SCRIPT), "clean", "--run", run_id],
+            cwd=str(REPO_ROOT),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+
+    def preview_test_documents(self, names):
+        paths = []
+        selections = []
+        for name in names:
+            path = REPO_ROOT / "skills" / name
+            path.write_bytes(b"# Apply test\r\n\r\nOriginal prose.\r\n")
+            paths.append(path)
+            selections.append(str(path.relative_to(REPO_ROOT)).replace("\\", "/"))
+        result = self.run_cli(selection=selections, FAKE_CODEX_MODE="compress")
+        summary = self.summary_path(result.stdout)
+        manifest = json.loads((summary.parent / "manifest.json").read_text(encoding="utf-8"))
+        return paths, selections, result, summary, manifest
 
     def read_events(self):
         return json.loads(self.log.read_text(encoding="utf-8"))
@@ -337,6 +371,135 @@ class PreviewCliTests(unittest.TestCase):
 
         self.assertNotEqual(result.returncode, 0)
         self.assertFalse(self.log.exists())
+
+    def test_apply_requires_explicit_file_or_all_scope(self):
+        paths, selections, result, summary, manifest = self.preview_test_documents(["compress_docs_apply_scope_test.md"])
+        try:
+            self.assertEqual(result.returncode, 0, result.stderr)
+            apply_result = self.run_apply(manifest["run_id"])
+            self.assertNotEqual(apply_result.returncode, 0)
+            self.assertEqual(paths[0].read_bytes(), b"# Apply test\r\n\r\nOriginal prose.\r\n")
+        finally:
+            shutil.rmtree(summary.parent, ignore_errors=True)
+            for path in paths:
+                path.unlink(missing_ok=True)
+
+    def test_apply_verifies_backup_readback_atomic_write_and_permission(self):
+        paths, selections, result, summary, manifest = self.preview_test_documents(["compress_docs_apply_success_test.md"])
+        path = paths[0]
+        original = path.read_bytes()
+        mode = stat.S_IMODE(path.stat().st_mode)
+        try:
+            self.assertEqual(result.returncode, 0, result.stderr)
+            apply_result = self.run_apply(manifest["run_id"], "--file", selections[0])
+            self.assertEqual(apply_result.returncode, 0, apply_result.stderr)
+            updated_manifest = json.loads((summary.parent / "manifest.json").read_text(encoding="utf-8"))
+            document = updated_manifest["documents"][0]
+            candidate = (summary.parent / document["candidate"]).read_bytes()
+            backup = summary.parent / document["apply"]["backup"]
+            self.assertEqual(document["apply"]["status"], "applied")
+            self.assertEqual(path.read_bytes(), candidate)
+            self.assertEqual(backup.read_bytes(), original)
+            self.assertEqual(stat.S_IMODE(path.stat().st_mode), mode)
+            self.assertIn("## Apply", (summary.parent / "summary.md").read_text(encoding="utf-8"))
+            self.assertIn("Status: applied", apply_result.stdout)
+            self.assertIn("Summary: ", apply_result.stdout)
+        finally:
+            shutil.rmtree(summary.parent, ignore_errors=True)
+            path.unlink(missing_ok=True)
+
+    def test_apply_rejects_stale_source_before_any_write(self):
+        paths, selections, result, summary, manifest = self.preview_test_documents(["compress_docs_apply_stale_test.md"])
+        path = paths[0]
+        try:
+            self.assertEqual(result.returncode, 0, result.stderr)
+            path.write_bytes(b"# Apply test\r\n\r\nChanged after preview.\r\n")
+            apply_result = self.run_apply(manifest["run_id"], "--file", selections[0])
+            self.assertNotEqual(apply_result.returncode, 0)
+            updated_manifest = json.loads((summary.parent / "manifest.json").read_text(encoding="utf-8"))
+            document = updated_manifest["documents"][0]
+            self.assertEqual(updated_manifest["apply"]["status"], "preflight_failed")
+            self.assertEqual(document["apply"]["status"], "rejected")
+            self.assertFalse((summary.parent / document["apply"].get("backup", "missing")).exists())
+            self.assertEqual(path.read_bytes(), b"# Apply test\r\n\r\nChanged after preview.\r\n")
+        finally:
+            shutil.rmtree(summary.parent, ignore_errors=True)
+            path.unlink(missing_ok=True)
+
+    def test_apply_stops_after_write_failure_and_reports_applied_files(self):
+        names = [
+            "compress_docs_apply_stop_one_test.md",
+            "compress_docs_apply_stop_two_test.md",
+            "compress_docs_apply_stop_three_test.md",
+        ]
+        paths, selections, result, summary, manifest = self.preview_test_documents(names)
+        originals = [path.read_bytes() for path in paths]
+        replace_count = 0
+        real_atomic_replace = compress_docs._atomic_replace
+
+        def fail_on_second_replace(path, data, mode):
+            nonlocal replace_count
+            replace_count += 1
+            if replace_count == 2:
+                raise OSError("synthetic write failure")
+            return real_atomic_replace(path, data, mode)
+
+        try:
+            self.assertEqual(result.returncode, 0, result.stderr)
+            with mock.patch.object(compress_docs, "_atomic_replace", side_effect=fail_on_second_replace):
+                output = io.StringIO()
+                with contextlib.redirect_stdout(output):
+                    apply_result = compress_docs.apply(REPO_ROOT, manifest["run_id"], selections, False)
+            self.assertNotEqual(apply_result, 0)
+            updated_manifest = json.loads((summary.parent / "manifest.json").read_text(encoding="utf-8"))
+            statuses = [document["apply"]["status"] for document in updated_manifest["documents"]]
+            self.assertEqual(statuses, ["applied", "failed", "skipped"])
+            self.assertNotEqual(paths[0].read_bytes(), originals[0])
+            self.assertEqual(paths[1].read_bytes(), originals[1])
+            self.assertEqual(paths[2].read_bytes(), originals[2])
+            self.assertTrue((summary.parent / updated_manifest["documents"][0]["apply"]["backup"]).is_file())
+            self.assertFalse((summary.parent / updated_manifest["documents"][2]["apply"].get("backup", "missing")).exists())
+            self.assertIn("completed_with_failures", (summary.parent / "summary.md").read_text(encoding="utf-8"))
+        finally:
+            shutil.rmtree(summary.parent, ignore_errors=True)
+            for path in paths:
+                path.unlink(missing_ok=True)
+
+    def test_apply_rejects_tampered_candidate_before_write(self):
+        paths, selections, result, summary, manifest = self.preview_test_documents(["compress_docs_apply_tamper_test.md"])
+        path = paths[0]
+        original = path.read_bytes()
+        try:
+            self.assertEqual(result.returncode, 0, result.stderr)
+            candidate = summary.parent / manifest["documents"][0]["candidate"]
+            candidate.write_bytes(candidate.read_bytes().replace(b"Compressed prose.", b"Tampered prose.", 1))
+            apply_result = self.run_apply(manifest["run_id"], "--all")
+            self.assertNotEqual(apply_result.returncode, 0)
+            updated_manifest = json.loads((summary.parent / "manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual(updated_manifest["apply"]["status"], "preflight_failed")
+            self.assertEqual(path.read_bytes(), original)
+            self.assertFalse((summary.parent / updated_manifest["documents"][0]["apply"].get("backup", "missing")).exists())
+        finally:
+            shutil.rmtree(summary.parent, ignore_errors=True)
+            path.unlink(missing_ok=True)
+
+    def test_clean_removes_run_without_touching_applied_live_document(self):
+        paths, selections, result, summary, manifest = self.preview_test_documents(["compress_docs_clean_test.md"])
+        path = paths[0]
+        try:
+            self.assertEqual(result.returncode, 0, result.stderr)
+            apply_result = self.run_apply(manifest["run_id"], "--all")
+            self.assertEqual(apply_result.returncode, 0, apply_result.stderr)
+            applied = path.read_bytes()
+            clean_result = self.run_clean(manifest["run_id"])
+            self.assertEqual(clean_result.returncode, 0, clean_result.stderr)
+            self.assertFalse(summary.parent.exists())
+            self.assertEqual(path.read_bytes(), applied)
+            self.assertIn("Summary: ", clean_result.stdout)
+            self.assertIn("Document: " + selections[0] + ": cleaned", clean_result.stdout)
+        finally:
+            shutil.rmtree(summary.parent, ignore_errors=True)
+            path.unlink(missing_ok=True)
 
 
 if __name__ == "__main__":

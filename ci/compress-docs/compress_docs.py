@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Preview Skill Markdown documents through the local Codex CLI."""
+"""Preview, apply, and clean Skill-document compression runs."""
 
 import argparse
 import datetime as dt
@@ -28,6 +28,7 @@ MAX_DIAGNOSTIC_BYTES = 2_048
 MAX_REPAIRS = 2
 PROMPT_VERSION = "compress-docs/v1"
 UTF8_BOM = b"\xef\xbb\xbf"
+RUN_ID = re.compile(r"^[0-9]{8}T[0-9]{6}Z-[0-9a-f]{12}$")
 
 SENSITIVE_BASENAME = re.compile(
     r"(?ix)^(\.env(\..+)?|\.netrc|credentials(\..+)?|secrets?(\..+)?|"
@@ -59,6 +60,18 @@ class CandidateError(WorkflowError):
 class DocumentTarget:
     path: Path
     relative: str
+
+
+@dataclass
+class ApplyTarget:
+    path: Path
+    relative: str
+    document: Dict[str, object]
+    source: bytes
+    candidate: bytes
+    mode: int
+    backup_path: Path
+    backup_relative: str
 
 
 def repository_root() -> Path:
@@ -331,6 +344,46 @@ def _atomic_write(path: Path, data: bytes) -> None:
                 pass
 
 
+def _atomic_replace(path: Path, data: bytes, mode: int) -> None:
+    temporary = None
+    try:
+        fd, temporary = tempfile.mkstemp(prefix=".compress-", dir=str(path.parent))
+        with os.fdopen(fd, "wb") as stream:
+            stream.write(data)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.chmod(temporary, stat.S_IMODE(mode))
+        os.replace(temporary, path)
+        temporary = None
+    finally:
+        if temporary:
+            try:
+                os.unlink(temporary)
+            except FileNotFoundError:
+                pass
+
+
+def _write_verified_backup(path: Path, source: bytes) -> None:
+    if _is_link_or_junction(path):
+        raise WorkflowError("backup path is a symlink or junction")
+    if path.exists():
+        try:
+            if not stat.S_ISREG(path.stat().st_mode):
+                raise WorkflowError("existing backup is not a regular file")
+            existing = path.read_bytes()
+        except OSError as error:
+            raise WorkflowError("existing backup could not be read") from error
+        if existing != source:
+            raise WorkflowError("existing backup does not match the preview source")
+    else:
+        _atomic_write(path, source)
+    try:
+        if path.read_bytes() != source:
+            raise WorkflowError("backup readback failed")
+    except OSError as error:
+        raise WorkflowError("backup readback failed") from error
+
+
 def _write_json(path: Path, value: Dict[str, object]) -> None:
     _atomic_write(path, (json.dumps(value, ensure_ascii=False, indent=2) + "\n").encode("utf-8"))
 
@@ -357,6 +410,18 @@ def _write_run_state(run_dir: Path, manifest: Dict[str, object], diagnostics: Op
         if document.get("candidate"):
             line += " (`" + str(document["candidate"]) + "`)"
         lines.append(line)
+    apply_report = manifest.get("apply")
+    if apply_report:
+        lines.extend(["", "## Apply", "", "- Status: " + str(apply_report.get("status"))])
+        lines.append("- Scope: " + str(apply_report.get("scope")))
+        for document in documents:
+            outcome = document.get("apply")
+            if not outcome:
+                continue
+            line = "- " + str(document["path"]) + ": " + str(outcome.get("status"))
+            if outcome.get("error"):
+                line += " (" + str(outcome["error"]) + ")"
+            lines.append(line)
     skipped = manifest.get("skipped", [])
     if skipped:
         lines.extend(["", "## Skipped discovery entries", ""])
@@ -568,6 +633,164 @@ def _artifact_dir(run_dir: Path, document: Dict[str, object]) -> Path:
 def _artifact_name(document: Dict[str, object], name: str) -> str:
     base = str(document["artifact_dir"])
     return name if base == "." else (Path(base) / name).as_posix()
+
+
+def _run_directory(root: Path, run_id: str) -> Tuple[Path, Path]:
+    if not isinstance(run_id, str) or not RUN_ID.fullmatch(run_id):
+        raise PreflightError("--run must name a compression run")
+    runs = root / "ci" / "compress-docs" / ".runs"
+    if _is_link_or_junction(runs) or not runs.is_dir():
+        raise PreflightError("compression run area does not exist")
+    run_dir = runs / run_id
+    if _is_link_or_junction(run_dir):
+        raise PreflightError("compression run cannot be a symlink or junction")
+    try:
+        resolved_runs = runs.resolve()
+        resolved_run = run_dir.resolve(strict=False)
+        resolved_run.relative_to(resolved_runs)
+    except (OSError, ValueError) as error:
+        raise PreflightError("compression run is outside the ignored run area") from error
+    if resolved_run.parent != resolved_runs or not run_dir.is_dir():
+        raise PreflightError("compression run does not exist")
+    return runs, run_dir
+
+
+def _safe_run_path(run_dir: Path, relative: object) -> Path:
+    if not isinstance(relative, str):
+        raise PreflightError("run artifact path is invalid")
+    if relative == ".":
+        return run_dir
+    requested = Path(relative)
+    if requested.is_absolute() or not requested.parts or any(part in (".", "..") for part in requested.parts):
+        raise PreflightError("run artifact path is invalid")
+    current = run_dir
+    for part in requested.parts:
+        current = current / part
+        if _is_link_or_junction(current):
+            raise PreflightError("run artifact cannot use a symlink or junction")
+    try:
+        current.resolve(strict=False).relative_to(run_dir.resolve())
+    except (OSError, ValueError) as error:
+        raise PreflightError("run artifact is outside the ignored run area") from error
+    return current
+
+
+def _load_manifest(run_dir: Path) -> Dict[str, object]:
+    try:
+        manifest = json.loads((run_dir / "manifest.json").read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise PreflightError("compression run manifest could not be read") from error
+    if not isinstance(manifest, dict) or manifest.get("run_id") != run_dir.name or manifest.get("operation") != "preview":
+        raise PreflightError("compression run manifest is invalid")
+    if not isinstance(manifest.get("documents"), list):
+        raise PreflightError("compression run manifest has no document list")
+    return manifest
+
+
+def _path_key(value: str) -> str:
+    return os.path.normcase(value.replace("\\", "/"))
+
+
+def _set_apply_outcome(
+    document: Dict[str, object], status: str, error: Optional[str] = None, backup: Optional[str] = None
+) -> None:
+    outcome: Dict[str, object] = {"status": status}
+    if backup:
+        outcome["backup"] = backup
+    if error:
+        outcome["error"] = str(error)[:MAX_DIAGNOSTIC_BYTES]
+    document["apply"] = outcome
+
+
+def _select_apply_documents(
+    root: Path, manifest: Dict[str, object], selections: Sequence[str], apply_all: bool
+) -> Tuple[List[Dict[str, object]], List[Dict[str, object]], List[str]]:
+    documents = [document for document in manifest["documents"] if isinstance(document, dict)]
+    if len(documents) != len(manifest["documents"]):
+        raise PreflightError("compression run manifest has an invalid document entry")
+    by_path: Dict[str, Dict[str, object]] = {}
+    for document in documents:
+        path = document.get("path")
+        if not isinstance(path, str) or _path_key(path) in by_path:
+            raise PreflightError("compression run manifest has duplicate or invalid document paths")
+        by_path[_path_key(path)] = document
+
+    if apply_all:
+        selected = [document for document in documents if document.get("status") == "accepted"]
+        for document in documents:
+            if document not in selected:
+                _set_apply_outcome(document, "skipped", "candidate was not accepted by preview")
+        requested = ["--all"]
+    else:
+        selected = []
+        seen = set()
+        requested = []
+        for selection in selections:
+            _, relative = validate_selected_path(root, selection)
+            key = _path_key(relative)
+            if key in seen:
+                raise PreflightError("--file cannot select the same document twice")
+            seen.add(key)
+            document = by_path.get(key)
+            if document is None:
+                raise PreflightError("selected document is not part of the compression run")
+            selected.append(document)
+            requested.append(relative)
+    if not selected:
+        raise PreflightError("no validated candidates are selected")
+    return documents, selected, requested
+
+
+def _prepare_apply_target(root: Path, run_dir: Path, document: Dict[str, object]) -> ApplyTarget:
+    if document.get("status") != "accepted":
+        raise PreflightError("candidate was not accepted by preview")
+    relative_value = document.get("path")
+    if not isinstance(relative_value, str) or not isinstance(document.get("artifact_dir"), str):
+        raise PreflightError("compression run document metadata is invalid")
+    path, relative = validate_selected_path(root, relative_value)
+    if _path_key(relative) != _path_key(relative_value):
+        raise PreflightError("compression run document path changed")
+    expected_source = document.get("source_sha256")
+    if not isinstance(expected_source, str):
+        raise PreflightError(relative + ": source digest is missing")
+    try:
+        source = path.read_bytes()
+        source_after = path.stat()
+    except OSError as error:
+        raise PreflightError(relative + ": live document could not be read") from error
+    if (
+        _is_link_or_junction(path)
+        or not stat.S_ISREG(source_after.st_mode)
+        or len(source) > MAX_FILE_BYTES
+        or hashlib.sha256(source).hexdigest() != expected_source
+    ):
+        raise PreflightError(relative + ": live document changed since preview")
+
+    candidate_value = document.get("candidate")
+    expected_candidate = document.get("candidate_sha256")
+    if not isinstance(candidate_value, str) or not isinstance(expected_candidate, str):
+        raise PreflightError(relative + ": validated candidate metadata is missing")
+    candidate_path = _safe_run_path(run_dir, candidate_value)
+    try:
+        candidate_info = candidate_path.stat()
+        if not stat.S_ISREG(candidate_info.st_mode) or candidate_info.st_size > MAX_FILE_BYTES:
+            raise PreflightError(relative + ": candidate is not a regular file or exceeds the size limit")
+        candidate = candidate_path.read_bytes()
+        candidate_readback = candidate_path.read_bytes()
+    except OSError as error:
+        raise PreflightError(relative + ": candidate could not be read") from error
+    if candidate != candidate_readback:
+        raise PreflightError(relative + ": candidate readback failed")
+    if hashlib.sha256(candidate).hexdigest() != expected_candidate:
+        raise PreflightError(relative + ": candidate digest changed")
+    validation = validate_candidate(source, candidate)
+    if not validation.is_valid:
+        raise PreflightError(relative + ": candidate no longer validates: " + "; ".join(validation.errors))
+
+    backup_relative = _artifact_name(document, "backup.md")
+    backup_path = _safe_run_path(run_dir, backup_relative)
+    mode = stat.S_IMODE(source_after.st_mode)
+    return ApplyTarget(path, relative, document, source, candidate, mode, backup_path, backup_relative)
 
 
 def _persist_document(run_dir: Path, manifest: Dict[str, object], document: Dict[str, object], diagnostics: List[str]) -> None:
@@ -801,6 +1024,169 @@ def preview(root: Path, selections: Optional[Sequence[str]], codex_value: str, t
         lock.release()
 
 
+def apply(root: Path, run_id: str, selections: Sequence[str], apply_all: bool) -> int:
+    runs, run_dir = _run_directory(root, run_id)
+    lock = RunLock(runs / ".lock")
+    lock.acquire()
+    manifest: Optional[Dict[str, object]] = None
+    selected: List[Dict[str, object]] = []
+    prepared: List[ApplyTarget] = []
+    diagnostics: List[str] = []
+    try:
+        manifest = _load_manifest(run_dir)
+        manifest["apply"] = {
+            "status": "preflight",
+            "scope": "all" if apply_all else "files",
+            "requested": ["--all"] if apply_all else list(selections),
+            "started_at": dt.datetime.now(dt.timezone.utc).isoformat(),
+        }
+        _write_run_state(run_dir, manifest, diagnostics)
+        try:
+            _, selected, requested = _select_apply_documents(root, manifest, selections, apply_all)
+            manifest["apply"]["requested"] = requested
+        except PreflightError as error:
+            message = str(error)[:MAX_DIAGNOSTIC_BYTES]
+            diagnostics.append(message)
+            manifest["apply"].update(
+                {"status": "preflight_failed", "error": message, "finished_at": dt.datetime.now(dt.timezone.utc).isoformat()}
+            )
+            _write_run_state(run_dir, manifest, diagnostics)
+            print("Status: preflight_failed")
+            print("Run: " + run_id)
+            print("Summary: " + str(run_dir / "summary.md"))
+            return 2
+
+        failures = []
+        for document in selected:
+            try:
+                prepared.append(_prepare_apply_target(root, run_dir, document))
+            except WorkflowError as error:
+                message = str(error)[:MAX_DIAGNOSTIC_BYTES]
+                _set_apply_outcome(document, "rejected", message)
+                failures.append(message)
+        if failures:
+            for document in selected:
+                outcome = document.get("apply")
+                if not isinstance(outcome, dict) or outcome.get("status") != "rejected":
+                    _set_apply_outcome(document, "rejected", "apply preflight failed; no files were written")
+            message = failures[0]
+            diagnostics.extend(failures)
+            manifest["apply"].update(
+                {
+                    "status": "preflight_failed",
+                    "error": message,
+                    "finished_at": dt.datetime.now(dt.timezone.utc).isoformat(),
+                }
+            )
+            _write_run_state(run_dir, manifest, diagnostics)
+            print("Status: preflight_failed")
+            print("Run: " + run_id)
+            print("Summary: " + str(run_dir / "summary.md"))
+            return 2
+
+        for target in prepared:
+            _set_apply_outcome(target.document, "ready", backup=target.backup_relative)
+        manifest["apply"]["status"] = "applying"
+        _write_run_state(run_dir, manifest, diagnostics)
+
+        for index, target in enumerate(prepared):
+            try:
+                live_info = target.path.stat()
+                current = target.path.read_bytes() if stat.S_ISREG(live_info.st_mode) else b""
+                if _is_link_or_junction(target.path) or not stat.S_ISREG(live_info.st_mode) or current != target.source:
+                    raise WorkflowError(target.relative + ": live document changed after apply preflight")
+                _write_verified_backup(target.backup_path, target.source)
+                _set_apply_outcome(target.document, "backed_up", backup=target.backup_relative)
+                _write_run_state(run_dir, manifest, diagnostics)
+                _atomic_replace(target.path, target.candidate, target.mode)
+                live = target.path.read_bytes()
+                live_info = target.path.stat()
+                if live != target.candidate:
+                    raise WorkflowError(target.relative + ": live document readback failed")
+                if stat.S_IMODE(live_info.st_mode) != target.mode:
+                    raise WorkflowError(target.relative + ": live document permission changed")
+                if _newline_style(live) != _newline_style(target.source):
+                    raise WorkflowError(target.relative + ": live document newline style changed")
+                _set_apply_outcome(target.document, "applied", backup=target.backup_relative)
+                target.document["apply"]["candidate_sha256"] = hashlib.sha256(target.candidate).hexdigest()
+                _write_run_state(run_dir, manifest, diagnostics)
+            except (OSError, WorkflowError) as error:
+                message = target.relative + ": " + str(error)
+                _set_apply_outcome(target.document, "failed", message, target.backup_relative)
+                diagnostics.append(message[:MAX_DIAGNOSTIC_BYTES])
+                for remaining in prepared[index + 1 :]:
+                    _set_apply_outcome(
+                        remaining.document,
+                        "skipped",
+                        "not attempted after a previous apply failure",
+                    )
+                manifest["apply"].update(
+                    {
+                        "status": "completed_with_failures",
+                        "error": message[:MAX_DIAGNOSTIC_BYTES],
+                        "finished_at": dt.datetime.now(dt.timezone.utc).isoformat(),
+                    }
+                )
+                _write_run_state(run_dir, manifest, diagnostics)
+                print("Status: completed_with_failures")
+                print("Run: " + run_id)
+                print("Summary: " + str(run_dir / "summary.md"))
+                return 1
+
+        manifest["apply"].update(
+            {"status": "applied", "finished_at": dt.datetime.now(dt.timezone.utc).isoformat()}
+        )
+        _write_run_state(run_dir, manifest, diagnostics)
+        print("Status: applied")
+        print("Run: " + run_id)
+        print("Summary: " + str(run_dir / "summary.md"))
+        return 0
+    except KeyboardInterrupt:
+        if manifest is None:
+            raise
+        manifest["apply"].update(
+            {"status": "interrupted", "finished_at": dt.datetime.now(dt.timezone.utc).isoformat()}
+        )
+        diagnostics.append("apply interrupted; run artifacts were retained")
+        _write_run_state(run_dir, manifest, diagnostics)
+        print("Status: interrupted")
+        print("Run: " + run_id)
+        print("Summary: " + str(run_dir / "summary.md"))
+        return 130
+    finally:
+        lock.release()
+
+
+def clean(root: Path, run_id: str) -> int:
+    runs, run_dir = _run_directory(root, run_id)
+    lock = RunLock(runs / ".lock")
+    lock.acquire()
+    try:
+        documents = []
+        try:
+            manifest = _load_manifest(run_dir)
+            documents = [document for document in manifest["documents"] if isinstance(document, dict)]
+        except PreflightError:
+            pass
+        try:
+            for directory, directory_names, file_names in os.walk(str(run_dir), topdown=True, followlinks=False):
+                paths = [Path(directory) / name for name in directory_names + file_names]
+                if any(_is_link_or_junction(path) for path in paths):
+                    raise WorkflowError("compression run contains a symlink or junction")
+            shutil.rmtree(str(run_dir))
+        except OSError as error:
+            raise WorkflowError("compression run artifacts could not be removed") from error
+        print("Status: cleaned")
+        print("Run: " + run_id)
+        print("Summary: " + str(run_dir / "summary.md") + " (removed)")
+        for document in documents:
+            print("Document: " + str(document.get("path", "<unknown>")) + ": cleaned")
+        print("Removed: " + str(run_dir))
+        return 0
+    finally:
+        lock.release()
+
+
 def _positive_timeout(value: str) -> int:
     try:
         parsed = int(value)
@@ -827,6 +1213,17 @@ def build_parser() -> argparse.ArgumentParser:
         default=DEFAULT_TIMEOUT_SECONDS,
         help="Codex timeout per document (default: 600)",
     )
+    apply_parser = commands.add_parser("apply", help="apply validated candidates from a compression run")
+    apply_parser.add_argument("--run", required=True, help="compression run identifier")
+    apply_scope = apply_parser.add_mutually_exclusive_group(required=True)
+    apply_scope.add_argument(
+        "--file",
+        action="append",
+        help="repository-relative Markdown path under skills/ (repeat)",
+    )
+    apply_scope.add_argument("--all", action="store_true", help="apply every validated candidate in the run")
+    clean_parser = commands.add_parser("clean", help="remove one compression run's ignored artifacts")
+    clean_parser.add_argument("--run", required=True, help="compression run identifier")
     return parser
 
 
@@ -835,6 +1232,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     try:
         if args.command == "preview":
             return preview(repository_root(), args.file, args.codex_executable, args.timeout_seconds)
+        if args.command == "apply":
+            return apply(repository_root(), args.run, args.file or [], args.all)
+        if args.command == "clean":
+            return clean(repository_root(), args.run)
     except WorkflowError as error:
         print("Error: " + str(error), file=sys.stderr)
         return 2
