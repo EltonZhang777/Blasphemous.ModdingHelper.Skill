@@ -11,12 +11,12 @@ jobs:
       fail-fast: false
       matrix:
         include:
-        - os: ubuntu-latest
-          shell_name: bash
-        - os: windows-latest
-          shell_name: pwsh
-        - os: macos-latest
-          shell_name: bash
+          - os: ubuntu-latest
+            shell_name: bash
+          - os: windows-latest
+            shell_name: pwsh
+          - os: macos-latest
+            shell_name: bash
     runs-on: ${{ matrix.os }}
 
     steps:
