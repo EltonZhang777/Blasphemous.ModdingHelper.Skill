@@ -51,6 +51,7 @@ class PublicLifecycleContractTests(unittest.TestCase):
             json.dumps(
                 {
                     "tag_name": "v1.0.0",
+                    "fixture_version": "v1.0.0",
                     "draft": False,
                     "prerelease": False,
                     "resolved_ref": "v1.0.0",

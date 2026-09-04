@@ -60,3 +60,26 @@ repository: https://github.com/BrandenEK/Blasphemous.ModdingAPI.git
 `selector`, `resolved_tag`, `resolved_commit`, and `checked_at` are required.
 `repository` value records supported upstream used by operation.
 Lock file is managed state and is not part of upstream Git worktree.
+
+## Resolver fixture contract
+
+`--metadata-file` is a deterministic test input, not live Release metadata.
+Every fixture record MUST declare `fixture_version` equal to its `tag_name` or
+`resolved_ref`:
+
+```json
+{
+  "tag_name": "v3.0.1",
+  "fixture_version": "v3.0.1",
+  "draft": false,
+  "prerelease": false,
+  "resolved_ref": "v3.0.1",
+  "resolved_commit": "0123456789abcdef0123456789abcdef01234567"
+}
+```
+
+Resolver output reports `MODDING_API_REFERENCE_VERSION`, fixture source,
+fixture version, and `MODDING_API_FIXTURE_STATUS=historical` together. A
+missing or mismatched `fixture_version` is a deterministic failure; repair the
+fixture or use a matching selector. This prevents an old fixture from looking
+like the current API.

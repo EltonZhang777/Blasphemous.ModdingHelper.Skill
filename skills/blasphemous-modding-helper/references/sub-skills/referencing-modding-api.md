@@ -118,6 +118,11 @@ exit MUST print terminal `[ERROR REPORT]` with cause and next step. Agent MUST p
 report, MUST NOT invent URL, and MUST ask for corrected selector, local checkout,
 or retry when Release lookup fails.
 
+The fixture schema, provenance fields, and mismatch recovery contract are
+defined in [preferences-schema.md#resolver-fixture-contract](../config/preferences-schema.md#resolver-fixture-contract).
+The smoke check consumes that contract and never presents fixture data as live
+Release metadata.
+
 ## Local checkout use
 
 When setup succeeds, agent MUST use stored absolute path for documentation and source
@@ -209,7 +214,12 @@ caller's Mod repository using the explicit Skill-root path:
 It verifies top-level pointer, stable and archived route tables, the
 game-source boundary, and both preferences outcomes: configured local path
 selects local route, while skipped local setup selects release-aware
-remote route.
+remote route. It also reports the selected preference selector, local lock
+selector, local lock version, remote preference/resolution version, matching
+fixture version, and historical fixture label; a mismatch fails with recovery
+guidance. Bash and PowerShell
+command forms invoke this same Python entry point and therefore retain
+identical resolver fields, exit codes, and fixture checks.
 
 ## Cross-platform acceptance gate
 

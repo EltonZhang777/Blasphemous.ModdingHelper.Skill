@@ -66,6 +66,24 @@ class ReleaseMetadata:
     resolved_ref: Optional[str]
     resolved_commit: Optional[str]
     published_at: Optional[str]
+    fixture_version: Optional[str]
+
+
+@dataclass(frozen=True)
+class Resolution:
+    selector_kind: str
+    resolved_ref: str
+    resolved_tag: str
+    resolved_commit: str
+    fixture_version: str = ""
+
+    def values(self) -> Tuple[str, str, str, str]:
+        return (
+            self.selector_kind,
+            self.resolved_ref,
+            self.resolved_tag,
+            self.resolved_commit,
+        )
 
 
 def usage() -> str:
@@ -81,7 +99,9 @@ Selectors:
 Options:
   --metadata-file PATH
       Read Release-shaped JSON from PATH instead of the GitHub Releases API.
-      This is intended for deterministic tests and offline fixture use.
+      Deterministic fixtures must declare fixture_version; fixture output is
+      labeled historical and is never treated as live Release metadata.
+      It cannot be combined with an exact commit selector.
   --help
 """
 
@@ -235,7 +255,11 @@ def optional_string(record: dict, key: str) -> Optional[str]:
     return value
 
 
-def parse_release(record: Any, require_release_fields: bool = False) -> ReleaseMetadata:
+def parse_release(
+    record: Any,
+    require_release_fields: bool = False,
+    require_fixture_version: bool = False,
+) -> ReleaseMetadata:
     if not isinstance(record, dict):
         raise ResolutionError(
             EXIT_USAGE,
@@ -268,6 +292,29 @@ def parse_release(record: Any, require_release_fields: bool = False) -> ReleaseM
     if resolved_commit is not None:
         require_commit(resolved_commit, "resolved_commit", EXIT_USAGE)
     published_at = optional_string(record, "published_at")
+    fixture_version = optional_string(record, "fixture_version")
+    if require_fixture_version:
+        if fixture_version is None:
+            raise ResolutionError(
+                EXIT_USAGE,
+                "metadata fixture is missing fixture_version",
+                "Add fixture_version matching tag_name or resolved_ref, then retry.",
+            )
+        if resolved_commit is None:
+            raise ResolutionError(
+                EXIT_USAGE,
+                "metadata fixture is missing resolved_commit",
+                "Add the pinned 40-character resolved_commit, then retry.",
+            )
+        require_ref(fixture_version, "fixture_version")
+        for expected_version in (tag, resolved_ref):
+            if expected_version is not None and fixture_version != expected_version:
+                raise ResolutionError(
+                    EXIT_USAGE,
+                    "metadata fixture_version does not match the resolved reference: "
+                    + expected_version,
+                    "Repair the fixture_version value or use a matching selector.",
+                )
     return ReleaseMetadata(
         tag=tag,
         draft=draft,
@@ -275,17 +322,29 @@ def parse_release(record: Any, require_release_fields: bool = False) -> ReleaseM
         resolved_ref=resolved_ref,
         resolved_commit=resolved_commit,
         published_at=published_at,
+        fixture_version=fixture_version,
     )
 
 
-def release_entries(document: Any, require_release_fields: bool = False) -> List[ReleaseMetadata]:
+def release_entries(
+    document: Any,
+    require_release_fields: bool = False,
+    require_fixture_version: bool = False,
+) -> List[ReleaseMetadata]:
     if isinstance(document, list):
-        return [parse_release(entry, require_release_fields) for entry in document]
-    return [parse_release(document, require_release_fields)]
+        return [
+            parse_release(entry, require_release_fields, require_fixture_version)
+            for entry in document
+        ]
+    return [parse_release(document, require_release_fields, require_fixture_version)]
 
 
-def select_latest(document: Any) -> ReleaseMetadata:
-    entries = release_entries(document, require_release_fields=True)
+def select_latest(document: Any, require_fixture_version: bool = False) -> ReleaseMetadata:
+    entries = release_entries(
+        document,
+        require_release_fields=True,
+        require_fixture_version=require_fixture_version,
+    )
     if not entries:
         raise ResolutionError(
             EXIT_USAGE,
@@ -322,9 +381,12 @@ def select_latest(document: Any) -> ReleaseMetadata:
     )
 
 
-def read_optional_metadata_commit(metadata_file: Path, expected_ref: str) -> Optional[str]:
+def read_optional_metadata_commit(
+    metadata_file: Path,
+    expected_ref: str,
+) -> Tuple[Optional[str], Optional[str]]:
     document = load_metadata(metadata_file)
-    entries = release_entries(document)
+    entries = release_entries(document, require_fixture_version=True)
     if len(entries) != 1:
         raise ResolutionError(
             EXIT_USAGE,
@@ -332,13 +394,13 @@ def read_optional_metadata_commit(metadata_file: Path, expected_ref: str) -> Opt
             "Repair the fixture or omit --metadata-file.",
         )
     metadata = entries[0]
-    if metadata.resolved_commit is not None and metadata.resolved_ref != expected_ref:
+    if metadata.resolved_ref != expected_ref:
         raise ResolutionError(
             EXIT_USAGE,
             f"metadata resolved_ref does not match the requested reference: {expected_ref}",
             "Repair the fixture or omit --metadata-file.",
         )
-    return metadata.resolved_commit
+    return metadata.resolved_commit, metadata.fixture_version
 
 
 def resolve_remote_commit(kind: str, reference: str) -> str:
@@ -405,10 +467,13 @@ def resolve_remote_commit(kind: str, reference: str) -> str:
     return commit
 
 
-def resolve(options: Options) -> Tuple[str, str, str, str]:
+def resolve_details(options: Options) -> Resolution:
     selector = options.selector
     if selector == "latest":
-        metadata = select_latest(load_metadata(options.metadata_file))
+        metadata = select_latest(
+            load_metadata(options.metadata_file),
+            require_fixture_version=options.metadata_file is not None,
+        )
         if metadata.tag is None:
             raise ResolutionError(
                 EXIT_USAGE,
@@ -418,30 +483,62 @@ def resolve(options: Options) -> Tuple[str, str, str, str]:
         resolved_ref = metadata.tag
         resolved_tag = metadata.tag
         resolved_commit = metadata.resolved_commit or resolve_remote_commit("tag", resolved_tag)
-        return "release", resolved_ref, resolved_tag, resolved_commit
+        return Resolution(
+            "release",
+            resolved_ref,
+            resolved_tag,
+            resolved_commit,
+            metadata.fixture_version or "",
+        )
 
     if selector.startswith("tag:"):
         resolved_tag = selector[4:]
         require_ref(resolved_tag, "tag selector")
         resolved_commit = None
+        fixture_version: Optional[str] = None
         if options.metadata_file is not None:
-            resolved_commit = read_optional_metadata_commit(options.metadata_file, resolved_tag)
+            resolved_commit, fixture_version = read_optional_metadata_commit(
+                options.metadata_file,
+                resolved_tag,
+            )
         resolved_commit = resolved_commit or resolve_remote_commit("tag", resolved_tag)
-        return "tag", resolved_tag, resolved_tag, resolved_commit
+        return Resolution(
+            "tag",
+            resolved_tag,
+            resolved_tag,
+            resolved_commit,
+            fixture_version or "",
+        )
 
     if selector.startswith("branch:"):
         resolved_ref = selector[7:]
         require_ref(resolved_ref, "branch selector")
         resolved_commit = None
+        fixture_version = None
         if options.metadata_file is not None:
-            resolved_commit = read_optional_metadata_commit(options.metadata_file, resolved_ref)
+            resolved_commit, fixture_version = read_optional_metadata_commit(
+                options.metadata_file,
+                resolved_ref,
+            )
         resolved_commit = resolved_commit or resolve_remote_commit("branch", resolved_ref)
-        return "branch", resolved_ref, "", resolved_commit
+        return Resolution(
+            "branch",
+            resolved_ref,
+            "",
+            resolved_commit,
+            fixture_version or "",
+        )
 
     if selector.startswith("commit:"):
         resolved_commit = selector[7:]
         require_commit(resolved_commit, "commit selector")
-        return "commit", resolved_commit, "", resolved_commit
+        if options.metadata_file is not None:
+            raise ResolutionError(
+                EXIT_USAGE,
+                "--metadata-file cannot be used with an exact commit selector",
+                "Omit --metadata-file for commit:SHA or use a fixture-backed tag/branch selector.",
+            )
+        return Resolution("commit", resolved_commit, "", resolved_commit)
 
     raise ResolutionError(
         EXIT_USAGE,
@@ -450,8 +547,28 @@ def resolve(options: Options) -> Tuple[str, str, str, str]:
     )
 
 
-def output_values(selector: str, resolved: Tuple[str, str, str, str]) -> str:
+def resolve(options: Options) -> Tuple[str, str, str, str]:
+    return resolve_details(options).values()
+
+
+def output_values(
+    selector: str,
+    resolved: Tuple[str, str, str, str],
+    metadata_file: Optional[Path],
+    fixture_version: str,
+) -> str:
     selector_kind, resolved_ref, resolved_tag, resolved_commit = resolved
+    reference_version = resolved_tag or resolved_ref
+    using_fixture = metadata_file is not None and bool(fixture_version)
+    source = (
+        "fixture"
+        if using_fixture
+        else "release-api"
+        if selector_kind == "release"
+        else "git-remote"
+        if selector_kind in ("tag", "branch")
+        else "direct-selector"
+    )
     return "\n".join(
         (
             f"MODDING_API_REPOSITORY={MODDING_API_REPOSITORY}",
@@ -460,6 +577,10 @@ def output_values(selector: str, resolved: Tuple[str, str, str, str]) -> str:
             f"MODDING_API_RESOLVED_REF={resolved_ref}",
             f"MODDING_API_RESOLVED_TAG={resolved_tag}",
             f"MODDING_API_RESOLVED_COMMIT={resolved_commit}",
+            f"MODDING_API_REFERENCE_VERSION={reference_version}",
+            f"MODDING_API_RESOLUTION_SOURCE={source}",
+            f"MODDING_API_FIXTURE_VERSION={fixture_version if using_fixture else ''}",
+            f"MODDING_API_FIXTURE_STATUS={'historical' if using_fixture else 'live'}",
             f"MODDING_API_DOCS_URL={MODDING_API_WEB_REPOSITORY}/tree/{resolved_ref}/docs",
             f"MODDING_API_SOURCE_URL={MODDING_API_WEB_REPOSITORY}/tree/{resolved_ref}",
         )
@@ -471,8 +592,15 @@ def main(arguments: Optional[Sequence[str]] = None) -> int:
     try:
         options = parse_arguments(arguments if arguments is not None else sys.argv[1:])
         selector = options.selector
-        resolved = resolve(options)
-        print(output_values(options.selector, resolved))
+        resolution = resolve_details(options)
+        print(
+            output_values(
+                options.selector,
+                resolution.values(),
+                options.metadata_file,
+                resolution.fixture_version,
+            )
+        )
         return EXIT_SUCCESS
     except SystemExit as exit_signal:
         return int(exit_signal.code)

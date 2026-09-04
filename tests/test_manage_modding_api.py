@@ -50,6 +50,7 @@ class ManageModdingApiContractTests(unittest.TestCase):
             json.dumps(
                 {
                     "tag_name": "v1.0.0",
+                    "fixture_version": "v1.0.0",
                     "draft": False,
                     "prerelease": False,
                     "resolved_ref": "v1.0.0",
@@ -62,6 +63,7 @@ class ManageModdingApiContractTests(unittest.TestCase):
         self.branch_metadata.write_text(
             json.dumps(
                 {
+                    "fixture_version": "dev",
                     "resolved_ref": "dev",
                     "resolved_commit": self.dev_commit,
                 }
@@ -158,7 +160,13 @@ class ManageModdingApiContractTests(unittest.TestCase):
         commit = self._git(self.seed, "rev-parse", "HEAD")
         self._git(self.seed, "checkout", "main")
         self.branch_metadata.write_text(
-            json.dumps({"resolved_ref": "dev", "resolved_commit": commit}),
+            json.dumps(
+                {
+                    "fixture_version": "dev",
+                    "resolved_ref": "dev",
+                    "resolved_commit": commit,
+                }
+            ),
             encoding="utf-8",
         )
         return commit
@@ -248,6 +256,7 @@ class ManageModdingApiContractTests(unittest.TestCase):
             json.dumps(
                 {
                     "tag_name": "v1.1.0",
+                    "fixture_version": "v1.1.0",
                     "draft": False,
                     "prerelease": False,
                     "resolved_ref": "v1.1.0",
