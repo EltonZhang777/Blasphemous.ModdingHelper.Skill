@@ -13,6 +13,7 @@
  * Flags:
  *   --all           Install for ALL detected agents (no prompt)
  *   --only <id>     Install for a specific agent only (repeatable)
+ *   --path <dir>    Install directly into an exact skill directory
  *   --dry-run       Preview what would be installed
  *   --uninstall     Remove skill from all agents
  *   --help          Show usage
@@ -30,7 +31,8 @@ const readline = require("readline");
 const REPO = "EltonZhang777/Blasphemous.ModdingHelper.Skill";
 const REPO_URL = `https://github.com/${REPO}`;
 const SKILL_NAME = "blasphemous-modding-helper";
-const SKILL_SOURCE_DIR = path.join(__dirname, "..", "skills", SKILL_NAME);
+const REPOSITORY_ROOT = path.resolve(__dirname, "..");
+const SKILL_SOURCE_DIR = path.join(REPOSITORY_ROOT, "skills", SKILL_NAME);
 
 // ── Provider matrix ─────────────────────────────────────────────────────────
 // Single source of truth for all supported AI coding agents.
@@ -392,6 +394,218 @@ function runViaNpx(agent, action) {
   return run(`npx skills ${cmd} ${REPO} -a ${agent.profile}`, `${noun} for ${agent.label}`);
 }
 
+function isSameOrWithin(parent, candidate) {
+  const relative = path.relative(parent, candidate);
+  const parentTraversal = relative === ".." || relative.startsWith(`..${path.sep}`);
+  return relative === "" || (!parentTraversal && !path.isAbsolute(relative));
+}
+
+function pathsEqual(left, right) {
+  return path.relative(left, right) === "" && path.relative(right, left) === "";
+}
+
+function normalizeCustomPath(rawPath) {
+  return process.platform === "win32" ? rawPath : rawPath.replace(/\\/g, path.sep);
+}
+
+function resolveRealPathForSafety(targetDir) {
+  let existingPath = targetDir;
+  const missingSegments = [];
+
+  while (!fs.existsSync(existingPath)) {
+    const parentPath = path.dirname(existingPath);
+    if (parentPath === existingPath) break;
+    missingSegments.unshift(path.basename(existingPath));
+    existingPath = parentPath;
+  }
+
+  return path.resolve(fs.realpathSync(existingPath), ...missingSegments);
+}
+
+function findSymbolicLinkAncestor(targetDir) {
+  const root = path.parse(targetDir).root;
+  const segments = path.relative(root, targetDir).split(path.sep).filter(Boolean);
+  let currentPath = root;
+
+  for (const segment of segments) {
+    currentPath = path.join(currentPath, segment);
+    try {
+      if (fs.lstatSync(currentPath).isSymbolicLink()) return currentPath;
+    } catch (e) {
+      if (e.code === "ENOENT" || e.code === "ENOTDIR") break;
+      throw e;
+    }
+  }
+
+  return null;
+}
+
+function resolveCustomPath(rawPath) {
+  const targetDir = path.resolve(process.cwd(), normalizeCustomPath(rawPath));
+  const symbolicLinkAncestor = findSymbolicLinkAncestor(targetDir);
+  if (symbolicLinkAncestor !== null) {
+    err(`Custom path rejected: ${symbolicLinkAncestor} is a symbolic link or junction`);
+    info("Choose a real dedicated directory to avoid redirecting installation.");
+    return null;
+  }
+
+  const safetyTarget = resolveRealPathForSafety(targetDir);
+  const sourceDir = fs.realpathSync(SKILL_SOURCE_DIR);
+  const repositoryRoot = fs.realpathSync(REPOSITORY_ROOT);
+  const filesystemRoot = path.parse(safetyTarget).root;
+
+  if (
+    isSameOrWithin(sourceDir, safetyTarget) ||
+    isSameOrWithin(safetyTarget, sourceDir) ||
+    isSameOrWithin(repositoryRoot, safetyTarget) ||
+    pathsEqual(safetyTarget, repositoryRoot) ||
+    pathsEqual(safetyTarget, filesystemRoot)
+  ) {
+    err(`Custom path rejected: ${targetDir}`);
+    info("Choose a dedicated directory outside the Skill source and repository root.");
+    return null;
+  }
+
+  if (fs.existsSync(targetDir) && fs.lstatSync(targetDir).isSymbolicLink()) {
+    err(`Custom path rejected: ${targetDir} is a symbolic link`);
+    info("Choose a real dedicated directory to avoid replacing an unrelated target.");
+    return null;
+  }
+
+  return targetDir;
+}
+
+function isSkillDirectory(directory) {
+  const manifest = path.join(directory, "SKILL.md");
+  try {
+    if (!fs.lstatSync(manifest).isFile()) return false;
+    const content = fs.readFileSync(manifest, "utf8");
+    return new RegExp(`^name:\\s*${SKILL_NAME}\\s*$`, "m").test(content);
+  } catch {
+    return false;
+  }
+}
+
+function removeSkillContents(sourceDir, targetDir) {
+  for (const entry of fs.readdirSync(sourceDir, { withFileTypes: true })) {
+    const targetPath = path.join(targetDir, entry.name);
+    let targetStat;
+    try {
+      targetStat = fs.lstatSync(targetPath);
+    } catch {
+      continue;
+    }
+
+    if (entry.isDirectory() && targetStat.isDirectory() && !targetStat.isSymbolicLink()) {
+      removeSkillContents(path.join(sourceDir, entry.name), targetPath);
+      if (fs.readdirSync(targetPath).length === 0) {
+        fs.rmdirSync(targetPath);
+      }
+      continue;
+    }
+
+    if (!entry.isDirectory() || targetStat.isSymbolicLink()) {
+      fs.rmSync(targetPath, { force: true });
+    }
+  }
+}
+
+function validateCopyDestination(sourceDir, targetDir) {
+  if (fs.existsSync(targetDir)) {
+    const targetStat = fs.lstatSync(targetDir);
+    if (targetStat.isSymbolicLink() || !targetStat.isDirectory()) {
+      throw new Error("destination must be a real directory");
+    }
+  }
+
+  for (const entry of fs.readdirSync(sourceDir, { withFileTypes: true })) {
+    const targetPath = path.join(targetDir, entry.name);
+    let targetStat;
+    try {
+      targetStat = fs.lstatSync(targetPath);
+    } catch {
+      continue;
+    }
+
+    if (targetStat.isSymbolicLink()) {
+      throw new Error(`refusing symbolic-link replacement: ${targetPath}`);
+    }
+    if (entry.isDirectory()) {
+      if (!targetStat.isDirectory()) {
+        throw new Error(`destination type conflict: ${targetPath}`);
+      }
+      validateCopyDestination(path.join(sourceDir, entry.name), targetPath);
+    } else if (!targetStat.isFile()) {
+      throw new Error(`destination type conflict: ${targetPath}`);
+    }
+  }
+}
+
+function installCustomPath(action, targetDir) {
+  const verb = action === "install" ? "Installing" : "Uninstalling";
+  const failedVerb = action === "install" ? "install" : "uninstall";
+  info(`${verb} to custom path...`);
+  info(`Source: ${SKILL_SOURCE_DIR}`);
+  info(`Destination: ${targetDir}`);
+
+  try {
+    const destinationExists = fs.existsSync(targetDir);
+    if (destinationExists) {
+      const destinationStat = fs.lstatSync(targetDir);
+      if (action === "install") {
+        if (!destinationStat.isDirectory()) {
+          throw new Error("destination must be a directory");
+        }
+        const manifest = path.join(targetDir, "SKILL.md");
+        if (fs.existsSync(manifest) && !isSkillDirectory(targetDir)) {
+          throw new Error("destination contains another Skill's SKILL.md");
+        }
+      } else if (!destinationStat.isDirectory() || !isSkillDirectory(targetDir)) {
+        throw new Error("destination is not an installed Skill directory");
+      }
+    }
+
+    if (action === "install") {
+      validateCopyDestination(SKILL_SOURCE_DIR, targetDir);
+    }
+
+    if (DRY_RUN) {
+      console.log(`  ${action === "install" ? "copy" : "remove"} "${targetDir}"`);
+      return true;
+    }
+
+    if (action !== "install") {
+      if (!destinationExists) {
+        info("Custom path is already absent.");
+        return true;
+      }
+      removeSkillContents(SKILL_SOURCE_DIR, targetDir);
+      const retained = fs.readdirSync(targetDir);
+      if (retained.length === 0) {
+        fs.rmdirSync(targetDir);
+      } else {
+        info(`Retained existing entries: ${retained.join(", ")}`);
+      }
+      ok(`Uninstalled Skill files from custom path: ${targetDir}`);
+      return true;
+    }
+
+    fs.mkdirSync(targetDir, { recursive: true });
+    copyDirSync(SKILL_SOURCE_DIR, targetDir);
+    if (!fs.existsSync(path.join(targetDir, "SKILL.md"))) {
+      throw new Error("SKILL.md was not installed");
+    }
+    ok(`Installed to custom path: ${targetDir}`);
+    return true;
+  } catch (e) {
+    warn(`Failed to ${failedVerb} custom path: ${e.message}`);
+    info(action === "install"
+      ? "Choose a writable dedicated skill directory and retry."
+      : "Select the exact custom path that contains this Skill's SKILL.md.");
+    return false;
+  }
+}
+
 // ── Utility functions ───────────────────────────────────────────────────────
 
 function copyDirSync(src, dest) {
@@ -577,6 +791,7 @@ let DRY_RUN = false;
 let UNINSTALL = false;
 let ALL = false;
 let ONLY_AGENTS = [];
+let CUSTOM_PATH = null;
 
 function parseArgs() {
   const argv = process.argv.slice(2);
@@ -600,6 +815,14 @@ function parseArgs() {
         }
         ONLY_AGENTS.push(...v.split(",").map((s) => s.trim()));
         break;
+      case "--path":
+        const destination = argv[++i];
+        if (!destination || destination.startsWith("--")) {
+          err("--path requires an argument");
+          process.exit(2);
+        }
+        CUSTOM_PATH = destination;
+        break;
       case "--help":
       case "-h":
         showHelp();
@@ -622,9 +845,16 @@ function showHelp() {
   Flags:
     --all             Install for all detected agents (no prompt)
     --only <id>       Install for a specific agent (repeatable / comma-sep)
+    --path <dir>      Install directly into the exact final skill directory
     --dry-run         Preview only, no files written
     --uninstall       Remove the skill
     --help, -h        Show this help
+
+  Custom path:
+    --path is the final skill directory; the installer does not append a name.
+    It cannot be combined with --all or --only.
+    Install preserves unrelated entries; uninstall removes only Skill files
+    and removes the directory only when it becomes empty.
 
   Supported agents:
 ${PROVIDERS.map((p) => `    ${p.id.padEnd(15)} ${p.label}`).join("\n")}
@@ -653,6 +883,26 @@ async function main() {
   }
 
   const action = UNINSTALL ? "uninstall" : "install";
+
+  if (CUSTOM_PATH !== null) {
+    if (ALL || ONLY_AGENTS.length > 0) {
+      err("--path cannot be combined with --all or --only.");
+      info("Use --path alone for direct custom-path installation.");
+      process.exitCode = 2;
+      return;
+    }
+
+    const targetDir = resolveCustomPath(CUSTOM_PATH);
+    if (targetDir === null) {
+      process.exitCode = 2;
+      return;
+    }
+
+    if (!installCustomPath(action, targetDir)) {
+      process.exitCode = 1;
+    }
+    return;
+  }
 
   // Resolve target agents
   let targets;

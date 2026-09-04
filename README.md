@@ -31,6 +31,23 @@ If any selected agent installation or uninstallation fails, the installer exits 
 | **Codex CLI** | Clone repo → symlink `skills/blasphemous-modding-helper` to `~/.agents/skills/` |
 | **Cursor / Windsurf / Cline** | `npx skills add EltonZhang777/Blasphemous.ModdingHelper.Skill -a <agent>` |
 
+### Custom-path install
+
+Install into an arbitrary harness by passing its final Skill directory:
+
+```bash
+node bin/install.js --path ./custom-harness/blasphemous-modding-helper --dry-run
+bash install.sh --path "$PWD/custom-harness/blasphemous-modding-helper"
+```
+
+```powershell
+pwsh .\install.ps1 --path "$PWD\custom-harness\blasphemous-modding-helper"
+```
+
+The installer does not append another directory name. `--path` cannot be combined with `--all` or `--only`. Installation preserves unrelated entries; custom-path uninstall removes only Skill files and removes the directory only when it becomes empty.
+
+The destination must be outside this repository and must not pass through a symbolic link or junction; unsafe source, repository, and replacement targets are rejected.
+
 ### Manual install
 
 1. Download the skill from the [release page](https://github.com/EltonZhang777/Blasphemous.ModdingHelper.Skill/releases).
