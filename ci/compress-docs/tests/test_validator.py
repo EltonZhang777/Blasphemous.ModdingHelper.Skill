@@ -5,7 +5,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from validator import build_protected_reference, validate_candidate
+from validator import validate_candidate
 
 
 SOURCE = r'''---
@@ -75,7 +75,6 @@ The agent MUST preserve C:\game\mod.dll.
         )
         result = validate_candidate(source.encode("utf-8"), candidate.encode("utf-8"))
         self.assertTrue(result.is_valid, result.errors)
-        self.assertEqual(build_protected_reference(SOURCE), build_protected_reference(candidate.lstrip("\ufeff")))
 
     def test_rejects_frontmatter_change(self):
         candidate = SOURCE.replace("name: sample", "name: changed")

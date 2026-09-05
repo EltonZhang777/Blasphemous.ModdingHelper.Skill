@@ -545,27 +545,3 @@ def validate_candidate(source_raw: bytes, candidate_raw: bytes) -> ValidationRes
     _compare_sequence(result, "table", source_protected.tables, candidate_protected.tables)
     _compare_sequence(result, "normative unit", source_protected.normative_units, candidate_protected.normative_units)
     return result
-
-
-def build_protected_reference(body: str) -> str:
-    protected = _extract(body)
-    lines = ["Protected reference; copy these values exactly when required:"]
-    groups = (
-        ("fenced code", protected.fenced_code),
-        ("indented code", protected.indented_code),
-        ("inline code", protected.inline_code),
-        ("commands", protected.commands),
-        ("Markdown links", protected.markdown_links),
-        ("URLs", protected.urls),
-        ("paths", protected.paths),
-        ("technical identifiers", protected.technical_identifiers),
-        ("headings", protected.headings),
-        ("lists", protected.lists),
-        ("tables", protected.tables),
-        ("normative units", protected.normative_units),
-    )
-    for name, values in groups:
-        if values:
-            lines.append("[" + name + "]")
-            lines.extend(str(value) for value in values)
-    return "\n".join(lines)

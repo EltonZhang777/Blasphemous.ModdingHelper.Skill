@@ -10,7 +10,7 @@ Agent MUST use this read-only branch for a natural-language request to identify,
 
 2. Agent MUST resolve the installed Skill root, then select the index relative to that root:
    - Agent MUST use `references/localization/blasphemous1_zh-en-es.tsv` as the core index by default.
-   - Agent MUST use `references/localization/blasphemous1_all.tsv` when the instruction language, requested source language, requested target language, or comparison requires a language outside Chinese, English, and Spanish.
+   - Agent MUST use `references/localization/blasphemous1_all.tsv` when the instruction language, requested source language, requested target language, or an explicit full comparison requires a language outside Chinese, English, and Spanish.
    - A request such as “用中文解释，再翻译成日文” MUST keep the explanation in Chinese and load the all-language index for the Japanese translation output.
    - Agent MUST NOT load the all-language index for a request fully covered by the core languages.
 
