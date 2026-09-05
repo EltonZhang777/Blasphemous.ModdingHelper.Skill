@@ -18,7 +18,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
 
-from validator import build_protected_reference, validate_candidate
+from validator import build_protected_reference, split_frontmatter, validate_candidate
 
 
 MAX_FILE_BYTES = 500_000
@@ -27,7 +27,6 @@ AUTH_TIMEOUT_SECONDS = 30
 MAX_DIAGNOSTIC_BYTES = 2_048
 MAX_REPAIRS = 2
 PROMPT_VERSION = "compress-docs/v1"
-UTF8_BOM = b"\xef\xbb\xbf"
 RUN_ID = re.compile(r"^[0-9]{8}T[0-9]{6}Z-[0-9a-f]{12}$")
 
 SENSITIVE_BASENAME = re.compile(
@@ -473,20 +472,6 @@ def _new_run(
         raise
 
 
-def _split_frontmatter(raw: bytes) -> Tuple[bytes, bytes, bytes]:
-    bom = UTF8_BOM if raw.startswith(UTF8_BOM) else b""
-    content = raw[len(bom) :]
-    lines = content.splitlines(keepends=True)
-    if not lines or lines[0].rstrip(b"\r\n") != b"---":
-        return bom, b"", content
-    offset = len(lines[0])
-    for line in lines[1:]:
-        offset += len(line)
-        if line.rstrip(b"\r\n") in (b"---", b"..."):
-            return bom, content[:offset], content[offset:]
-    return bom, b"", content
-
-
 def _newline_style(raw: bytes) -> str:
     crlf = raw.count(b"\r\n")
     lf = raw.replace(b"\r\n", b"").count(b"\n")
@@ -836,7 +821,7 @@ def _process_document(
     if len(raw) > MAX_FILE_BYTES:
         return finish("rejected", "selected document exceeds the 500,000-byte limit")
 
-    bom, frontmatter, body = _split_frontmatter(raw)
+    bom, frontmatter, body = split_frontmatter(raw)
     if not body.strip():
         return finish("rejected", "selected document has an empty body after frontmatter")
 

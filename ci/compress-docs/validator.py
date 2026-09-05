@@ -82,21 +82,18 @@ class Protected:
     errors: List[str] = field(default_factory=list)
 
 
-def _without_bom(raw: bytes) -> Tuple[bool, bytes]:
-    return raw.startswith(UTF8_BOM), raw[3:] if raw.startswith(UTF8_BOM) else raw
-
-
-def _split_frontmatter(raw: bytes) -> Tuple[bool, bytes, bytes]:
-    has_bom, content = _without_bom(raw)
+def split_frontmatter(raw: bytes) -> Tuple[bytes, bytes, bytes]:
+    bom = UTF8_BOM if raw.startswith(UTF8_BOM) else b""
+    content = raw[len(bom) :]
     lines = content.splitlines(keepends=True)
     if not lines or lines[0].rstrip(b"\r\n") != b"---":
-        return has_bom, b"", content
+        return bom, b"", content
     offset = len(lines[0])
     for line in lines[1:]:
         offset += len(line)
         if line.rstrip(b"\r\n") in (b"---", b"..."):
-            return has_bom, content[:offset], content[offset:]
-    return has_bom, b"", content
+            return bom, content[:offset], content[offset:]
+    return bom, b"", content
 
 
 def _canonical_newlines(text: str) -> str:
@@ -499,8 +496,8 @@ def validate_candidate(source_raw: bytes, candidate_raw: bytes) -> ValidationRes
     except UnicodeDecodeError:
         result.add_error("candidate document is not valid UTF-8")
         return result
-    source_bom, source_frontmatter, source_body = _split_frontmatter(source_raw)
-    candidate_bom, candidate_frontmatter, candidate_body = _split_frontmatter(candidate_raw)
+    source_bom, source_frontmatter, source_body = split_frontmatter(source_raw)
+    candidate_bom, candidate_frontmatter, candidate_body = split_frontmatter(candidate_raw)
     if source_bom != candidate_bom:
         result.add_error("BOM state changed")
     if source_frontmatter != candidate_frontmatter:
