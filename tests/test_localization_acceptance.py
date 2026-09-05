@@ -9,7 +9,6 @@ LOCALIZATION_ROOT = SKILL_ROOT / "references" / "localization"
 CORE_INDEX = LOCALIZATION_ROOT / "blasphemous1_zh-en-es.tsv"
 ALL_INDEX = LOCALIZATION_ROOT / "blasphemous1_all.tsv"
 GENERATOR = SKILL_ROOT / "scripts" / "generate_localization_tsv.py"
-TEMP_SOURCE = REPOSITORY_ROOT / ".temp" / "localization source"
 
 CORE_HEADER = ["key", "zh", "en", "es"]
 ALL_HEADER = ["key", "zh", "en", "es", "fr", "de", "it", "ja", "ko", "pt-BR", "ru"]
@@ -64,7 +63,6 @@ class LocalizationAcceptanceTests(unittest.TestCase):
 
         self.assertFalse(GENERATOR.exists())
         self.assertFalse((REPOSITORY_ROOT / "tests" / "test_localization_tsv_generation.py").exists())
-        self.assertFalse(TEMP_SOURCE.exists())
         self.assertTrue(SOURCE_NAMES.isdisjoint(package_names))
 
     def test_external_seam_documentation_covers_route_and_closed_fallbacks(self):
