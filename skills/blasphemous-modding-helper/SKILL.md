@@ -1,6 +1,6 @@
 ---
 name: blasphemous-modding-helper
-description: Blasphemous modding development helper. Use when the user wants to build, deploy, launch, inspect startup evidence, stop, clean, or perform Manual verification for a Blasphemous mod; identify or translate a Blasphemous 1 term; develop a mod, analyze Blasphemous decompiled source code, or debug mod-related logs (BepInEx / Unity).
+description: Blasphemous modding development helper. Use when the user wants to build, deploy, launch, inspect startup evidence, stop, clean, or perform Manual verification for a Blasphemous mod; identify, explain, compare, or translate a Blasphemous 1 term; develop a mod, analyze Blasphemous decompiled source code, or debug mod-related logs (BepInEx / Unity).
 ---
 
 # Blasphemous modding helper
