@@ -1,11 +1,18 @@
 ---
 name: blasphemous-modding-helper
-description: Blasphemous modding development helper. Use when the user wants to build, deploy, launch, inspect startup evidence, stop, clean, or perform Manual verification for a Blasphemous mod; develop a mod, analyze Blasphemous decompiled source code, or debug mod-related logs (BepInEx / Unity).
+description: Blasphemous modding development helper. Use when the user wants to build, deploy, launch, inspect startup evidence, stop, clean, or perform Manual verification for a Blasphemous mod; identify or translate a Blasphemous 1 term; develop a mod, analyze Blasphemous decompiled source code, or debug mod-related logs (BepInEx / Unity).
 ---
 
 # Blasphemous modding helper
 
 You are helping with Blasphemous mod development.
+
+## Request routing
+
+After reading Requirement levels, classify the request before choosing an operational branch.
+
+- For a natural-language request to identify, explain, compare, or translate a Blasphemous 1 term, name, UI phrase, or textual reference, read [Localization lookup](references/sub-skills/localization-lookup.md). This is a read-only localization branch and does not require preferences.
+- For source analysis, log analysis, mod testing, or Mod work, continue through Invocation preflight and the applicable branch below.
 
 ## Requirement levels
 
@@ -13,7 +20,7 @@ At start of every Skill invocation, agent MUST read [Requirement levels](referen
 
 ## Invocation preflight
 
-Before selecting branch or executing command, agent MUST read [Invocation preflight](references/config/invocation-preflight.md). It is the authoritative contract for Skill-root resolution, caller Mod-repository context, Python interpreter and host expectations, preference scope and precedence, first-time setup, path recovery, tracked-session stop exception, and shared completion. It routes Python interpreter and dependency validation to [Python Runtime](references/config/python-runtime.md).
+Before selecting an operational branch or executing command, agent MUST read [Invocation preflight](references/config/invocation-preflight.md). It is the authoritative contract for Skill-root resolution, caller Mod-repository context, Python interpreter and host expectations, preference scope and precedence, first-time setup, path recovery, tracked-session stop exception, and shared completion. It routes Python interpreter and dependency validation to [Python Runtime](references/config/python-runtime.md). The read-only localization branch follows its documented preference exception.
 
 ## Coding standards
 
@@ -32,9 +39,9 @@ Agent MUST follow workflow steps in order, unless otherwise explicitly specified
 
 ### Step 1: Complete invocation preflight
 
-Agent MUST follow [Invocation preflight](references/config/invocation-preflight.md) before selecting specialized branch or executing command.
+Agent MUST follow [Invocation preflight](references/config/invocation-preflight.md) before selecting an operational specialized branch or executing command. The localization lookup branch follows its read-only exception.
 
-**Done when**: completion criteria in Invocation preflight are satisfied and selected branch has received active preferences or recovery result.
+**Done when**: completion criteria in Invocation preflight are satisfied for an operational branch, or the localization branch has confirmed its index path and read-only context.
 
 ### Step 2: Analyze User Question
 
@@ -46,8 +53,10 @@ Agent MUST analyze user question to determine user intent and task to perform, e
   - If yes, agent SHOULD create sub-agent or sub-task to handle log analysis using [references/sub-skills/log-analyzer.md](references/sub-skills/log-analyzer.md).
 - Whether user request involves mod test: building or selecting mod package, deploying it, launching it, reading startup evidence or test logs/status, stopping or cleaning session, or collecting Manual verification, including when no new automated run is requested.
   - If yes, agent MUST route to authoritative [`/blasphemous-modding-test`](references/sub-skills/blasphemous-modding-test.md) sub-skill.
+- Whether user request asks to identify, explain, compare, or translate a Blasphemous 1 term, name, UI phrase, or textual reference in natural language.
+  - If yes, agent MUST route to [Localization lookup](references/sub-skills/localization-lookup.md) before using source analysis or an operational branch.
 
-**Done when**: user question is classified into one or more of four branches (source code analysis, log analysis, mod testing, or general modding question), and every applicable specialized branch has been routed to its authoritative sub-skill or analysis task.
+**Done when**: user question is classified into one or more applicable branches (localization lookup, source code analysis, log analysis, mod testing, or general modding question), and every applicable specialized branch has been routed to its authoritative sub-skill or analysis task.
 
 ### Step 3: Use Tools to Gather Information
 
