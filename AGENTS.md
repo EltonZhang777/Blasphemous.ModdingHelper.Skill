@@ -27,7 +27,7 @@ Use the narrowest authoritative file for each change:
 ## Skill behavior to preserve
 
 - The installed skill is a Blasphemous modding assistant, not a replacement for the user's game source or mod project. Keep the frontmatter `name`, `description`, and relative reference links valid.
-- Preferences are a blocking first step for skill use. The check scripts look for project scope at `.skills/blasphemous-modding-helper/preferences.md` and user scope under `$HOME/.skills/blasphemous-modding-helper/preferences.md`. When no file exists, the first-time setup must finish before source analysis, log analysis, or modding work.
+- Preferences are a blocking first step for operational Skill branches. The read-only localization lookup branch is an explicit exception: it reads only the bundled localization indexes and does not require preferences, a Modding profile, source code, or logs. The check scripts look for project scope at `.skills/blasphemous-modding-helper/preferences.md` and user scope under `$HOME/.skills/blasphemous-modding-helper/preferences.md`. When no file exists, first-time setup must finish before source analysis, log analysis, or modding work.
 - Source analysis starts with the lightweight source path, uses the full source only when needed, and routes through `references/source_code_navigation/MAIN.md`. Navigation paths are relative to `Assembly-CSharp/`.
 - Log analysis checks the BepInEx log first and then the Unity log when needed. The modding profile path comes from `preferences.md`.
 - Mod code targets C# on Unity `2017.4.40f1` under the Blasphemous ModdingAPI conventions. Keep links to the ModdingAPI documentation and source when changing coding guidance.
