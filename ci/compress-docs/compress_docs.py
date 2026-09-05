@@ -325,15 +325,17 @@ class RunLock:
         self.owned = False
 
 
-def _atomic_write(path: Path, data: bytes) -> None:
+def _atomic_write_file(path: Path, data: bytes, prefix: str, mode: Optional[int] = None) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = None
     try:
-        fd, temporary = tempfile.mkstemp(prefix=".tmp-", dir=str(path.parent))
+        fd, temporary = tempfile.mkstemp(prefix=prefix, dir=str(path.parent))
         with os.fdopen(fd, "wb") as stream:
             stream.write(data)
             stream.flush()
             os.fsync(stream.fileno())
+        if mode is not None:
+            os.chmod(temporary, stat.S_IMODE(mode))
         os.replace(temporary, path)
         temporary = None
     finally:
@@ -342,25 +344,14 @@ def _atomic_write(path: Path, data: bytes) -> None:
                 os.unlink(temporary)
             except FileNotFoundError:
                 pass
+
+
+def _atomic_write(path: Path, data: bytes) -> None:
+    _atomic_write_file(path, data, ".tmp-")
 
 
 def _atomic_replace(path: Path, data: bytes, mode: int) -> None:
-    temporary = None
-    try:
-        fd, temporary = tempfile.mkstemp(prefix=".compress-", dir=str(path.parent))
-        with os.fdopen(fd, "wb") as stream:
-            stream.write(data)
-            stream.flush()
-            os.fsync(stream.fileno())
-        os.chmod(temporary, stat.S_IMODE(mode))
-        os.replace(temporary, path)
-        temporary = None
-    finally:
-        if temporary:
-            try:
-                os.unlink(temporary)
-            except FileNotFoundError:
-                pass
+    _atomic_write_file(path, data, ".compress-", mode)
 
 
 def _write_verified_backup(path: Path, source: bytes) -> None:
