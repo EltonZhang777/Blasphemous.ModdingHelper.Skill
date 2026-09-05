@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Preview, apply, and clean Skill-document compression runs."""
+"""Preview and apply Skill-document compression runs."""
 
 import argparse
 import datetime as dt
@@ -1049,36 +1049,6 @@ def apply(root: Path, run_id: str, selections: Sequence[str], apply_all: bool) -
         lock.release()
 
 
-def clean(root: Path, run_id: str) -> int:
-    runs, run_dir = _run_directory(root, run_id)
-    lock = RunLock(runs / ".lock")
-    lock.acquire()
-    try:
-        documents = []
-        try:
-            manifest = _load_manifest(run_dir)
-            documents = [document for document in manifest["documents"] if isinstance(document, dict)]
-        except PreflightError:
-            pass
-        try:
-            for directory, directory_names, file_names in os.walk(str(run_dir), topdown=True, followlinks=False):
-                paths = [Path(directory) / name for name in directory_names + file_names]
-                if any(_is_link_or_junction(path) for path in paths):
-                    raise WorkflowError("compression run contains a symlink or junction")
-            shutil.rmtree(str(run_dir))
-        except OSError as error:
-            raise WorkflowError("compression run artifacts could not be removed") from error
-        print("Status: cleaned")
-        print("Run: " + run_id)
-        print("Summary: " + str(run_dir / "summary.md") + " (removed)")
-        for document in documents:
-            print("Document: " + str(document.get("path", "<unknown>")) + ": cleaned")
-        print("Removed: " + str(run_dir))
-        return 0
-    finally:
-        lock.release()
-
-
 def _positive_timeout(value: str) -> int:
     try:
         parsed = int(value)
@@ -1114,8 +1084,6 @@ def build_parser() -> argparse.ArgumentParser:
         help="repository-relative Markdown path under skills/ (repeat)",
     )
     apply_scope.add_argument("--all", action="store_true", help="apply every validated candidate in the run")
-    clean_parser = commands.add_parser("clean", help="remove one compression run's ignored artifacts")
-    clean_parser.add_argument("--run", required=True, help="compression run identifier")
     return parser
 
 
@@ -1126,8 +1094,6 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             return preview(repository_root(), args.file, args.codex_executable, args.timeout_seconds)
         if args.command == "apply":
             return apply(repository_root(), args.run, args.file or [], args.all)
-        if args.command == "clean":
-            return clean(repository_root(), args.run)
     except WorkflowError as error:
         print("Error: " + str(error), file=sys.stderr)
         return 2

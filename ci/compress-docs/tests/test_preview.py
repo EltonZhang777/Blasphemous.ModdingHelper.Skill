@@ -122,15 +122,6 @@ class PreviewCliTests(unittest.TestCase):
             text=True,
         )
 
-    def run_clean(self, run_id):
-        return subprocess.run(
-            [str(PYTHON), str(SCRIPT), "clean", "--run", run_id],
-            cwd=str(REPO_ROOT),
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-        )
-
     def preview_test_documents(self, names):
         paths = []
         selections = []
@@ -476,25 +467,6 @@ class PreviewCliTests(unittest.TestCase):
         finally:
             shutil.rmtree(summary.parent, ignore_errors=True)
             path.unlink(missing_ok=True)
-
-    def test_clean_removes_run_without_touching_applied_live_document(self):
-        paths, selections, result, summary, manifest = self.preview_test_documents(["compress_docs_clean_test.md"])
-        path = paths[0]
-        try:
-            self.assertEqual(result.returncode, 0, result.stderr)
-            apply_result = self.run_apply(manifest["run_id"], "--all")
-            self.assertEqual(apply_result.returncode, 0, apply_result.stderr)
-            applied = path.read_bytes()
-            clean_result = self.run_clean(manifest["run_id"])
-            self.assertEqual(clean_result.returncode, 0, clean_result.stderr)
-            self.assertFalse(summary.parent.exists())
-            self.assertEqual(path.read_bytes(), applied)
-            self.assertIn("Summary: ", clean_result.stdout)
-            self.assertIn("Document: " + selections[0] + ": cleaned", clean_result.stdout)
-        finally:
-            shutil.rmtree(summary.parent, ignore_errors=True)
-            path.unlink(missing_ok=True)
-
 
 if __name__ == "__main__":
     unittest.main()
