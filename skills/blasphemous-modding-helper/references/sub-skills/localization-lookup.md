@@ -68,4 +68,5 @@ The lookup order MUST be localized text, semantic aliases, then controlled sourc
 The branch is complete when it has either:
 
 - returned one or more evidence-backed localization candidates with their keys and exact values for the selected requested languages; or
+- returned a controlled source-analysis result with its required preflight and gameplay evidence; or
 - returned a closed, actionable failure for a missing or malformed index, or an explicit unresolved/candidate result without an unverified guess.

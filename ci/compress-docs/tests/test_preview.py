@@ -54,7 +54,7 @@ if sys.argv[1:2] == ["exec"]:
     if os.environ.get("FAKE_CODEX_MODE") == "malformed":
         sys.stdout.write("Here is the compressed document:\n```markdown\n# Wrong\n```\n")
     else:
-        marker = re.search(br'<(?:document|candidate)-body bytes="(\d+)">\n', prompt_bytes)
+        marker = re.search(br'<document-body bytes="(\d+)">\n', prompt_bytes)
         start = marker.end()
         length = int(marker.group(1))
         body = prompt_bytes[start : start + length]
