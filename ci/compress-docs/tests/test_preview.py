@@ -46,7 +46,6 @@ if sys.argv[1:3] == ["login", "status"]:
 if sys.argv[1:2] == ["exec"]:
     prompt_bytes = sys.stdin.buffer.read()
     events[-1]["prompt_has_frontmatter"] = b"name: blasphemous-modding-helper" in prompt_bytes
-    events[-1]["repair_prompt"] = b"<validation-errors>" in prompt_bytes
     log_path.write_text(json.dumps(events), encoding="utf-8")
     exec_count = sum(event["argv"][:1] == ["exec"] for event in events)
     if os.environ.get("FAKE_CODEX_MODE") == "fail-first" and exec_count == 1:
@@ -61,12 +60,8 @@ if sys.argv[1:2] == ["exec"]:
         body = prompt_bytes[start : start + length]
         if os.environ.get("FAKE_CODEX_MODE") == "compress":
             body = body.replace(b"Original prose.", b"Compressed prose.", 1)
-        if os.environ.get("FAKE_CODEX_MODE") == "repair":
-            exec_count = sum(event["argv"][:1] == ["exec"] for event in events)
-            if exec_count == 1:
-                body = body.replace(b"# Blasphemous modding helper", b"# Wrong", 1)
-            else:
-                body = body.replace(b"# Wrong", b"# Blasphemous modding helper", 1)
+        if os.environ.get("FAKE_CODEX_MODE") == "invalid":
+            body = body.replace(b"# Blasphemous modding helper", b"# Wrong", 1)
         sys.stdout.buffer.write(body)
     raise SystemExit(0)
 
@@ -215,27 +210,26 @@ class PreviewCliTests(unittest.TestCase):
         manifest = json.loads((summary.parent / "manifest.json").read_text(encoding="utf-8"))
         self.assertEqual(manifest["status"], "rejected")
         self.assertFalse((summary.parent / "candidate.md").exists())
-        self.assertEqual(sum(event["argv"][:1] == ["exec"] for event in self.read_events()), 3)
+        self.assertEqual(sum(event["argv"][:1] == ["exec"] for event in self.read_events()), 1)
 
         shutil.rmtree(summary.parent)
 
-    def test_validation_failure_gets_one_targeted_repair(self):
+    def test_validation_failure_is_rejected_without_repair(self):
         original = TARGET.read_bytes()
 
-        result = self.run_cli(FAKE_CODEX_MODE="repair")
+        result = self.run_cli(FAKE_CODEX_MODE="invalid")
 
-        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(TARGET.read_bytes(), original)
         summary = self.summary_path(result.stdout)
         manifest = json.loads((summary.parent / "manifest.json").read_text(encoding="utf-8"))
         document = manifest["documents"][0]
-        self.assertEqual(manifest["status"], "accepted")
-        self.assertEqual(document["validation"]["repair_attempts"], 1)
-        self.assertEqual((summary.parent / "candidate.md").read_bytes(), original)
+        self.assertEqual(manifest["status"], "rejected")
+        self.assertEqual(document["status"], "rejected")
+        self.assertEqual(document["validation"]["errors"], ["heading changed (source=11, candidate=11)"])
+        self.assertFalse((summary.parent / "candidate.md").exists())
         events = self.read_events()
-        self.assertEqual(sum(event["argv"][:1] == ["exec"] for event in events), 2)
-        repair_events = [event for event in events if event.get("repair_prompt")]
-        self.assertEqual(len(repair_events), 1)
-        self.assertFalse(repair_events[0]["prompt_has_frontmatter"])
+        self.assertEqual(sum(event["argv"][:1] == ["exec"] for event in events), 1)
 
         shutil.rmtree(summary.parent)
 
