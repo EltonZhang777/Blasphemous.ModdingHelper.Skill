@@ -4,13 +4,13 @@ This document is the human-reviewed semantic layer for communication-blocking al
 
 ## Rules
 
-- Search this document after the selected localization TSV and before controlled source analysis.
-- One alias may map to multiple candidates. One concept may have multiple aliases and evidence keys. Use context to resolve the candidate; report ambiguity when context is insufficient.
-- Matching uses light normalization only: case, surrounding whitespace, and common punctuation. Preserve the original alias and translation wording in the result.
-- `high` confidence may be applied directly when positive context matches. `medium` confidence requires an explicit mapping note. `low` confidence remains a candidate only.
-- Every accepted record has localization evidence, gameplay/source evidence, or an explicit human confirmation. AI proposals require explicit user confirmation before being written here.
+- Agent MUST search this document after the selected localization TSV and before controlled source analysis.
+- One alias MAY map to multiple candidates. One concept MAY have multiple aliases and evidence keys. Agent MUST use context to resolve a candidate and MUST report ambiguity when context is insufficient.
+- Agent MUST use light normalization only: case, surrounding whitespace, and common punctuation. Agent MUST preserve the original alias and translation wording in the result.
+- `high` confidence MAY be applied directly when positive context matches. `medium` confidence MUST have an explicit mapping note. `low` confidence MUST remain a candidate only.
+- Every accepted record MUST have localization evidence, gameplay/source evidence, or explicit human confirmation. AI proposals MUST receive explicit user confirmation before being written here.
 - Supported `alias_type` values are `community_slang`, `translation_variant`, and `code_identifier`.
-- This is a focused communication aid, not an encyclopedia. Do not mine every word in the localization corpus automatically. The deferred code-name-to-translation relationship table is outside this document.
+- This is a focused communication aid, not an encyclopedia. Agent MUST NOT mine every word in the localization corpus automatically. The deferred code-name-to-translation relationship table is outside this document.
 
 ## ALIAS-FERVOUR-01
 

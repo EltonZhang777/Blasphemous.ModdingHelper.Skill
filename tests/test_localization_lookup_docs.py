@@ -10,6 +10,7 @@ SKILL_ROOT = (
 MAIN_SKILL = SKILL_ROOT / "SKILL.md"
 LOOKUP_SKILL = SKILL_ROOT / "references" / "sub-skills" / "localization-lookup.md"
 PREFLIGHT = SKILL_ROOT / "references" / "config" / "invocation-preflight.md"
+ALIASES = SKILL_ROOT / "references" / "localization" / "semantic-aliases.md"
 
 
 class LocalizationLookupDocumentationTests(unittest.TestCase):
@@ -34,7 +35,7 @@ class LocalizationLookupDocumentationTests(unittest.TestCase):
         lookup = LOOKUP_SKILL.read_text(encoding="utf-8").casefold()
         preflight = PREFLIGHT.read_text(encoding="utf-8").casefold()
 
-        self.assertIn("does not require", lookup)
+        self.assertIn("must not require", lookup)
         self.assertIn("preferences.md", lookup)
         self.assertIn("localization lookup branch", preflight)
         self.assertIn("read-only", preflight)
@@ -59,13 +60,18 @@ class LocalizationLookupDocumentationTests(unittest.TestCase):
 
     def test_lookup_documents_reviewed_alias_stage(self):
         lookup = LOOKUP_SKILL.read_text(encoding="utf-8").casefold()
+        aliases = ALIASES.read_text(encoding="utf-8").casefold()
 
         self.assertIn("semantic-aliases.md", lookup)
-        self.assertIn("light normalization", lookup)
-        self.assertIn("high-confidence", lookup)
-        self.assertIn("medium-confidence", lookup)
-        self.assertIn("low-confidence", lookup)
-        self.assertIn("user confirmation", lookup)
+        self.assertIn("matching, context, confidence, and confirmation rules", lookup)
+        for phrase in (
+            "light normalization",
+            "`high` confidence",
+            "`medium` confidence",
+            "`low` confidence",
+            "user confirmation",
+        ):
+            self.assertIn(phrase, aliases)
 
 
 if __name__ == "__main__":

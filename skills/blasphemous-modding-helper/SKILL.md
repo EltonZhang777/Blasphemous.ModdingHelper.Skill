@@ -9,10 +9,10 @@ You are helping with Blasphemous mod development.
 
 ## Request routing
 
-After reading Requirement levels, classify the request before choosing an operational branch.
+After reading Requirement levels, agent MUST classify the request before choosing an operational branch.
 
-- For a natural-language request to identify, explain, compare, or translate a Blasphemous 1 term, name, UI phrase, or textual reference, read [Localization lookup](references/sub-skills/localization-lookup.md). This is a read-only localization branch and does not require preferences.
-- For source analysis, log analysis, mod testing, or Mod work, continue through Invocation preflight and the applicable branch below.
+- For a natural-language request to identify, explain, compare, or translate a Blasphemous 1 term, name, UI phrase, or textual reference, agent MUST read [Localization lookup](references/sub-skills/localization-lookup.md). Agent MUST treat this as a read-only localization branch and MUST NOT require preferences.
+- For source analysis, log analysis, mod testing, or Mod work, agent MUST continue through Invocation preflight and the applicable branch below.
 
 ## Requirement levels
 
