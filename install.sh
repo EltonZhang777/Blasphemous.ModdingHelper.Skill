@@ -35,12 +35,20 @@ check_node() {
 
 check_node
 
-# --- If running from repo clone, use local installer ---
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-LOCAL_INSTALLER="$SCRIPT_DIR/bin/install.js"
-
-if [ -f "$LOCAL_INSTALLER" ]; then
-  exec node "$LOCAL_INSTALLER" "$@"
+# --- If running from a repo clone, use the wrapper's local installer ---
+# BASH_SOURCE is empty or stdin-like for `curl | bash`. Do not derive a
+# directory from `$0` there: `$0` is usually `bash`, so a caller's unrelated
+# `bin/install.js` could otherwise be executed.
+SCRIPT_SOURCE="${BASH_SOURCE[0]:-}"
+if [[ -n "$SCRIPT_SOURCE" ]] && command -v cygpath &>/dev/null; then
+  SCRIPT_SOURCE="$(cygpath -u "$SCRIPT_SOURCE" 2>/dev/null || printf '%s' "$SCRIPT_SOURCE")"
+fi
+if [[ "$SCRIPT_SOURCE" == "install.sh" || "$SCRIPT_SOURCE" == */install.sh ]] && [[ -f "$SCRIPT_SOURCE" ]]; then
+  SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_SOURCE")" && pwd)"
+  LOCAL_INSTALLER="$SCRIPT_DIR/bin/install.js"
+  if [[ -f "$LOCAL_INSTALLER" ]]; then
+    exec node "$LOCAL_INSTALLER" "$@"
+  fi
 fi
 
 # --- Curl-pipe path: delegate to npx ---

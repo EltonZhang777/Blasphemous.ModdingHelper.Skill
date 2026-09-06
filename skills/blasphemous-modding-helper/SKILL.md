@@ -1,92 +1,74 @@
 ---
 name: blasphemous-modding-helper
-description: Blasphemous modding development helper. Use when user wants to develop a Blasphemous mod, analyze Blasphemous decompiled source code, or debug mod-related logs (BepInEx / Unity).
+description: Blasphemous modding development helper. Use when the user wants to build, deploy, launch, inspect startup evidence, stop, clean, or perform Manual verification for a Blasphemous mod; identify, explain, compare, or translate a Blasphemous 1 term; develop a mod, analyze Blasphemous decompiled source code, or debug mod-related logs (BepInEx / Unity).
 ---
 
 # Blasphemous modding helper
 
 You are helping with Blasphemous mod development.
 
-## Coding specifications
+## Request routing
 
-- Game source code language and modding language: C#
-- Game Unity version: Unity 2017.4.40f1
-  - You MAY search for Unity 2017.4.40f1 API documentation in the Unity Documentation at `https://docs.unity3d.com/2017.4/Documentation/ScriptReference/30_search.html?q=<class-name-or-method-name>` for extra information. Replace `<class-name-or-method-name>` with the actual class or method name you are searching for.
-- Mods are developed under the Blasphemous ModdingAPI framework. You **MUST** follow the ModdingAPI conventions and best practices **WHENEVER YOU CODE** by browsing the links below.
-  - ModdingAPI documentation can be found at `https://github.com/BrandenEK/Blasphemous.ModdingAPI/tree/main/docs`
-  - ModdingAPI source code can be found at `https://github.com/BrandenEK/Blasphemous.ModdingAPI/tree/main`
+After reading Requirement levels, agent MUST classify the request before choosing an operational branch.
 
-## Preferences (`preferences.md`)
+- For a natural-language request to identify, explain, compare, or translate a Blasphemous 1 term, name, UI phrase, or textual reference, agent MUST read [Localization lookup](references/sub-skills/localization-lookup.md). Agent MUST treat this as a read-only localization branch and MUST NOT require preferences.
+- For source analysis, log analysis, mod testing, or Mod work, agent MUST continue through the shared entry gate and the applicable branch below.
 
-Check `preferences.md` existence.
+## Requirement levels
 
-Use the check-preferences scripts to find `preferences.md`:
+At start of every Skill invocation, agent MUST read [Requirement levels](references/requirement-levels-definitions.md). It defines RFC 2119 vocabulary used by every authored normative instruction in this Skill; external documentation, source code, and illustrative examples retain their original wording as described there.
 
-```bash
-# macOS, Linux, WSL, Git Bash
-bash scripts/check_preferences.sh
-```
+## Shared entry gate
 
-```powershell
-# PowerShell (Windows)
-& .\scripts\check_preferences.ps1
-```
+The [Invocation preflight](references/config/invocation-preflight.md) reference is the sole authority for the shared entry gate: Skill-root resolution, caller Mod-repository context, Python interpreter and host expectations, preference scope and precedence, when first-time setup is required, path recovery, the tracked-session stop exception, and shared completion. It delegates detailed setup questions, validation, save operations, and optional local checkout to [First-Time Setup](references/config/first-time-setup.md). It routes Python interpreter and dependency validation to [Python Runtime](references/config/python-runtime.md). The read-only localization branch follows its documented preference exception.
 
-Output is one of: `"project"`, `"user"`, or nothing (not found).
+## Coding standards
 
-`preferences.md` lives at `.skills/blasphemous-modding-helper/preferences.md` (project) or `$HOME/.skills/blasphemous-modding-helper/preferences.md` (user home). Full locations table: [references/config/first-time-setup.md#save-locations](references/config/first-time-setup.md#save-locations).
+Before generating, modifying, reviewing, or refactoring Mod-owned C# in caller's Mod repository, agent MUST read [coding standards](references/sub-skills/coding-standards.md). It applies the ownership gate, routes C# and runtime Unity work to the [C# and runtime Unity standards](references/coding-standards/coding-standards-csharp-unity.md), ModdingAPI tasks to the [ModdingAPI standards](references/coding-standards/coding-standards-moddingAPI.md), and Harmony or Patch tasks to the [Harmony patching standards](references/coding-standards/coding-standards-harmony-patching.md).
 
-| Result | Action |
-|--------|--------|
-| Found | Read, parse, apply settings. On first use in session, briefly remind: "Using preferences from [path]. You can edit `preferences.md` to customize source code path, etc." |
-| Not found | **MUST** run first-time setup (see below) — do NOT silently use defaults, do NOT continue to main workflow. |
-
-**`preferences.md` Contains**: `full_source_code_path`, `lightweight_source_code_path`, `modding_profile_path` — see [references/config/preferences-schema.md](references/config/preferences-schema.md) for the full schema.
-
-### First-Time Setup (BLOCKING)
-
-**CRITICAL**: When `preferences.md` is not found, you **MUST** run the first-time setup (a **BLOCKING** operation) before ANY action, following [references/config/first-time-setup.md](references/config/first-time-setup.md).
-
+- Game source code language and Mod language: C#.
+- Game Unity baseline: Unity `2017.4.40f1`.
+  - Agent MAY search Unity 2017.4.40f1 API documentation at `https://docs.unity3d.com/2017.4/Documentation/ScriptReference/30_search.html?q=<class-name-or-method-name>` for extra information. Agent SHOULD replace `<class-name-or-method-name>` with actual class or method name.
+- ModdingAPI documentation, source guidance, conventions, lifecycle, logging, and examples MUST pass through [Referencing ModdingAPI](references/sub-skills/referencing-modding-api.md) before agent browses selected reference.
+  - The route selects configured local checkout or resolves release-aware remote reference, then loads only topic needed for task.
+- Mods are developed under Blasphemous ModdingAPI framework. Agent MUST follow ModdingAPI conventions and best practices whenever it codes against selected reference.
 
 ## Workflow
 
-You **MUST** follow the workflow steps in order, unless otherwise explicitly specified by the user.
+Agent MUST follow workflow steps in order, unless otherwise explicitly specified by user.
 
-### Step 1: Load Preferences
+### Step 1: Complete shared entry gate
 
-Check `preferences.md` (see Preferences section above)
+Agent MUST complete the shared entry gate before selecting an operational specialized branch or executing command. The localization lookup branch follows its read-only exception.
+
+**Done when**: the shared entry gate's completion criteria are satisfied for an operational branch, or the localization branch has confirmed its index path and read-only context.
 
 ### Step 2: Analyze User Question
 
-Analyze the user question to determine user intent and the task to perform, especially pay attention to the following:
-- Whether the user request involves analyzing Blasphemous Source code. 
-  - If yes, you SHOULD create a sub-agent or sub-task to handle the source code analysis using [references/sub-skills/source-analyzer.md](references/sub-skills/source-analyzer.md)
-- Whether the user request involves debugging, log tracking, or error tracking.
-  - If yes, you SHOULD create a sub-agent or sub-task to handle log analysis using [references/sub-skills/log-analyzer.md](references/sub-skills/log-analyzer.md)
+Agent MUST apply the Request routing rules above and route every applicable branch to its owning reference before gathering evidence.
 
-**Done when**: the user question is classified into one of the three branches (source code analysis, log analysis, or general modding question), and a sub-agent task has been created for every branch that applies.
+**Done when**: user question is classified into one or more applicable branches (localization lookup, source code analysis, log analysis, mod testing, or general modding question), and every applicable specialized branch has been routed to its authoritative workflow reference or analysis task.
 
 ### Step 3: Use Tools to Gather Information
 
-Use tools to gather information required for the task, including:
-- source-analyzer and log-analyzer
-  - mentioned in `### Step 2: Analyze User Question`
-- Unity API documentation and ModdingAPI documentation
-  - mentioned in the `## Coding specifications` section above
+Agent MUST use tools to gather information required by task, including:
 
-The tools' `.md` files should contain all the path specifications required for the task; do not ask user for path again unless you don't find the path information you need there.
+- source-analyzer and log-analyzer when they are applicable;
+- coding standards and its selected branch references;
+- Unity API and ModdingAPI references routed by relevant sub-skills.
 
-**Done when**: every path the task needs (source code, modding profile, logs) has been located in `preferences.md` or the navigation documents, and any missing or stale path has been handed to Step 5.
+Tools' `.md` files SHOULD contain all path specifications required for task. Agent MUST NOT ask user for path again unless needed path information is absent there.
+
+**Done when**: agent has located every path task needs (source code, modding profile, and logs) in `preferences.md` or navigation documents, and has handed any missing or stale path to Step 5.
 
 ### Step 4: Solve User Question
 
-Use the gathered information to solve the user question.
+Agent MUST use gathered information to solve user question.
 
-**Done when**: the answer is complete and every source-code class, file path, and log location cited in the answer has been verified against the actual files.
+**Done when**: answer is complete and agent has verified every source-code class, file path, and log location cited in answer against actual files.
 
 ### Step 5: Path Failure Recovery
 
-If any source code analysis or modding operation fails with file-not-found or path-related errors, the agent MUST ask the user: "Some operations failed using the saved paths in `preferences.md`. Would you like to re-run the first-time setup to update them?"
+Agent MUST follow the path-failure recovery contract in the shared entry gate.
 
-- **If Yes**: Delete `preferences.md` and trigger first-time setup again (see Step 1). This allows the user to correct outdated or incorrect paths.
-- **If No**: Continue with current paths, report the specific failure to the user.
+**Done when**: shared recovery contract has produced validated preferences file, or agent has continued with current paths and reported specific failure and next action.

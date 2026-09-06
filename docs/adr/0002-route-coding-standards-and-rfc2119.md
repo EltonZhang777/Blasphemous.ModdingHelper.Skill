@@ -1,0 +1,5 @@
+# Route Mod standards and use RFC 2119 requirement levels
+
+The Skill uses a Coding-standards sub-skill as the single Mod-owned C# entry point and three Branch references—C# and runtime Unity, ModdingAPI, and Harmony—so progressive disclosure loads only the rules triggered by each task while preserving the Mod-owned scope and ModdingAPI-owned Patch discovery recorded in ADR 0001. All authored normative instructions in the installed Skill Markdown use RFC 2119 requirement keywords; the requirement-levels reference is the sole vocabulary authority, and the caller's actual referenced assemblies and corresponding source outrank version-matched upstream source and documentation, which outrank local guidance.
+
+A qualifying Debug-only or explicitly temporary `ModLog` statement is the sole pre-approved logging exception: it remains compile-time excluded or clearly marked for removal, while retaining severity and context requirements; every other deviation requires user approval. This ADR records local design material and remains ignored rather than entering the Skill distribution.

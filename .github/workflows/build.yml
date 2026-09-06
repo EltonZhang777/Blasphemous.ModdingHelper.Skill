@@ -3,9 +3,47 @@ name: Build
 on:
   push:
     tags: [ "**" ]
-    branches: [ "main" ]
+    branches: [ "main", "test-ci", "experimental" ]
 
 jobs:
+  modding-api-regression:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            shell_name: bash
+          - os: windows-latest
+            shell_name: pwsh
+          - os: macos-latest
+            shell_name: bash
+    runs-on: ${{ matrix.os }}
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.9"
+
+    - name: Set up Node.js installer boundary
+      uses: actions/setup-node@v4
+      with:
+        node-version: "18"
+
+    # The acceptance runner includes the Node installer and wrapper contracts.
+    - name: Run acceptance surface (Bash)
+      if: matrix.shell_name == 'bash'
+      shell: bash
+      run: python skills/blasphemous-modding-helper/scripts/test_modding_api_acceptance.py --python python --require-clean
+
+    - name: Run acceptance surface (PowerShell)
+      if: matrix.shell_name == 'pwsh'
+      shell: pwsh
+      run: python skills/blasphemous-modding-helper/scripts/test_modding_api_acceptance.py --python python --require-clean
+
   build:
     permissions:
       contents: write
@@ -15,6 +53,11 @@ jobs:
     steps:
     - name: Checkout Repository
       uses: actions/checkout@v4
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: "18"
 
     - name: Install jq
       run: sudo apt-get update && sudo apt-get install -y jq

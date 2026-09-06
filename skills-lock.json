@@ -1,22 +1,32 @@
 {
-  "version": "1.2.0",
+  "version": "2.0.0",
   "skills": {
     "blasphemous-modding-helper": {
-      "version": "1.2.0",
+      "version": "2.0.0",
       "description": "Blasphemous modding development helper",
       "path": "skills/blasphemous-modding-helper"
     }
   },
   "references": {
     "blasphemous-modding-helper:source-analyzer": {
-      "version": "1.2.0",
-      "description": "Source code analysis reference for Blasphemous game mechanics",
+      "version": "2.0.0",
+      "description": "Automatically routed source code analysis reference for Blasphemous game mechanics",
       "path": "skills/blasphemous-modding-helper/references/sub-skills/source-analyzer.md"
     },
     "blasphemous-modding-helper:log-analyzer": {
-      "version": "1.2.0",
-      "description": "BepInEx and Unity log analysis reference for debugging",
+      "version": "2.0.0",
+      "description": "Automatically routed BepInEx and Unity log analysis reference for debugging",
       "path": "skills/blasphemous-modding-helper/references/sub-skills/log-analyzer.md"
+    },
+    "blasphemous-modding-helper:blasphemous-modding-test": {
+      "version": "2.0.0",
+      "description": "Automatically routed local build, deployment, startup evidence, and Manual verification workflow",
+      "path": "skills/blasphemous-modding-helper/references/sub-skills/blasphemous-modding-test.md"
+    },
+    "blasphemous-modding-helper:localization-lookup": {
+      "version": "2.0.0",
+      "description": "Automatically routed read-only Blasphemous 1 localization lookup reference",
+      "path": "skills/blasphemous-modding-helper/references/sub-skills/localization-lookup.md"
     }
   }
 }
