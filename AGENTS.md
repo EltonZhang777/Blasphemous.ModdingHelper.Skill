@@ -73,3 +73,5 @@ Issues and specs for this repo live as GitHub issues. Use the `gh` CLI. See `doc
 ### Domain docs
 
 This repo uses a single-context domain glossary at root and ADRs under `docs/adr/`. See `docs/agents/domain.md`.
+
+Local continuation records under ignored `docs/handoff/` follow `docs/agents/handoff.md`; they are evidence snapshots, not Skill authority.
