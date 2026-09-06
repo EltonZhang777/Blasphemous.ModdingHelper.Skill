@@ -82,7 +82,7 @@ Agent MUST keep two source routes distinct:
 
 - ModdingAPI API, lifecycle, logging, and framework behavior MUST use release-aware reference route.
 - Decompiled Blasphemous game classes MUST use
-  [Blasphemous Source Code Navigation](../source_code_navigation/MAIN.md) and
+  [Blasphemous Source Code Navigation](../source-code-navigation/MAIN.md) and
   its source-analyzer branch.
 
 Task may load both routes when it compares framework behavior with game

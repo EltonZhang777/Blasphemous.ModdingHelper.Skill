@@ -11,7 +11,7 @@ Use the narrowest authoritative file for each change:
 - `skills/blasphemous-modding-helper/SKILL.md` defines the installed skill's behavior, workflow, frontmatter, and required preferences gate.
 - `skills/blasphemous-modding-helper/references/config/` defines preference setup and schema; `references/sub-skills/` defines source and log analysis branches.
 - `skills/blasphemous-modding-helper/scripts/blasphemous_modding_helper/preferences.py` owns Python preference scope and parsing; `decompiler.py` owns the cross-platform decompilation workflow.
-- `skills/blasphemous-modding-helper/references/source_code_navigation/MAIN.md` is the navigation index. Route to one topical document (`core`, `player`, `enemy`, `bosses`, `ui`, `items`, `level`, `tools`, or `localization`) before searching its details.
+- `skills/blasphemous-modding-helper/references/source-code-navigation/MAIN.md` is the navigation index. Route to one topical document (`core`, `player`, `enemy`, `bosses`, `ui`, `items`, `level`, `tools`, or `localization`) before searching its details.
 - `bin/install.js` owns installer behavior, agent detection, provider IDs, and CLI flags. `install.sh` and `install.ps1` are thin entry shims and should remain behaviorally aligned with it.
 - `ci/version.yml` is the version source. `ci/UpdateVersionNumber.py` synchronizes the version fields in `package.json`, `.claude-plugin/plugin.json`, `gemini-extension.json`, and `skills-lock.json`.
 - `README.md`, `.claude-plugin/plugin.json`, `gemini-extension.json`, and `skills-lock.json` are public distribution metadata; update them when user-visible installation or package metadata changes.
@@ -28,7 +28,7 @@ Use the narrowest authoritative file for each change:
 
 - The installed skill is a Blasphemous modding assistant, not a replacement for the user's game source or mod project. Keep the frontmatter `name`, `description`, and relative reference links valid.
 - Preferences are a blocking first step for operational Skill branches. The read-only localization lookup branch is an explicit exception: its local evidence is limited to the bundled localization indexes and semantic-aliases reference; a handoff to source analysis is a separate branch and still requires preferences, a Modding profile, and a valid source path. The check scripts look for project scope at `.skills/blasphemous-modding-helper/preferences.md` and user scope under `$HOME/.skills/blasphemous-modding-helper/preferences.md`. When no file exists, first-time setup must finish before source analysis, log analysis, or modding work.
-- Source analysis starts with the lightweight source path, uses the full source only when needed, and routes through `references/source_code_navigation/MAIN.md`. Navigation paths are relative to `Assembly-CSharp/`.
+- Source analysis starts with the lightweight source path, uses the full source only when needed, and routes through `references/source-code-navigation/MAIN.md`. Navigation paths are relative to `Assembly-CSharp/`.
 - Log analysis checks the BepInEx log first and then the Unity log when needed. The modding profile path comes from `preferences.md`.
 - Mod code targets C# on Unity `2017.4.40f1` under the Blasphemous ModdingAPI conventions. Keep links to the ModdingAPI documentation and source when changing coding guidance.
 

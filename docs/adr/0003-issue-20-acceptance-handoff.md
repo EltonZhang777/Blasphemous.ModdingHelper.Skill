@@ -21,10 +21,10 @@ Use the existing artifacts instead of duplicating their content:
 - Skill entry and first-round disclosure: `skills/blasphemous-modding-helper/SKILL.md`
 - Coding-standards router: `skills/blasphemous-modding-helper/references/sub-skills/coding-standards.md`
 - RFC 2119 contract: `skills/blasphemous-modding-helper/references/requirement-levels-definitions.md`
-- C# and runtime Unity branch: `skills/blasphemous-modding-helper/references/coding-standards-csharp-unity.md`
-- ModdingAPI branch: `skills/blasphemous-modding-helper/references/coding-standards-moddingAPI.md`
-- Harmony branch: `skills/blasphemous-modding-helper/references/coding-standards-harmony-patching.md`
-- Compatibility pointer: `skills/blasphemous-modding-helper/references/coding-standards.md`
+- C# and runtime Unity branch: `skills/blasphemous-modding-helper/references/coding-standards/coding-standards-csharp-unity.md`
+- ModdingAPI branch: `skills/blasphemous-modding-helper/references/coding-standards/coding-standards-moddingAPI.md`
+- Harmony branch: `skills/blasphemous-modding-helper/references/coding-standards/coding-standards-harmony-patching.md`
+- Compatibility pointer: `skills/blasphemous-modding-helper/references/coding-standards/coding-standards.md`
 - Prior local decisions: `docs/adr/0001-mod-code-standards-boundary-and-patch-ownership.md` and `docs/adr/0002-route-coding-standards-and-rfc2119.md`
 
 ## Acceptance evidence

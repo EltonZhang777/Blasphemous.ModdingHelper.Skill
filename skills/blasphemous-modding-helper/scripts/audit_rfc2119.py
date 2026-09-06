@@ -90,7 +90,7 @@ def audit_file(path: Path, skill_root: Path) -> list[tuple[int, str, str]]:
     in_html_comment = False
     in_frontmatter = False
     first_line = True
-    source_navigation = "source_code_navigation" in path.parts
+    source_navigation = "source-code-navigation" in path.parts
 
     for line_number, raw_line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
         line = raw_line.rstrip()

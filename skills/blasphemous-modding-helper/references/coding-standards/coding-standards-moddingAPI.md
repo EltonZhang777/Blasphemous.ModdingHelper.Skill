@@ -1,6 +1,6 @@
 # ModdingAPI standards
 
-This reference is ModdingAPI branch selected by [coding standards router](sub-skills/coding-standards.md). Before applying a rule, the agent MUST read [Requirement levels](requirement-levels-definitions.md). branch covers ModdingAPI API use, BlasMod lifecycle responsibilities, service integration, upstream development-document routing, and ModLog behavior.
+This reference is ModdingAPI branch selected by [coding standards router](../sub-skills/coding-standards.md). Before applying a rule, the agent MUST read [Requirement levels](../requirement-levels-definitions.md). branch covers ModdingAPI API use, BlasMod lifecycle responsibilities, service integration, upstream development-document routing, and ModLog behavior.
 
 ## Scope and authority
 
@@ -114,7 +114,7 @@ Logging-only exception for debugging logging functionality is pre-approved and M
 
 Qualifying statement MUST be for debugging logging functionality. It MUST still use severity appropriate to event and provide useful Mod and operation context. It MAY omit other logging guidance, such as ordinary frequency or user-facing-display rules, only for qualifying debug or temporary statement. This exception MUST NOT waive non-logging coding, API, lifecycle, or patching rules.
 
-If logging statement does not satisfy every condition above, normal exception-handling process in [Requirement levels](requirement-levels-definitions.md) applies and agent MUST ask user before deviating from local rule.
+If logging statement does not satisfy every condition above, normal exception-handling process in [Requirement levels](../requirement-levels-definitions.md) applies and agent MUST ask user before deviating from local rule.
 
 ## Positive and negative examples
 
@@ -180,4 +180,4 @@ Before finishing ModdingAPI-related task, reviewer MUST verify:
 - No unused empty override, unconditional base call, repeated registration, or misplaced cross-Mod setup was introduced.
 - ModLog method inventory, severity, context, frequency, display, and debug/temporary exception rules were applied.
 - Missing or conflicting API facts failed closed rather than being guessed.
-- Normative wording follows [Requirement levels](requirement-levels-definitions.md).
+- Normative wording follows [Requirement levels](../requirement-levels-definitions.md).

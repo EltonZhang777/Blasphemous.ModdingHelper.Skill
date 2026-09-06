@@ -1,6 +1,6 @@
 # C# and runtime Unity standards
 
-This reference is C# branch selected by [coding standards router](sub-skills/coding-standards.md). Before applying a rule, the agent MUST read [Requirement levels](requirement-levels-definitions.md). rules apply only after router's Mod-owned scope gate passes.
+This reference is C# branch selected by [coding standards router](../sub-skills/coding-standards.md). Before applying a rule, the agent MUST read [Requirement levels](../requirement-levels-definitions.md). rules apply only after router's Mod-owned scope gate passes.
 
 ## Scope and direct-copy handling
 
@@ -155,4 +155,4 @@ Before finishing Mod-owned C# task, reviewer MUST verify:
 - Runtime `MonoBehaviour` work uses appropriate Unity callback and avoids constructor initialization or unnecessary per-frame work.
 - No UnityEditor, Inspector, Prefab, ScriptableObject, or serialization assumption was introduced.
 - Positive and negative routing examples remain consistent with scope gate.
-- Requirement-level wording follows [Requirement levels](requirement-levels-definitions.md).
+- Requirement-level wording follows [Requirement levels](../requirement-levels-definitions.md).

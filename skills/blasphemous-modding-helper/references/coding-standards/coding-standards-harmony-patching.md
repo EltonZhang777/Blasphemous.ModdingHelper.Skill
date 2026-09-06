@@ -1,6 +1,6 @@
 # Harmony patching standards
 
-This reference is Harmony branch selected by [coding standards router](sub-skills/coding-standards.md). Before applying a rule, the agent MUST read [Requirement levels](requirement-levels-definitions.md). branch covers Mod-owned Harmony patch declarations, file and class organization, target resolution, patch methods, lifecycle placement, and approved manual-patch exceptions.
+This reference is Harmony branch selected by [coding standards router](../sub-skills/coding-standards.md). Before applying a rule, the agent MUST read [Requirement levels](../requirement-levels-definitions.md). branch covers Mod-owned Harmony patch declarations, file and class organization, target resolution, patch methods, lifecycle placement, and approved manual-patch exceptions.
 
 ## Scope and authority
 
@@ -268,4 +268,4 @@ Before finishing Harmony-related task, reviewer MUST verify:
 - Agent MUST preserve framework-managed discovery contract and MUST NOT add manual assembly scan.
 - Any manual `Harmony.Patch` operation MUST have explicit user approval and explicitly selected target.
 - Positive and negative examples MUST remain consistent with discovery ownership, naming, target declarations, and lifecycle placement.
-- Normative wording MUST follow [Requirement levels](requirement-levels-definitions.md).
+- Normative wording MUST follow [Requirement levels](../requirement-levels-definitions.md).

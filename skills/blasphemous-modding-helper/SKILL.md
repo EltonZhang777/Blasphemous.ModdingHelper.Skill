@@ -24,7 +24,7 @@ Before selecting an operational branch or executing command, agent MUST read [In
 
 ## Coding standards
 
-Before generating, modifying, reviewing, or refactoring Mod-owned C# in caller's Mod repository, agent MUST read [coding standards](references/sub-skills/coding-standards.md). It applies the ownership gate, routes C# and runtime Unity work to the [C# and runtime Unity standards](references/coding-standards-csharp-unity.md), ModdingAPI tasks to the [ModdingAPI standards](references/coding-standards-moddingAPI.md), and Harmony or Patch tasks to the [Harmony patching standards](references/coding-standards-harmony-patching.md).
+Before generating, modifying, reviewing, or refactoring Mod-owned C# in caller's Mod repository, agent MUST read [coding standards](references/sub-skills/coding-standards.md). It applies the ownership gate, routes C# and runtime Unity work to the [C# and runtime Unity standards](references/coding-standards/coding-standards-csharp-unity.md), ModdingAPI tasks to the [ModdingAPI standards](references/coding-standards/coding-standards-moddingAPI.md), and Harmony or Patch tasks to the [Harmony patching standards](references/coding-standards/coding-standards-harmony-patching.md).
 
 - Game source code language and Mod language: C#.
 - Game Unity baseline: Unity `2017.4.40f1`.

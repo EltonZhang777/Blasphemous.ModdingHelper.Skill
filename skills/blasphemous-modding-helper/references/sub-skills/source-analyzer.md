@@ -19,7 +19,7 @@ Before source analysis, agent MUST complete [Invocation preflight](../config/inv
 3. Agent SHOULD check for available MCP tools at this step to see whether tool can quickly navigate and analyze C# code structure (e.g. roslyn-code-navigator).
 4. Agent SHOULD prioritize using MCP tools when relevant tools are available.
 5. If no relevant MCP tool is available, agent MUST use command-line tools to search for and read relevant class files and code sections. Agent SHOULD use these navigation tips:
-    - The agent SHOULD use [../source_code_navigation/MAIN.md](../source_code_navigation/MAIN.md) to navigate major source-code sections; it indexes every specialized navigation document (core, player, enemy, bosses, ui, items, level, tools, localization) with its coverage.
+    - The agent SHOULD use [../source-code-navigation/MAIN.md](../source-code-navigation/MAIN.md) to navigate major source-code sections; it indexes every specialized navigation document (core, player, enemy, bosses, ui, items, level, tools, localization) with its coverage.
     - The agent SHOULD prioritize searching in the `Assembly-CSharp` folder because almost all game-logic code is located there.
 
 ## Completion criteria

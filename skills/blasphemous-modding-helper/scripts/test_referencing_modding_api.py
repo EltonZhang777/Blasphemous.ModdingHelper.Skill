@@ -310,7 +310,7 @@ def run_documentation_smoke() -> None:
             SKILL_ROOT / "references" / "sub-skills" / "blasphemous-modding-test.md"
         ),
         "source navigation": read_file(
-            SKILL_ROOT / "references" / "source_code_navigation" / "MAIN.md"
+            SKILL_ROOT / "references" / "source-code-navigation" / "MAIN.md"
         ),
     }
     top_level = documents["top-level Skill"]
@@ -411,7 +411,7 @@ def run_documentation_smoke() -> None:
         assert_contains(referencing, f"`{page}`", "ModdingAPI reference sub-skill")
     assert_contains(
         referencing,
-        "../source_code_navigation/MAIN.md",
+        "../source-code-navigation/MAIN.md",
         "ModdingAPI reference sub-skill",
     )
     assert_contains(
