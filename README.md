@@ -28,8 +28,8 @@ If any selected agent installation or uninstallation fails, the installer exits 
 |-------|---------|
 | **Claude Code** | `/plugin marketplace add EltonZhang777/Blasphemous.ModdingHelper.Skill` then `/plugin install blasphemous-modding-helper@blasphemous-modding-helper-marketplace` |
 | **Gemini CLI** | `gemini extensions install https://github.com/EltonZhang777/Blasphemous.ModdingHelper.Skill` |
-| **Codex CLI** | Clone repo → symlink `skills/blasphemous-modding-helper` to `~/.agents/skills/` |
-| **Cursor / Windsurf / Cline** | `npx skills add EltonZhang777/Blasphemous.ModdingHelper.Skill -a <agent>` |
+| **Codex CLI** | `npx -y skills add EltonZhang777/Blasphemous.ModdingHelper.Skill -a codex -g -y` |
+| **Cursor / Windsurf / Cline** | `npx -y skills add EltonZhang777/Blasphemous.ModdingHelper.Skill -a <agent> -g -y` |
 
 ### Custom-path install
 
@@ -55,8 +55,9 @@ Automatic provider installs use user-level scope and non-interactive flags. The 
 ### Manual install
 
 1. Download the skill from the [release page](https://github.com/EltonZhang777/Blasphemous.ModdingHelper.Skill/releases).
-2. Extract to your AI coding tool's skill folder (e.g., `.claude/skills/`, `~/.agents/skills/`).
-3. Restart the tool if the skill doesn't show up.
+2. Copy the contents of `skills/blasphemous-modding-helper/` to the provider's skill directory. For Codex CLI, use `$CODEX_HOME/skills/blasphemous-modding-helper/`; when `CODEX_HOME` is unset, the installer uses `~/.codex/skills/blasphemous-modding-helper/`.
+3. Keep `SKILL.md` at the installed directory root, with its `references/` and `scripts/` directories beside it; do not add another `skills/` level.
+4. Restart the tool if the skill doesn't show up.
 
 ### Activation
 

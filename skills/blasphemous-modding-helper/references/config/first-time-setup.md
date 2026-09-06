@@ -55,7 +55,7 @@ flowchart TD
     Validate -->|Failure: full source| Q4b
     Validate -->|Failure: modding profile| Q5
     Validate -->|OK| Save["Create or update preferences.md"]
-    Save --> Continue["Continue main workflow"]
+    Save --> Complete["Setup complete: return to Invocation preflight"]
 ```
 
 ## AskUserQuestion Questions
@@ -236,7 +236,26 @@ Agent MUST use approved preferences and local-reference paths in
 2. Agent MUST write or update `preferences.md` with selected values, preserve unknown and legacy fields, and add `modding_api_reference_path` and `modding_api_reference_selector` only when Q6 is enabled and clone succeeds.
 3. If Q6 was skipped, agent MUST leave both local reference fields absent.
 4. Agent MUST confirm: "Preferences saved to [path], you can edit it by yourself at any time."
-5. Agent MUST continue main agent workflow using saved preferences.
+
+## Setup completion boundary
+
+### Setup complete
+
+Setup is complete only when all of the following are true:
+
+1. The Python runtime gate succeeded before setup questions were asked.
+2. Every required path was validated; optional paths are either valid or were explicitly skipped.
+3. `preferences.md` was written to the selected scope and can be read back.
+4. If Q6 clone succeeded, its normalized path, selector, and lock state were recorded. If Q6 was skipped, both local-reference fields remain absent.
+5. The agent confirmed the saved path and returns the validated preferences file to Invocation preflight.
+
+### Setup incomplete
+
+Setup is incomplete when any required answer, path check, save operation, or
+runtime gate has not succeeded. Clone failure remains incomplete until the user
+chooses a valid retry or explicitly skips the optional local reference. While
+setup is incomplete, the agent MUST NOT enter source analysis, log analysis,
+modding, or test operations; it MUST report the failure and its retry path.
 
 ## `preferences.md` Template
 

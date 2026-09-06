@@ -12,15 +12,15 @@ You are helping with Blasphemous mod development.
 After reading Requirement levels, agent MUST classify the request before choosing an operational branch.
 
 - For a natural-language request to identify, explain, compare, or translate a Blasphemous 1 term, name, UI phrase, or textual reference, agent MUST read [Localization lookup](references/sub-skills/localization-lookup.md). Agent MUST treat this as a read-only localization branch and MUST NOT require preferences.
-- For source analysis, log analysis, mod testing, or Mod work, agent MUST continue through Invocation preflight and the applicable branch below.
+- For source analysis, log analysis, mod testing, or Mod work, agent MUST continue through the shared entry gate and the applicable branch below.
 
 ## Requirement levels
 
 At start of every Skill invocation, agent MUST read [Requirement levels](references/requirement-levels-definitions.md). It defines RFC 2119 vocabulary used by every authored normative instruction in this Skill; external documentation, source code, and illustrative examples retain their original wording as described there.
 
-## Invocation preflight
+## Shared entry gate
 
-Before selecting an operational branch or executing command, agent MUST read [Invocation preflight](references/config/invocation-preflight.md). It is the authoritative contract for Skill-root resolution, caller Mod-repository context, Python interpreter and host expectations, preference scope and precedence, first-time setup, path recovery, tracked-session stop exception, and shared completion. It routes Python interpreter and dependency validation to [Python Runtime](references/config/python-runtime.md). The read-only localization branch follows its documented preference exception.
+The [Invocation preflight](references/config/invocation-preflight.md) reference is the sole authority for the shared entry gate: Skill-root resolution, caller Mod-repository context, Python interpreter and host expectations, preference scope and precedence, when first-time setup is required, path recovery, the tracked-session stop exception, and shared completion. It delegates detailed setup questions, validation, save operations, and optional local checkout to [First-Time Setup](references/config/first-time-setup.md). It routes Python interpreter and dependency validation to [Python Runtime](references/config/python-runtime.md). The read-only localization branch follows its documented preference exception.
 
 ## Coding standards
 
@@ -37,24 +37,15 @@ Before generating, modifying, reviewing, or refactoring Mod-owned C# in caller's
 
 Agent MUST follow workflow steps in order, unless otherwise explicitly specified by user.
 
-### Step 1: Complete invocation preflight
+### Step 1: Complete shared entry gate
 
-Agent MUST follow [Invocation preflight](references/config/invocation-preflight.md) before selecting an operational specialized branch or executing command. The localization lookup branch follows its read-only exception.
+Agent MUST complete the shared entry gate before selecting an operational specialized branch or executing command. The localization lookup branch follows its read-only exception.
 
-**Done when**: completion criteria in Invocation preflight are satisfied for an operational branch, or the localization branch has confirmed its index path and read-only context.
+**Done when**: the shared entry gate's completion criteria are satisfied for an operational branch, or the localization branch has confirmed its index path and read-only context.
 
 ### Step 2: Analyze User Question
 
-Agent MUST analyze user question to determine user intent and task to perform, especially paying attention to these:
-
-- Whether user request involves analyzing Blasphemous Source code.
-  - If yes, agent SHOULD create sub-agent or sub-task to handle source code analysis using [references/sub-skills/source-analyzer.md](references/sub-skills/source-analyzer.md).
-- Whether user request involves debugging, log tracking, or error tracking.
-  - If yes, agent SHOULD create sub-agent or sub-task to handle log analysis using [references/sub-skills/log-analyzer.md](references/sub-skills/log-analyzer.md).
-- Whether user request involves mod test: building or selecting mod package, deploying it, launching it, reading startup evidence or test logs/status, stopping or cleaning session, or collecting Manual verification, including when no new automated run is requested.
-  - If yes, agent MUST route to the authoritative [`/blasphemous-modding-test`](references/sub-skills/blasphemous-modding-test.md) workflow reference.
-- Whether user request asks to identify, explain, compare, or translate a Blasphemous 1 term, name, UI phrase, or textual reference in natural language.
-  - If yes, agent MUST route to [Localization lookup](references/sub-skills/localization-lookup.md) before using source analysis or an operational branch.
+Agent MUST apply the Request routing rules above and route every applicable branch to its owning reference before gathering evidence.
 
 **Done when**: user question is classified into one or more applicable branches (localization lookup, source code analysis, log analysis, mod testing, or general modding question), and every applicable specialized branch has been routed to its authoritative workflow reference or analysis task.
 
@@ -78,6 +69,6 @@ Agent MUST use gathered information to solve user question.
 
 ### Step 5: Path Failure Recovery
 
-Agent MUST follow path-failure recovery contract in [Invocation preflight](references/config/invocation-preflight.md).
+Agent MUST follow the path-failure recovery contract in the shared entry gate.
 
 **Done when**: shared recovery contract has produced validated preferences file, or agent has continued with current paths and reported specific failure and next action.

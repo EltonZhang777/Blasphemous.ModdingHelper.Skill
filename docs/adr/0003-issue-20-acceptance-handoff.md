@@ -1,14 +1,16 @@
 # Issue #20 historical acceptance handoff
-
 This handoff records evidence at commit `904ecbf` only. It is historical and
 non-authoritative for later repository states; current release decisions are
 tracked by [issue #89](https://github.com/EltonZhang777/Blasphemous.ModdingHelper.Skill/issues/89).
 
-## Next-session focus
+> Status: historical snapshot. The evidence below is bound to `904ecbf` and
+> is not current release evidence or an active instruction.
+
+## Historical next-session focus
 
 Issue #20 has passed the final acceptance audit. Continue from the committed branch state below; do not reopen the standards design unless the user supplies a new requirement or upstream API evidence changes.
 
-## Recorded state
+## Snapshot state
 
 - Worktree: `C:\Users\28090\Documents\GitHub\Blasphemous.ModdingHelper.Skill\.wt\csharp-code-standards`
 - Branch: `codex/csharp-code-standards`
@@ -16,7 +18,7 @@ Issue #20 has passed the final acceptance audit. Continue from the committed bra
 - Working tree: clean; branch is one commit ahead of its configured origin.
 - No push, pull request, or issue mutation was performed.
 - GitHub issue: [#20](https://github.com/EltonZhang777/Blasphemous.ModdingHelper.Skill/issues/20) remains open.
-- This handoff is tracked local material under `docs/adr/`.
+- This record is a historical local snapshot tracked under `docs/adr/`; its evidence is not current release evidence.
 
 ## Authoritative artifacts
 
@@ -31,7 +33,7 @@ Use the existing artifacts instead of duplicating their content:
 - Compatibility pointer: `skills/blasphemous-modding-helper/references/coding-standards/coding-standards.md`
 - Prior local decisions: `docs/adr/0001-mod-code-standards-boundary-and-patch-ownership.md` and `docs/adr/0002-route-coding-standards-and-rfc2119.md`
 
-## Acceptance evidence
+## Snapshot evidence
 
 - `audit_rfc2119.py --strict`: PASS; 21 Skill Markdown files scanned.
 - Local Markdown link audit: PASS; 21 files and 69 local links scanned, with no broken local links.
@@ -41,7 +43,7 @@ Use the existing artifacts instead of duplicating their content:
 - Current `BlasMod.cs` confirms framework-owned `PatchAll(GetType().Assembly)`; the standards prohibit Mod-owned manual `PatchAll` for the ordinary path.
 - `git diff --check`: PASS before commit; the final worktree is clean.
 
-## Acceptance conclusion
+## Historical acceptance conclusion
 
 The #20 requirements are complete: Mod-owned scope and direct-copy exclusions, progressive routing, C# and runtime Unity guidance, full ModdingAPI lifecycle and development-document coverage, ModLog rules and debug exception, Harmony ownership/target/file/class conventions, RFC 2119 vocabulary and exception gate, whole-Skill scan rule, and local ADR policy are all represented in the referenced artifacts.
 
