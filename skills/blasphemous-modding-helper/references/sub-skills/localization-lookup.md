@@ -1,5 +1,7 @@
 # Blasphemous 1 localization lookup
 
+The user-facing activation path is the top-level `blasphemous-modding-helper` Skill; the Agent selects this reference automatically.
+
 Agent MUST use this read-only branch for a natural-language request to identify, explain, compare, or translate a Blasphemous 1 term, name, UI phrase, or textual reference. Agent MUST NOT require `preferences.md`, a Modding profile, a source-code path, or a Python runtime for this branch.
 
 ## Procedure

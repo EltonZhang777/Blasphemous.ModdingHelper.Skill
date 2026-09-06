@@ -1,5 +1,7 @@
 # `/blasphemous-modding-test`
 
+The top-level `blasphemous-modding-helper` Skill is the normal entry point and routes here automatically. The documented `/blasphemous-modding-test stop SESSION_ID` path is a safety exception for stopping a recorded session.
+
 This is authoritative workflow for repeatable local Blasphemous mod tests. Agent MUST use it when task needs to build or select mod package, deploy it to modding profile, launch profile-local game, inspect startup evidence, stop tracked session, clean deployment, or collect player's Manual verification description, including when no new automated run is requested.
 
 Python CLI automates filesystem, build, process, and log operations. It does not control game through MCP and it does not verify visual, input, combat, menu, save, or other in-game behavior. Keep automated evidence and player's **Manual verification** as separate evidence sources.

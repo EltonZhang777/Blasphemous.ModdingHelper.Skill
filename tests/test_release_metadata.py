@@ -5,7 +5,7 @@ from pathlib import Path
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
-PUBLIC_REFERENCES = {
+ROUTED_REFERENCES = {
     "blasphemous-modding-helper:source-analyzer": (
         "Source Analyzer",
         "skills/blasphemous-modding-helper/references/sub-skills/source-analyzer.md",
@@ -49,7 +49,7 @@ class ReleaseMetadataTests(unittest.TestCase):
                     for entry in manifest["references"].values():
                         self.assertEqual(entry["version"], expected)
 
-    def test_lock_and_readme_cover_public_reference_branches(self):
+    def test_lock_and_readme_cover_routed_reference_branches(self):
         lock = json.loads(
             (REPOSITORY_ROOT / "skills-lock.json").read_text(encoding="utf-8")
         )
@@ -62,12 +62,20 @@ class ReleaseMetadataTests(unittest.TestCase):
             ).read_text(encoding="utf-8")
         )
 
-        self.assertEqual(set(lock["references"]), set(PUBLIC_REFERENCES))
+        self.assertEqual(set(lock["references"]), set(ROUTED_REFERENCES))
+        self.assertIn(
+            "Only the top-level `blasphemous-modding-helper` skill is activated.",
+            readme,
+        )
+        self.assertIn(
+            "users do not need to invoke these references directly.",
+            readme,
+        )
         self.assertIn(
             "localization",
             marketplace["plugins"][0]["description"].casefold(),
         )
-        for key, (label, path) in PUBLIC_REFERENCES.items():
+        for key, (label, path) in ROUTED_REFERENCES.items():
             with self.subTest(reference=key):
                 entry = lock["references"][key]
                 self.assertEqual(entry["path"], path)

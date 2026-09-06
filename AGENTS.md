@@ -9,7 +9,7 @@ This repository packages `blasphemous-modding-helper`, a cross-agent skill for B
 Use the narrowest authoritative file for each change:
 
 - `skills/blasphemous-modding-helper/SKILL.md` defines the installed skill's behavior, workflow, frontmatter, and required preferences gate.
-- `skills/blasphemous-modding-helper/references/config/` defines preference setup and schema; `references/sub-skills/` defines the public workflow branches.
+- `skills/blasphemous-modding-helper/references/config/` defines preference setup and schema; `references/sub-skills/` defines workflow references selected by the main Skill.
 - `skills/blasphemous-modding-helper/scripts/blasphemous_modding_helper/preferences.py` owns Python preference scope and parsing; `decompiler.py` owns the cross-platform decompilation workflow.
 - `skills/blasphemous-modding-helper/references/source-code-navigation/MAIN.md` is the navigation index. Route to one topical document (`core`, `player`, `enemy`, `bosses`, `ui`, `items`, `level`, `tools`, or `localization`) before searching its details.
 - `bin/install.js` owns installer behavior, agent detection, provider IDs, and CLI flags. `install.sh` and `install.ps1` are thin entry shims and should remain behaviorally aligned with it.
