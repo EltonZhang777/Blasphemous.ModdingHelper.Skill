@@ -332,6 +332,10 @@ def run_documentation_smoke() -> None:
         "references/config/invocation-preflight.md",
         "top-level Skill",
     )
+    if top_level.count("references/config/invocation-preflight.md") != 1:
+        raise DocumentationTestFailure(
+            "top-level Skill must expose one shared preflight entry pointer"
+        )
     assert_not_contains(top_level, "## Skill command context", "top-level Skill")
     assert_not_contains(
         top_level,
@@ -367,6 +371,12 @@ def run_documentation_smoke() -> None:
         "First-Time Setup reference",
     )
     assert_contains(setup, "decompile_source.py", "First-Time Setup reference")
+    for heading in (
+        "## Setup completion boundary",
+        "### Setup complete",
+        "### Setup incomplete",
+    ):
+        assert_contains(setup, heading, "First-Time Setup reference")
 
     for label, document in (
         ("source route", source),

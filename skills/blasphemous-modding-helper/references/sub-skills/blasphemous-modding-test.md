@@ -15,7 +15,7 @@ Done when: agent can name active preferences file, project, profile, Python inte
 
 ## CLI entry point
 
-Before executing command in this reference, agent MUST apply command-context contract in [Invocation preflight](../config/invocation-preflight.md). CLI MUST run from caller's Mod repository; caller does not need repository checkout containing `skills/blasphemous-modding-helper`.
+This branch inherits the command-context contract from [Invocation preflight](../config/invocation-preflight.md). CLI MUST run from caller's Mod repository; caller does not need repository checkout containing `skills/blasphemous-modding-helper`.
 
 The CLI entry point is the Python file below. `$PYTHON3` is the interpreter resolved by preflight:
 
