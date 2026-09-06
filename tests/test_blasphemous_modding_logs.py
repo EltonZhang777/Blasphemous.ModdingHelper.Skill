@@ -90,6 +90,8 @@ class BlasphemousModdingLogsTests(unittest.TestCase):
             "[Info : BepInEx] Chainloader unloaded\n",
             "[Info : BepInEx] Chainloader startup incomplete\n",
             "[Error: BepInEx] Chainloader startup complete with errors\n",
+            "[Error: BepInEx] Chainloader startup complete\n",
+            "[Warning: Mod Loader] Chainloader initialized\n",
             "Chainloader is ready for startup\n",
         )
 

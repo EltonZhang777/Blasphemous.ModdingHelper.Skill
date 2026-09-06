@@ -351,11 +351,19 @@ def read_log_source(
 def chainloader_ready(lines: Sequence[str]) -> bool:
     """Recognize BepInEx chainloader completion records."""
 
-    return any(_CHAINLOADER_COMPLETION_RECORD.match(line) for line in lines)
+    for line in lines:
+        match = _CHAINLOADER_COMPLETION_RECORD.match(line)
+        if match is not None and (
+            match.group("level") is None
+            or _is_positive_record_level(match.group("level"))
+        ):
+            return True
+    return False
 
 
 _CHAINLOADER_COMPLETION_RECORD = re.compile(
-    r"^\s*(?:\[[^\]\r\n]+\]\s+)?Chainloader\s+"
+    r"^\s*(?:\[(?P<level>[^:\]\r\n]+):[^\]\r\n]+\]\s+)?"
+    r"Chainloader\s+"
     r"(?:(?:start-up|startup)\s+complete|initiali[sz]ed)\s*$",
     re.IGNORECASE,
 )
