@@ -20,7 +20,7 @@ At start of every Skill invocation, agent MUST read [Requirement levels](referen
 
 ## Shared entry gate
 
-The [Invocation preflight](references/config/invocation-preflight.md) reference is the sole authority for Skill-root resolution, caller Mod-repository context, Python interpreter and host expectations, preference scope and precedence, first-time setup, path recovery, tracked-session stop exception, and shared completion. It routes Python interpreter and dependency validation to [Python Runtime](references/config/python-runtime.md). The read-only localization branch follows its documented preference exception.
+The [Invocation preflight](references/config/invocation-preflight.md) reference is the sole authority for the shared entry gate: Skill-root resolution, caller Mod-repository context, Python interpreter and host expectations, preference scope and precedence, when first-time setup is required, path recovery, the tracked-session stop exception, and shared completion. It delegates detailed setup questions, validation, save operations, and optional local checkout to [First-Time Setup](references/config/first-time-setup.md). It routes Python interpreter and dependency validation to [Python Runtime](references/config/python-runtime.md). The read-only localization branch follows its documented preference exception.
 
 ## Coding standards
 

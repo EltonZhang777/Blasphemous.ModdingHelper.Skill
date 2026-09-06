@@ -5,7 +5,7 @@ description: Shared command context, preferences gate, recovery, and completion 
 
 # Invocation preflight
 
-This reference is the single source of truth for the shared preflight contract of every operational `blasphemous-modding-helper` invocation. It owns command context, preference scope selection, first-time setup, path-failure recovery, the tracked-session stop exception, and preflight completion. The top-level [Skill](../../SKILL.md) remains the sole cross-branch router. Specialized references MUST link here and MUST add only their own requirements and evidence.
+This reference is the single source of truth for the shared preflight contract of every operational `blasphemous-modding-helper` invocation. It owns command context, preference scope selection, when first-time setup is required, path-failure recovery, the tracked-session stop exception, and preflight completion. Detailed setup questions, validation, save operations, and optional local checkout belong to [First-Time Setup](first-time-setup.md). The top-level [Skill](../../SKILL.md) remains the sole cross-branch router. Specialized references MUST link here and MUST add only their own requirements and evidence.
 
 The read-only [localization lookup branch](../sub-skills/localization-lookup.md) is the documented preference exception. It reads the bundled localization index as text and does not run Skill scripts, inspect a Modding profile, or inspect source code. It confirms the index path and file readability, then follows its own completion criteria.
 
@@ -53,7 +53,7 @@ When check finds no file, agent MUST enter [First-Time Setup](first-time-setup.m
 
 ## First-time setup and recovery
 
-[First-Time Setup](first-time-setup.md) owns setup questions, validation, scope save, and optional local ModdingAPI checkout. shared gate above owns when setup is required; this section owns common blocking and recovery contract:
+[First-Time Setup](first-time-setup.md) owns setup questions, validation, scope save, optional local ModdingAPI checkout, and the setup-specific success or incomplete result. The shared gate above owns when setup is required and consumes that result; this section owns the common blocking and recovery contract:
 
 - Missing preferences MUST block every operational branch until setup succeeds. The read-only localization lookup branch does not require preferences and remains available when no preference file exists. Setup failure MUST be reported with its error and retry path.
 - Only preflight exception is `/blasphemous-modding-test stop SESSION_ID`. It MUST use only recorded session identity, MUST address only that tracked process tree, and MUST not read or edit preferences when normal context preflight is unavailable.

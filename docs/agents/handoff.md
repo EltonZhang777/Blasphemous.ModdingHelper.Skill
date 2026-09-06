@@ -18,8 +18,9 @@ or:
 Status: historical snapshot
 ```
 
-Records without one of these markers are historical by default. A historical
-record is evidence tied to its recorded revision, not a current instruction.
+A record without one of these markers is invalid and MUST NOT be treated as a
+handoff record or current instruction. Historical records are evidence tied to
+their recorded revision, not current instructions.
 
 ## Active handoff minimum
 
