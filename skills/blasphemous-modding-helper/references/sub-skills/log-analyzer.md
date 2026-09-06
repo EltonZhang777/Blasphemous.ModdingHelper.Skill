@@ -51,7 +51,7 @@ The launcher captures only pre-session file metadata (including size, digest, an
 line count). A current source receives `baseline` labels only when its retained
 prefix still matches that digest and ends at a complete line boundary; a
 rewritten, truncated, missing, or otherwise unproven prefix receives no
-baseline labels. Baseline labels do not suppress or delete log lines. Newly
+baseline labels. Baseline labels are provenance only; log lines remain visible. Newly
 observed warnings and errors remain visible as `framework` or `unknown`
 evidence, and target-owned errors remain beside the startup result. The report
 stays bounded and does not persist a complete log copy.

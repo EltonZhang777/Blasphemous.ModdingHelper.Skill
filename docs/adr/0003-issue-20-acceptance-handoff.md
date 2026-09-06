@@ -1,10 +1,14 @@
-# Issue #20 acceptance handoff
+# Issue #20 historical acceptance handoff
+
+This handoff records evidence at commit `904ecbf` only. It is historical and
+non-authoritative for later repository states; current release decisions are
+tracked by [issue #89](https://github.com/EltonZhang777/Blasphemous.ModdingHelper.Skill/issues/89).
 
 ## Next-session focus
 
 Issue #20 has passed the final acceptance audit. Continue from the committed branch state below; do not reopen the standards design unless the user supplies a new requirement or upstream API evidence changes.
 
-## Current state
+## Recorded state
 
 - Worktree: `C:\Users\28090\Documents\GitHub\Blasphemous.ModdingHelper.Skill\.wt\csharp-code-standards`
 - Branch: `codex/csharp-code-standards`
@@ -12,7 +16,7 @@ Issue #20 has passed the final acceptance audit. Continue from the committed bra
 - Working tree: clean; branch is one commit ahead of its configured origin.
 - No push, pull request, or issue mutation was performed.
 - GitHub issue: [#20](https://github.com/EltonZhang777/Blasphemous.ModdingHelper.Skill/issues/20) remains open.
-- This handoff is local material under `docs/adr/` and is ignored by Git, as required by the design.
+- This handoff is tracked local material under `docs/adr/`.
 
 ## Authoritative artifacts
 
