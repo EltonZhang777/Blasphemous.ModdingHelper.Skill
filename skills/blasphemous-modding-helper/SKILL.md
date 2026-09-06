@@ -30,7 +30,7 @@ Before generating, modifying, reviewing, or refactoring Mod-owned C# in caller's
 - Game Unity baseline: Unity `2017.4.40f1`.
   - Agent MAY search Unity 2017.4.40f1 API documentation at `https://docs.unity3d.com/2017.4/Documentation/ScriptReference/30_search.html?q=<class-name-or-method-name>` for extra information. Agent SHOULD replace `<class-name-or-method-name>` with actual class or method name.
 - ModdingAPI documentation, source guidance, conventions, lifecycle, logging, and examples MUST pass through [Referencing ModdingAPI](references/sub-skills/referencing-modding-api.md) before agent browses selected reference.
-  - Route selects configured local checkout or resolves release-aware remote reference, then loads only topic needed for task.
+  - The route selects configured local checkout or resolves release-aware remote reference, then loads only topic needed for task.
 - Mods are developed under Blasphemous ModdingAPI framework. Agent MUST follow ModdingAPI conventions and best practices whenever it codes against selected reference.
 
 ## Workflow

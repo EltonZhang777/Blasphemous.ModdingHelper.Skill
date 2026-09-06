@@ -16,30 +16,36 @@ Caller's actual referenced ModdingAPI assembly MUST be first authority for signa
 
 If two authorities disagree, agent MUST inspect caller's version and corresponding source before generating code. If version or required API fact cannot be established, agent MUST stop and request source analysis or ask user; it MUST NOT guess from current upstream branch.
 
-For lifecycle and service questions, current upstream source entry points are [`BlasMod.cs`](https://github.com/BrandenEK/Blasphemous.ModdingAPI/blob/main/Blasphemous.ModdingAPI/BlasMod.cs) and [`ModServiceProvider.cs`](https://github.com/BrandenEK/Blasphemous.ModdingAPI/blob/main/Blasphemous.ModdingAPI/ModServiceProvider.cs). These links provide navigable upstream reference only; caller's referenced assembly and matching source remain authoritative.
+For lifecycle and service questions, current upstream source entry points are
+`Blasphemous.ModdingAPI/BlasMod.cs` and
+`Blasphemous.ModdingAPI/ModServiceProvider.cs`. Agent MUST open these paths through
+the release-aware `MODDING_API_SOURCE_URL` emitted by [Referencing ModdingAPI](../sub-skills/referencing-modding-api.md); caller's referenced assembly and matching source remain authoritative.
 
 Routed development documents are responsibility index, not second API encyclopedia. Agent MUST read only documents relevant to task and MUST verify their claims against higher-priority authorities above.
 
 ## ModdingAPI development-document route table
 
-Every document currently under upstream docs/development directory is listed here. task signal in second column MUST cause agent to read linked document when task reaches that responsibility.
+Every document currently under upstream docs/development directory is listed here. The
+paths resolve below `MODDING_API_DOCS_URL` emitted by the resolver; they are not fixed
+branch links. task signal in second column MUST cause agent to read the named document
+when task reaches that responsibility.
 
 | Upstream document | Read when the task involves | Responsibility |
 | --- | --- | --- |
-| [main.md](https://github.com/BrandenEK/Blasphemous.ModdingAPI/blob/main/docs/development/main.md) | Navigating ModdingAPI development topics | Index of setup, lifecycle, persistence, logging, modules, and archived services |
-| [setup.md](https://github.com/BrandenEK/Blasphemous.ModdingAPI/blob/main/docs/development/setup.md) | Creating or packaging a Mod project | Template commands, export layout, and resource folders |
-| [mod.md](https://github.com/BrandenEK/Blasphemous.ModdingAPI/blob/main/docs/development/mod.md) | Deriving from BlasMod or registering services | Mod class callbacks and ModServiceProvider entry point |
-| [execution.md](https://github.com/BrandenEK/Blasphemous.ModdingAPI/blob/main/docs/development/execution.md) | Ordering startup, initialization, save, or shutdown work | Manager and BlasMod event order |
-| [persistence.md](https://github.com/BrandenEK/Blasphemous.ModdingAPI/blob/main/docs/development/persistence.md) | Global or slot save data | Persistence interfaces, reset, load, save, and storage responsibilities |
-| [logging.md](https://github.com/BrandenEK/Blasphemous.ModdingAPI/blob/main/docs/development/logging.md) | Writing or reviewing ModLog calls | Upstream logging overview; the ModLog source below is authoritative for methods and effects |
-| [config.md](https://github.com/BrandenEK/Blasphemous.ModdingAPI/blob/main/docs/development/config.md) | Loading or saving Mod configuration | ConfigHandler usage and configuration data |
-| [files.md](https://github.com/BrandenEK/Blasphemous.ModdingAPI/blob/main/docs/development/files.md) | Loading Mod data, images, or other files | FileHandler and resource-loading responsibilities |
-| [input.md](https://github.com/BrandenEK/Blasphemous.ModdingAPI/blob/main/docs/development/input.md) | Registering keybindings or reading input | InputHandler and input lifecycle |
-| [localization.md](https://github.com/BrandenEK/Blasphemous.ModdingAPI/blob/main/docs/development/localization.md) | Registering or reading translated text | LocalizationHandler and language-change behavior |
-| [console.md](https://github.com/BrandenEK/Blasphemous.ModdingAPI/blob/main/docs/development/console.md) | Adding console commands | ModCommand and command registration |
-| [items.md](https://github.com/BrandenEK/Blasphemous.ModdingAPI/blob/main/docs/development/items.md) | Adding items or item effects | Item registration and item-specific extension points |
-| [levels.md](https://github.com/BrandenEK/Blasphemous.ModdingAPI/blob/main/docs/development/levels.md) | Modifying or adding levels | Level modification surface; the upstream page is marked active development |
-| [penitence.md](https://github.com/BrandenEK/Blasphemous.ModdingAPI/blob/main/docs/development/penitence.md) | Adding penitences | Penitence registration and image/effect responsibilities |
+| `docs/development/main.md` | Navigating ModdingAPI development topics | Index of setup, lifecycle, persistence, logging, modules, and archived services |
+| `docs/development/setup.md` | Creating or packaging a Mod project | Template commands, export layout, and resource folders |
+| `docs/development/mod.md` | Deriving from BlasMod or registering services | Mod class callbacks and ModServiceProvider entry point |
+| `docs/development/execution.md` | Ordering startup, initialization, save, or shutdown work | Manager and BlasMod event order |
+| `docs/development/persistence.md` | Global or slot save data | Persistence interfaces, reset, load, save, and storage responsibilities |
+| `docs/development/logging.md` | Writing or reviewing ModLog calls | Upstream logging overview; the ModLog source below is authoritative for methods and effects |
+| `docs/development/config.md` | Loading or saving Mod configuration | ConfigHandler usage and configuration data |
+| `docs/development/files.md` | Loading Mod data, images, or other files | FileHandler and resource-loading responsibilities |
+| `docs/development/input.md` | Registering keybindings or reading input | InputHandler and input lifecycle |
+| `docs/development/localization.md` | Registering or reading translated text | LocalizationHandler and language-change behavior |
+| `docs/development/console.md` | Adding console commands | ModCommand and command registration |
+| `docs/development/items.md` | Adding items or item effects | Item registration and item-specific extension points |
+| `docs/development/levels.md` | Modifying or adding levels | Level modification surface; the upstream page is marked active development |
+| `docs/development/penitence.md` | Adding penitences | Penitence registration and image/effect responsibilities |
 
 Route table MUST be updated when upstream development directory gains or removes document. stale page MAY provide context, but it MUST NOT override conflicting assembly or source fact.
 
@@ -83,7 +89,9 @@ Current BlasMod constructor registers Mod, applies Harmony patches to Mod assemb
 
 ## ModLog
 
-Authoritative current source is [ModLog.cs](https://github.com/BrandenEK/Blasphemous.ModdingAPI/blob/main/Blasphemous.ModdingAPI/ModLog.cs). source currently exposes these public methods; Register is internal and MUST NOT be called by Mod code.
+Authoritative current source is `Blasphemous.ModdingAPI/ModLog.cs`, opened through
+the release-aware `MODDING_API_SOURCE_URL`. source currently exposes these public
+methods; Register is internal and MUST NOT be called by Mod code.
 
 | Public method | Public overloads | Source behavior | Intended use |
 | --- | --- | --- | --- |
