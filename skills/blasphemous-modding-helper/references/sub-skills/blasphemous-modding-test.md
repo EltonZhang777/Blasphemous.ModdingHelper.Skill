@@ -1,5 +1,7 @@
 # `/blasphemous-modding-test`
 
+The top-level `blasphemous-modding-helper` Skill is the normal entry point and routes here automatically. The documented `/blasphemous-modding-test stop SESSION_ID` path is a safety exception for stopping a recorded session.
+
 This is authoritative workflow for repeatable local Blasphemous mod tests. Agent MUST use it when task needs to build or select mod package, deploy it to modding profile, launch profile-local game, inspect startup evidence, stop tracked session, clean deployment, or collect player's Manual verification description, including when no new automated run is requested.
 
 Python CLI automates filesystem, build, process, and log operations. It does not control game through MCP and it does not verify visual, input, combat, menu, save, or other in-game behavior. Keep automated evidence and player's **Manual verification** as separate evidence sources.
@@ -186,7 +188,7 @@ Unity:   <unity_log_dir>/Player.log           (native Linux/macOS, then output_l
 
 `LogOutput.log` contains current BepInEx run and overwrites previous run; there is no BepInEx history or polling log to recover. The launcher records pre-session metadata, so an unchanged existing log is marked `stale` and ignored for this session unless its content changes after launch. If the changed log retains the exact pre-session byte prefix ending at a complete line boundary, structured diagnostics in that prefix may receive the `baseline` provenance label; rewritten or unproven content does not. Missing or unreadable BepInEx log is hard logs/readiness failure. Missing Unity log is warning and requires user handoff above.
 
-Package `TargetName` identifies the publish package, not necessarily the runtime Mod identity. The CLI persists bounded runtime aliases derived from `TargetName`, an explicit project `AssemblyName`, and the project name. Structured ModdingAPI or Mod Loader registration evidence exposes the canonical `mod_id`; standard BepInEx `Loading`/`Loaded` evidence exposes the human-readable `mod_name`. Mod Loader identity is preferred for target matching. A BepInEx display name participates only through an explicit display-name alias or as corroborating context; it is never rewritten as a canonical ID. Positive target evidence requires a current BepInEx chainloader readiness record plus an exact structured target record. Paths, errors, and unstructured mentions do not count. A target error before positive registration prevents promotion; a later target error is retained as diagnostic metadata without demoting an already established load. The session manifest retains bounded source, path, line, reason, kind, text, and available identity metadata for matched evidence; it never copies a log.
+Package `TargetName` identifies the publish package, not necessarily the runtime Mod identity. The CLI persists bounded runtime aliases derived from `TargetName`, an explicit project `AssemblyName`, and the project name. Structured ModdingAPI or Mod Loader registration evidence exposes the canonical `mod_id`; standard BepInEx `Loading`/`Loaded` evidence exposes the human-readable `mod_name`. Mod Loader identity is preferred for target matching. A BepInEx display name participates only through an explicit display-name alias or as corroborating context; it is never rewritten as a canonical ID. Positive target evidence requires a current BepInEx chainloader readiness record plus an exact structured target record. Paths, errors, and unstructured mentions are excluded from positive evidence. A target error before positive registration prevents promotion; a later target error is retained as diagnostic metadata without demoting an already established load. The session manifest retains bounded source, path, line, reason, kind, text, and available identity metadata for matched evidence; it never copies a log.
 
 Structured warning and error evidence is grouped as `target`, `framework`, `baseline`, or `unknown`. `baseline` is derived from the retained pre-session log prefix, not from hardcoded warning text; it remains visible and does not suppress newly observed or target-owned diagnostics. See the [log analyzer ownership rules](log-analyzer.md).
 
@@ -195,7 +197,7 @@ Startup states are deliberately narrower than gameplay results:
 | State | Automated evidence |
 | --- | --- |
 | `launched` | The selected profile-local launcher produced a safely tracked process, but current BepInEx readiness is not established. |
-| `ready` | The current BepInEx log contains chainloader readiness evidence, including `Chainloader startup complete`. |
+| `ready` | The current BepInEx log contains an exact chainloader completion record: `Chainloader startup complete`, `Chainloader start-up complete`, `Chainloader initialized`, or `Chainloader initialised`. |
 | `mod_loaded` | `ready` plus current structured ModdingAPI or Mod Loader registration, or standard BepInEx loading evidence, matching a derived runtime alias exactly. |
 | `timeout` | `--startup-timeout` expired before `mod_loaded`; the session and process remain for diagnosis. |
 

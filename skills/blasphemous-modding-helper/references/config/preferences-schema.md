@@ -80,6 +80,6 @@ Every fixture record MUST declare `fixture_version` equal to its `tag_name` or
 
 Resolver output reports `MODDING_API_REFERENCE_VERSION`, fixture source,
 fixture version, and `MODDING_API_FIXTURE_STATUS=historical` together. Missing
-or mismatched `fixture_version` fails deterministically; repair the fixture or
-use a matching selector. This prevents old fixtures from resembling the
-current API.
+or mismatched `fixture_version` fails deterministically. Agent MUST repair the
+fixture or use a matching selector. This prevents old fixtures from resembling
+the current API.

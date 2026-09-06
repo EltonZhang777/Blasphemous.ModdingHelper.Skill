@@ -1,6 +1,6 @@
 {
   "name": "blasphemous-modding-helper",
-  "description": "Blasphemous modding development helper skill for AI coding agents",
+  "description": "Blasphemous modding, testing, log analysis, and localization helper skill for AI coding agents",
   "version": "1.2.0",
   "author": "EltonZhang777",
   "repository": "https://github.com/EltonZhang777/Blasphemous.ModdingHelper.Skill",
@@ -8,7 +8,7 @@
   "skills": [
     {
       "name": "blasphemous-modding-helper",
-      "description": "Provides expert assistance with Blasphemous mod development, source code navigation, log analysis, and mod creation."
+      "description": "Provides expert assistance with Blasphemous mod development, source navigation, log analysis, mod testing, and localization lookup."
     }
   ]
 }

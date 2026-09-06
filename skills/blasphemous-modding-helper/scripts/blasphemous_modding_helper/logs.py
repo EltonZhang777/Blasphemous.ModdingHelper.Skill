@@ -351,23 +351,22 @@ def read_log_source(
 def chainloader_ready(lines: Sequence[str]) -> bool:
     """Recognize BepInEx chainloader completion records."""
 
-    readiness_words = (
-        "initialized",
-        "initialised",
-        "ready",
-        "completed",
-        "finished",
-        "loaded",
-        "startup complete",
-        "start-up complete",
-    )
     for line in lines:
-        lowered = line.casefold()
-        if "chainloader" in lowered and any(
-            word in lowered for word in readiness_words
+        match = _CHAINLOADER_COMPLETION_RECORD.match(line)
+        if match is not None and (
+            match.group("level") is None
+            or _is_positive_record_level(match.group("level"))
         ):
             return True
     return False
+
+
+_CHAINLOADER_COMPLETION_RECORD = re.compile(
+    r"^\s*(?:\[(?P<level>[^:\]\r\n]+):[^\]\r\n]+\]\s+)?"
+    r"Chainloader\s+"
+    r"(?:(?:start-up|startup)\s+complete|initiali[sz]ed)\s*$",
+    re.IGNORECASE,
+)
 
 
 _BEPINEX_LOAD_RECORD = re.compile(

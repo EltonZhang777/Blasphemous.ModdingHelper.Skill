@@ -30,7 +30,7 @@ Before generating, modifying, reviewing, or refactoring Mod-owned C# in caller's
 - Game Unity baseline: Unity `2017.4.40f1`.
   - Agent MAY search Unity 2017.4.40f1 API documentation at `https://docs.unity3d.com/2017.4/Documentation/ScriptReference/30_search.html?q=<class-name-or-method-name>` for extra information. Agent SHOULD replace `<class-name-or-method-name>` with actual class or method name.
 - ModdingAPI documentation, source guidance, conventions, lifecycle, logging, and examples MUST pass through [Referencing ModdingAPI](references/sub-skills/referencing-modding-api.md) before agent browses selected reference.
-  - Route selects configured local checkout or resolves release-aware remote reference, then loads only topic needed for task.
+  - The route selects configured local checkout or resolves release-aware remote reference, then loads only topic needed for task.
 - Mods are developed under Blasphemous ModdingAPI framework. Agent MUST follow ModdingAPI conventions and best practices whenever it codes against selected reference.
 
 ## Workflow
@@ -52,11 +52,11 @@ Agent MUST analyze user question to determine user intent and task to perform, e
 - Whether user request involves debugging, log tracking, or error tracking.
   - If yes, agent SHOULD create sub-agent or sub-task to handle log analysis using [references/sub-skills/log-analyzer.md](references/sub-skills/log-analyzer.md).
 - Whether user request involves mod test: building or selecting mod package, deploying it, launching it, reading startup evidence or test logs/status, stopping or cleaning session, or collecting Manual verification, including when no new automated run is requested.
-  - If yes, agent MUST route to authoritative [`/blasphemous-modding-test`](references/sub-skills/blasphemous-modding-test.md) sub-skill.
+  - If yes, agent MUST route to the authoritative [`/blasphemous-modding-test`](references/sub-skills/blasphemous-modding-test.md) workflow reference.
 - Whether user request asks to identify, explain, compare, or translate a Blasphemous 1 term, name, UI phrase, or textual reference in natural language.
   - If yes, agent MUST route to [Localization lookup](references/sub-skills/localization-lookup.md) before using source analysis or an operational branch.
 
-**Done when**: user question is classified into one or more applicable branches (localization lookup, source code analysis, log analysis, mod testing, or general modding question), and every applicable specialized branch has been routed to its authoritative sub-skill or analysis task.
+**Done when**: user question is classified into one or more applicable branches (localization lookup, source code analysis, log analysis, mod testing, or general modding question), and every applicable specialized branch has been routed to its authoritative workflow reference or analysis task.
 
 ### Step 3: Use Tools to Gather Information
 

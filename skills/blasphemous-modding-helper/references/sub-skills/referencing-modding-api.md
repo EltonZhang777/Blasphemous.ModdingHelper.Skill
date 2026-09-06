@@ -120,8 +120,8 @@ or retry when Release lookup fails.
 
 The fixture schema, provenance fields, and mismatch recovery contract are
 defined in [preferences-schema.md#resolver-fixture-contract](../config/preferences-schema.md#resolver-fixture-contract).
-The smoke check consumes that contract and never presents fixture data as live
-Release metadata.
+The smoke check consumes that contract and never presents fixture data as live Release
+metadata.
 
 ## Local checkout use
 
@@ -141,8 +141,8 @@ Tags and commits are detached; explicit branches track their corresponding
 Agent MUST use lifecycle manager only when user explicitly asks to check or
 update local checkout. Ordinary ModdingAPI questions MUST NOT mutate the
 checkout. Python `clone_modding_api.py` owns fresh-clone behavior and Python
-`manage_modding_api.py` owns check/update behavior. Its compatibility wrappers
-expose the existing operation model:
+`manage_modding_api.py` owns check/update behavior; its compatibility wrappers expose
+the existing operation model:
 
 ```bash
 "$PYTHON3" "$SKILL_ROOT/scripts/manage_modding_api.py" --operation check
