@@ -79,6 +79,87 @@ class BlasphemousModdingLogsTests(unittest.TestCase):
         self.assertTrue(any(hit.mod_id == "RuntimeProject" for hit in bounded.hits))
         self.assertTrue(any(hit.mod_name == "RuntimeProject" for hit in bounded.hits))
 
+    def test_chainloader_ready_requires_an_explicit_positive_record(self):
+        positive = (
+            "[Info : BepInEx] Chainloader initialized\n",
+            "[Message: BepInEx] Chainloader startup complete\n",
+            "[Message: Mod Loader] Chainloader start-up complete\n",
+        )
+        negative_or_ambiguous = (
+            "[Info : BepInEx] Chainloader not ready\n",
+            "[Info : BepInEx] Chainloader unloaded\n",
+            "[Info : BepInEx] Chainloader startup incomplete\n",
+            "[Error: BepInEx] Chainloader startup complete with errors\n",
+            "Chainloader is ready for startup\n",
+        )
+
+        for line in positive:
+            with self.subTest(line=line):
+                self.assertTrue(logs.chainloader_ready((line,)))
+        for line in negative_or_ambiguous:
+            with self.subTest(line=line):
+                self.assertFalse(logs.chainloader_ready((line,)))
+
+    def test_negative_chainloader_evidence_cannot_promote_target_load(self):
+        self.bepinex.write_text("pre-session\n", encoding="utf-8")
+        self.unity.write_text("Unity startup\n", encoding="utf-8")
+        process_state = self.current_process_state()
+        self.bepinex.write_text(
+            "[Info : BepInEx] Chainloader not ready\n"
+            "[Info : BepInEx] Loaded [RuntimeProject 1.0.0]\n",
+            encoding="utf-8",
+        )
+
+        report = logs.collect_log_evidence(
+            self.bepinex,
+            self.unity,
+            process_state,
+            "RuntimeProject",
+            ("RuntimeProject",),
+        )
+
+        self.assertFalse(report.ready)
+        self.assertFalse(report.mod_loaded)
+        self.assertEqual(report.state, "launched")
+
+    def test_target_error_order_controls_mod_loaded_state(self):
+        self.bepinex.write_text("pre-session\n", encoding="utf-8")
+        self.unity.write_text("Unity startup\n", encoding="utf-8")
+        process_state = self.current_process_state()
+
+        self.bepinex.write_text(
+            "[Info : BepInEx] Chainloader startup complete\n"
+            "[Error : BepInEx] RuntimeProject failed to load\n"
+            "[Info : ModdingAPI] Registered Mod: RuntimeProject\n",
+            encoding="utf-8",
+        )
+        before_error = logs.collect_log_evidence(
+            self.bepinex,
+            self.unity,
+            process_state,
+            "RuntimeProject",
+            ("RuntimeProject",),
+        )
+        self.assertTrue(before_error.ready)
+        self.assertFalse(before_error.mod_loaded)
+
+        self.bepinex.write_text(
+            "[Info : BepInEx] Chainloader startup complete\n"
+            "[Info : ModdingAPI] Registered Mod: RuntimeProject\n"
+            "[Error : BepInEx] RuntimeProject failed after registration\n",
+            encoding="utf-8",
+        )
+        after_error = logs.collect_log_evidence(
+            self.bepinex,
+            self.unity,
+            process_state,
+            "RuntimeProject",
+            ("RuntimeProject",),
+        )
+        self.assertTrue(after_error.ready)
+        self.assertTrue(after_error.mod_loaded)
+        self.assertTrue(any(hit.kind == "error" for hit in after_error.hits))
+
     def test_stale_source_is_ignored_and_errors_remain_diagnostic(self):
         self.bepinex.write_text(
             "[Info : BepInEx] Chainloader initialized\n"
