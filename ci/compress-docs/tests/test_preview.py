@@ -171,8 +171,7 @@ class PreviewCliTests(unittest.TestCase):
         self.assertNotEqual(events[1]["cwd"], str(REPO_ROOT))
         self.assertIn("--sandbox", events[1]["argv"])
         self.assertIn("read-only", events[1]["argv"])
-        self.assertIn("--ask-for-approval", events[1]["argv"])
-        self.assertIn("never", events[1]["argv"])
+        self.assertNotIn("--ask-for-approval", events[1]["argv"])
         self.assertIn("--cd", events[1]["argv"])
         self.assertFalse(events[1]["prompt_has_frontmatter"])
 

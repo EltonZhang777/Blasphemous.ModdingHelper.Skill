@@ -1,6 +1,6 @@
 # Tools / PlayMaker / Miscellaneous
 
-Source code navigation for custom tools, PlayMaker FSM Actions/Conditions/Events, data containers, NPCs, level tools, and other miscellaneous items.
+Source navigation for custom tools, PlayMaker FSM Actions/Conditions/Events, data containers, NPCs, level tools, and miscellaneous items.
 
 ## Core Design Patterns
 
@@ -229,7 +229,7 @@ Source code navigation for custom tools, PlayMaker FSM Actions/Conditions/Events
 - `SharedCommand.cs` - Shared command definition
 - `SubTitleBlock.cs` - Subtitle block
 
-> Localization data containers (`LocalizationSpacingData.cs`, `TimeLocalization.cs`) are documented in [localization.md](localization.md).
+> Localization containers (`LocalizationSpacingData.cs`, `TimeLocalization.cs`) are documented in [localization.md](localization.md).
 
 ## NPC
 
@@ -245,11 +245,11 @@ Source code navigation for custom tools, PlayMaker FSM Actions/Conditions/Events
 
 ### Items
 
-> Item effect scripts under `Tools/Items/` are documented in [items.md](items.md) (Special Item Effects section).
+> Item effect scripts in `Tools/Items/` are documented in [items.md](items.md) (Special Item Effects).
 
 ### Level
 
-> Level scripts under `Tools/Level/` (Actionables, Interactables, Layout, Effects, Utils) are documented in [level.md](level.md).
+> Level scripts in `Tools/Level/` (Actionables, Interactables, Layout, Effects, Utils) are documented in [level.md](level.md).
 
 ### UI (UI Utilities)
 

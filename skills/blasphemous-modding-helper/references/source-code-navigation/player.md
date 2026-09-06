@@ -1,6 +1,6 @@
 # Player
 
-Source code navigation for Player System (Penitent). active instance is accessible via `Core.Logic.Penitent`.
+Player System (Penitent) source navigation; active instance: `Core.Logic.Penitent`.
 
 ## Core Design Patterns
 

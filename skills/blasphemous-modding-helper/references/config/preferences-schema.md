@@ -2,7 +2,7 @@
 
 ## Format
 
-`preferences.md` uses plain `key: value` lines (YAML subset, no top-level marker):
+`preferences.md` uses plain `key: value` lines (YAML subset; no top-level marker):
 
 ```yaml
 full_source_code_path: Path/to/blasphemous-source-code
@@ -31,22 +31,22 @@ modding_api_reference_selector: latest
 
 ## Approved local reference locations
 
-Local checkout uses same scope domain as its preferences file:
+Local checkout uses the same scope as its preferences file:
 
 | Scope | Reference path | Preferences path |
 |-------|----------------|------------------|
 | User | `$HOME/.skills/blasphemous-modding-helper/references/modding-api` | `$HOME/.skills/blasphemous-modding-helper/preferences.md` |
 | Project | `.skills/blasphemous-modding-helper/references/modding-api` | `.skills/blasphemous-modding-helper/preferences.md` |
 
-Stored `modding_api_reference_path` value is absolute after setup. Missing
-ModdingAPI fields are valid in legacy preferences and are added only when the
-user opts into local reference setup. skipped local setup leaves both fields
-absent so release-aware remote fallback remains available.
+`modding_api_reference_path` is absolute after setup. Missing
+ModdingAPI fields remain valid in legacy preferences and are added only when the
+user opts into local reference setup. Skipping local setup leaves both fields
+absent, preserving release-aware remote fallback.
 
 ## Sibling lock state
 
 Lifecycle commands store reproducibility state beside, not inside, the
-checkout. For reference path ending in `references/modding-api`, lock
+checkout. For a reference path ending in `references/modding-api`, lock
 path is `references/modding-api.lock`. lock is plain `key: value` text:
 
 ```yaml
@@ -58,12 +58,12 @@ repository: https://github.com/BrandenEK/Blasphemous.ModdingAPI.git
 ```
 
 `selector`, `resolved_tag`, `resolved_commit`, and `checked_at` are required.
-`repository` value records supported upstream used by operation.
-Lock file is managed state and is not part of upstream Git worktree.
+`repository` records the supported upstream used by the operation.
+Lock file is managed state, not part of the upstream Git worktree.
 
 ## Resolver fixture contract
 
-`--metadata-file` is a deterministic test input, not live Release metadata.
+`--metadata-file` is deterministic test input, not live Release metadata.
 Every fixture record MUST declare `fixture_version` equal to its `tag_name` or
 `resolved_ref`:
 
@@ -79,7 +79,7 @@ Every fixture record MUST declare `fixture_version` equal to its `tag_name` or
 ```
 
 Resolver output reports `MODDING_API_REFERENCE_VERSION`, fixture source,
-fixture version, and `MODDING_API_FIXTURE_STATUS=historical` together. A
-missing or mismatched `fixture_version` is a deterministic failure; repair the
-fixture or use a matching selector. This prevents an old fixture from looking
-like the current API.
+fixture version, and `MODDING_API_FIXTURE_STATUS=historical` together. Missing
+or mismatched `fixture_version` fails deterministically; repair the fixture or
+use a matching selector. This prevents old fixtures from resembling the
+current API.

@@ -1,6 +1,6 @@
 # Blasphemous Source Code Navigation Guide
 
-Blasphemous source code full navigation. All paths are relative to `Assembly-CSharp/`.
+Blasphemous source navigation. Paths relative to `Assembly-CSharp/`.
 
 ---
 

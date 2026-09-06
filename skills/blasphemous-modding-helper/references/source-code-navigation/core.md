@@ -1,6 +1,6 @@
 # Core
 
-Core navigation of Blasphemous framework — infrastructure for all Managers, core systems, attribute system, audio, dialog, map, DLC, Boss Rush, achievements, etc.
+Core navigation of Blasphemous framework — infrastructure for Managers, core systems, attributes, audio, dialog, map, DLC, Boss Rush, achievements, etc.
 
 > **Key Entry Points for Mod Development:**
 > - `Core` is global singleton, accessed via `Core.Instance`. Inherits from `Singleton<Core>`.
@@ -19,7 +19,7 @@ Core navigation of Blasphemous framework — infrastructure for all Managers, co
 
 ## Managers
 
-Core Manager layer in Framework, located at `Framework/Managers/`. All Managers inherit from `GameSystem` and are created and managed uniformly by `Core`.
+Core Manager layer in Framework at `Framework/Managers/`. All Managers inherit from `GameSystem`; `Core` creates and manages them uniformly.
 
 > `Core` creates all Managers in `PreInit()` and exposes them as static properties, accessed via `Core.XXX`.
 
