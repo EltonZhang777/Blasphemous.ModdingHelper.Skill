@@ -73,6 +73,8 @@ After installation, manually activate the skill:
 - **Sub-Skills**:
   - **Source Analyzer** — Read and analyze game source code to understand mechanics, structure, and dependencies
   - **Log Analyzer** — Debug and error tracking for mod development (BepInEx and Unity logs)
+  - **Mod Test** — Build, deploy, launch, inspect startup evidence, stop, clean, and collect Manual verification
+  - **Localization Lookup** — Read-only lookup and translation support for Blasphemous 1 terms and UI text
 - **Configuration Reference** — First-time setup and preferences documentation
 
 ---

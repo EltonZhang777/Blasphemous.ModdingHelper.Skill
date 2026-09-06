@@ -17,6 +17,16 @@
       "version": "1.2.0",
       "description": "BepInEx and Unity log analysis reference for debugging",
       "path": "skills/blasphemous-modding-helper/references/sub-skills/log-analyzer.md"
+    },
+    "blasphemous-modding-helper:blasphemous-modding-test": {
+      "version": "1.2.0",
+      "description": "Local build, deployment, startup evidence, and Manual verification workflow",
+      "path": "skills/blasphemous-modding-helper/references/sub-skills/blasphemous-modding-test.md"
+    },
+    "blasphemous-modding-helper:localization-lookup": {
+      "version": "1.2.0",
+      "description": "Read-only Blasphemous 1 localization lookup reference",
+      "path": "skills/blasphemous-modding-helper/references/sub-skills/localization-lookup.md"
     }
   }
 }
