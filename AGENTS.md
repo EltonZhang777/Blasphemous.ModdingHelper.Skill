@@ -13,7 +13,7 @@ Use the narrowest authoritative file for each change:
 - `skills/blasphemous-modding-helper/scripts/blasphemous_modding_helper/preferences.py` owns Python preference scope and parsing; `decompiler.py` owns the cross-platform decompilation workflow.
 - `skills/blasphemous-modding-helper/references/source-code-navigation/MAIN.md` is the navigation index. Route to one topical document (`core`, `player`, `enemy`, `bosses`, `ui`, `items`, `level`, `tools`, or `localization`) before searching its details.
 - `bin/install.js` owns installer behavior, agent detection, provider IDs, and CLI flags. `install.sh` and `install.ps1` are thin entry shims and should remain behaviorally aligned with it.
-- `ci/version.yml` is the version source. `ci/UpdateVersionNumber.py` synchronizes the version fields in `package.json`, `.claude-plugin/plugin.json`, `gemini-extension.json`, and `skills-lock.json`.
+- `ci/update-version/version.yml` is the version source. `ci/update-version/UpdateVersionNumber.py` synchronizes the version fields in `package.json`, `.claude-plugin/plugin.json`, `gemini-extension.json`, and `skills-lock.json`.
 - `README.md`, `.claude-plugin/plugin.json`, `gemini-extension.json`, and `skills-lock.json` are public distribution metadata; update them when user-visible installation or package metadata changes.
 - `.github/workflows/build.yml` is the CI and release-packaging contract. The release archive contains the skill directory plus the two installer shims.
 
@@ -54,7 +54,7 @@ Run only the checks relevant to the changed area:
 
 - Installer or JavaScript: `node --check bin/install.js`, both installer dry-runs above, and `node bin/install.js --help`.
 - Python Skill workflows: use a resolved Python 3.9+ interpreter for `tests/run_blasphemous_modding_test.py` or `skills/blasphemous-modding-helper/scripts/test_modding_api_acceptance.py`; use `-m py_compile` on changed entry points.
-- Version or manifest: run `python ci/UpdateVersionNumber.py --dry-run`, parse every changed JSON manifest, and confirm all version fields agree with `ci/version.yml`. Use the available Python 3 interpreter on the host.
+- Version or manifest: run `python ci/update-version/UpdateVersionNumber.py --dry-run`, parse every changed JSON manifest, and confirm all version fields agree with `ci/update-version/version.yml`. Use the available Python 3 interpreter on the host.
 - Skill or Markdown references: inspect every changed relative link and confirm paths/case match the repository. For source navigation, check `MAIN.md` routing and keep class-to-document mappings in one topical file.
 - Any change: `git diff --check` and a final `git status --short`.
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Update the package version everywhere from ci/version.yml.
+"""Update the package version everywhere from ci/update-version/version.yml.
 
-ci/version.yml is the single source of truth:
+ci/update-version/version.yml is the single source of truth:
 
     version: 1.2.0
 
@@ -13,8 +13,8 @@ Every "version" field in the JSON manifests below is rewritten to match it:
     skills-lock.json            (main entry + sub-skill entries)
 
 Usage:
-    python ci/UpdateVersionNumber.py            # read ci/version.yml and update
-    python ci/UpdateVersionNumber.py --dry-run  # report changes without writing
+    python ci/update-version/UpdateVersionNumber.py            # read version.yml and update
+    python ci/update-version/UpdateVersionNumber.py --dry-run  # report changes without writing
 
 Exit code 0 on success, 1 on failure (missing/invalid version source,
 non-SemVer value, or no manifest updated).
@@ -28,10 +28,10 @@ import re
 import sys
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
-VERSION_FILE = REPO_ROOT / "ci" / "version.yml"
+REPO_ROOT = Path(__file__).resolve().parents[2]
+VERSION_FILE = REPO_ROOT / "ci" / "update-version" / "version.yml"
 
-# Files whose "version" fields are kept in sync with ci/version.yml.
+# Files whose "version" fields are kept in sync with version.yml.
 MANIFESTS = [
     "package.json",
     ".claude-plugin/plugin.json",
@@ -47,7 +47,7 @@ VERSION_KEY_RE = re.compile(r'("version"\s*:\s*")[^"]*(")')
 
 
 def read_version() -> str:
-    """Parse `version: X.Y.Z` from ci/version.yml, tolerating comments."""
+    """Parse `version: X.Y.Z` from version.yml, tolerating comments."""
     if not VERSION_FILE.is_file():
         sys.exit(f"error: version source not found: {VERSION_FILE}")
     for raw in open(VERSION_FILE, encoding="utf-8", newline="").read().splitlines():
@@ -83,7 +83,7 @@ def rewrite_manifest(rel_path: str, new_version: str):
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Sync package version from ci/version.yml into all manifests."
+        description="Sync package version from version.yml into all manifests."
     )
     parser.add_argument(
         "--dry-run",
