@@ -5,6 +5,7 @@ from pathlib import Path
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
+VERSION_SOURCE = REPOSITORY_ROOT / "skills" / "blasphemous-modding-helper" / "version.yml"
 ROUTED_REFERENCES = {
     "blasphemous-modding-helper:source-analyzer": (
         "Source Analyzer",
@@ -27,9 +28,11 @@ ROUTED_REFERENCES = {
 
 class ReleaseMetadataTests(unittest.TestCase):
     def test_public_manifests_share_the_version_source(self):
-        version_text = (
-            REPOSITORY_ROOT / "ci" / "update-version" / "version.yml"
-        ).read_text(encoding="utf-8")
+        self.assertTrue(VERSION_SOURCE.is_file())
+        self.assertFalse(
+            (REPOSITORY_ROOT / "ci" / "update-version" / "version.yml").exists()
+        )
+        version_text = VERSION_SOURCE.read_text(encoding="utf-8")
         version = re.search(r"^version:\s*([^\s#]+)\s*$", version_text, re.MULTILINE)
         self.assertIsNotNone(version)
         expected = version.group(1)

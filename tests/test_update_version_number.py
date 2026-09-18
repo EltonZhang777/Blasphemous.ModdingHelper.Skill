@@ -35,7 +35,9 @@ class UpdateVersionNumberTests(unittest.TestCase):
         update_version_dir = self.root / "ci" / "update-version"
         update_version_dir.mkdir(parents=True)
         shutil.copy2(SCRIPT, update_version_dir / SCRIPT.name)
-        (update_version_dir / "version.yml").write_text(
+        skill_dir = self.root / "skills" / "blasphemous-modding-helper"
+        skill_dir.mkdir(parents=True)
+        (skill_dir / "version.yml").write_text(
             "version: 2.0.0\n", encoding="utf-8"
         )
 
@@ -117,8 +119,24 @@ class UpdateVersionNumberTests(unittest.TestCase):
         self.assertIn("required manifest", result.stderr)
         self.assertEqual(package_path.read_bytes(), before)
 
+    def test_missing_version_source_fails_before_writing_manifests(self):
+        package_path = self.root / "package.json"
+        package = json.loads(package_path.read_text(encoding="utf-8"))
+        package["version"] = "1.2.0"
+        package_path.write_text(
+            json.dumps(package, indent=2) + "\n", encoding="utf-8"
+        )
+        before = package_path.read_bytes()
+        (self.root / "skills" / "blasphemous-modding-helper" / "version.yml").unlink()
+
+        result = self.run_updater()
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("version source not found", result.stderr)
+        self.assertEqual(package_path.read_bytes(), before)
+
     def test_rejects_invalid_semver_source(self):
-        (self.root / "ci" / "update-version" / "version.yml").write_text(
+        (self.root / "skills" / "blasphemous-modding-helper" / "version.yml").write_text(
             "version: 01.2.3\n", encoding="utf-8"
         )
 
@@ -128,7 +146,7 @@ class UpdateVersionNumberTests(unittest.TestCase):
         self.assertIn("not valid SemVer", result.stderr)
 
     def test_accepts_semver_prerelease_and_build_metadata(self):
-        (self.root / "ci" / "update-version" / "version.yml").write_text(
+        (self.root / "skills" / "blasphemous-modding-helper" / "version.yml").write_text(
             "version: 1.0.0-alpha+001\n", encoding="utf-8"
         )
 
@@ -145,6 +163,10 @@ class UpdateVersionNumberTests(unittest.TestCase):
         result = self.run_updater("--dry-run")
 
         self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn(
+            f"version source: {Path('skills') / 'blasphemous-modding-helper' / 'version.yml'} -> 2.0.0",
+            result.stdout,
+        )
         self.assertIn("would be updated", result.stdout)
         for relative_path, contents in before.items():
             self.assertEqual((self.root / relative_path).read_bytes(), contents)
