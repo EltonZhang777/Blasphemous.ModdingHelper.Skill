@@ -27,7 +27,7 @@ Before asking the first-time setup questions, the agent MUST resolve a Python in
 
 The selected interpreter MUST be Python 3.9 or newer. The preflight MUST validate the Skill's `requirements.txt` in that interpreter environment and MUST NOT install or upgrade packages.
 
-The manifest currently declares standard-library-only runtime behavior. Supported entries are a package name with an optional `==`, `!=`, `~=`, `>=`, `<=`, `>`, or `<` version constraint. Unsupported pip directives are configuration errors.
+The manifest declares only the explicit runtime dependencies required by the Skill, currently PyYAML for `config.yml` parsing. Supported entries are a package name with an optional `==`, `!=`, `~=`, `>=`, `<=`, `>`, or `<` version constraint. Unsupported pip directives are configuration errors.
 
 ## Result contract
 

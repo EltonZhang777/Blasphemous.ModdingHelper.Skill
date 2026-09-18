@@ -533,7 +533,7 @@ def _default_process_platform_adapter() -> PlatformAdapter:
         ) from error
 
 
-def _parse_preferences(path: Path) -> Dict[str, str]:
+def _parse_preferences(path: Path) -> Dict[str, object]:
     try:
         return parse_preferences(path, required=("modding_profile_path",))
     except PreferenceError as error:
@@ -555,10 +555,10 @@ def load_preferences(cwd: Optional[Path] = None, home: Optional[Path] = None) ->
         )
     except PreferenceError as error:
         message = str(error)
-        if message.startswith("No preferences.md found."):
+        if message.startswith("No config.yml found."):
             message = (
-                "No preferences.md found. Complete first-time setup before "
-                f"running the test CLI. {message[len('No preferences.md found. '):]}"
+                "No config.yml found. Complete first-time setup before "
+                f"running the test CLI. {message[len('No config.yml found. '):]}"
             )
         raise CliError(EXIT_PROFILE, "profile/preferences", message) from error
 

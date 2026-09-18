@@ -20,6 +20,7 @@ if str(SCRIPT_ROOT) not in sys.path:
     sys.path.insert(0, str(SCRIPT_ROOT))
 
 from blasphemous_modding_helper.runtime import run_command  # noqa: E402
+from blasphemous_modding_helper.preferences import PreferenceError, parse_preferences  # noqa: E402
 import resolve_modding_api  # noqa: E402
 
 
@@ -100,7 +101,7 @@ Options:
   --operation check|update  Explicitly validate or refresh the local checkout.
   --scope project|user      Use the approved project or user reference path.
   --target-path PATH        Override the reference checkout path.
-  --preferences-file PATH   Read the selector and path from preferences.md.
+  --preferences-file PATH   Read the selector and path from config.yml.
   --selector SELECTOR       latest, tag:REF, branch:REF, or commit:SHA.
   --metadata-file PATH      Test-only resolver metadata fixture.
   --offline                 Validate only from the sibling lock state.
@@ -228,8 +229,8 @@ def read_key_value(path: Optional[Path], key: str) -> str:
     except (OSError, UnicodeError) as error:
         raise ManagerError(
             EXIT_RUNTIME,
-            f"could not read preferences file: {path} ({error})",
-            "Fix the preferences path or permissions, then retry.",
+            f"could not read lock state: {path} ({error})",
+            "Fix the lock path or permissions, then retry.",
         ) from error
     pattern = re.compile(r"^[ \t]*" + re.escape(key) + r"[ \t]*:[ \t]*(.*)$")
     for line in content.splitlines():
@@ -237,6 +238,21 @@ def read_key_value(path: Optional[Path], key: str) -> str:
         if match:
             return match.group(1).strip()
     return ""
+
+
+def read_config_key_value(path: Optional[Path], key: str) -> str:
+    if path is None or not path_exists(path):
+        return ""
+    try:
+        values = parse_preferences(path)
+    except (OSError, UnicodeError, PreferenceError) as error:
+        raise ManagerError(
+            EXIT_RUNTIME,
+            f"could not read config.yml: {path} ({error})",
+            "Fix the config path or permissions, then retry.",
+        ) from error
+    value = values.get(key, "")
+    return value.strip() if isinstance(value, str) else ""
 
 
 def has_key(path: Optional[Path], key: str) -> bool:
@@ -262,9 +278,9 @@ def select_preference_context(state: ManagerState) -> Optional[Path]:
         else Path.home()
     )
     project_target = cwd / ".skills" / "blasphemous-modding-helper" / "references" / "modding-api"
-    project_preferences = cwd / ".skills" / "blasphemous-modding-helper" / "preferences.md"
+    project_preferences = cwd / ".skills" / "blasphemous-modding-helper" / "config.yml"
     user_target = home / ".skills" / "blasphemous-modding-helper" / "references" / "modding-api"
-    user_preferences = home / ".skills" / "blasphemous-modding-helper" / "preferences.md"
+    user_preferences = home / ".skills" / "blasphemous-modding-helper" / "config.yml"
     default_target: Optional[Path] = None
     default_preferences: Optional[Path] = None
 
@@ -307,7 +323,9 @@ def select_preference_context(state: ManagerState) -> Optional[Path]:
 def select_target(state: ManagerState, default_target: Optional[Path]) -> None:
     target = state.target_path
     if not state.target_explicit and state.preferences_file is not None:
-        configured = read_key_value(state.preferences_file, "modding_api_reference_path")
+        configured = read_config_key_value(
+            state.preferences_file, "modding_api_reference_path"
+        )
         if configured:
             target = Path(configured).expanduser()
     if target is None or not str(target):
@@ -318,7 +336,7 @@ def select_target(state: ManagerState, default_target: Optional[Path]) -> None:
                 EXIT_USAGE,
                 "no local reference path was provided",
                 "Use --target-path, --scope, or configure "
-                "modding_api_reference_path in preferences.md.",
+                "modding_api_reference_path in config.yml.",
             )
     state.target_path = normalize_path(target)
     state.lock_path = Path(str(state.target_path) + ".lock")
@@ -337,7 +355,7 @@ def is_valid_ref(value: str) -> bool:
 
 def select_selector(state: ManagerState) -> None:
     if not state.selector_explicit:
-        configured = read_key_value(
+        configured = read_config_key_value(
             state.preferences_file,
             "modding_api_reference_selector",
         )

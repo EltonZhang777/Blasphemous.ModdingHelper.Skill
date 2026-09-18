@@ -35,6 +35,7 @@ from .platform_adapters import (
     platform_adapter_for,
 )
 from .preferences import (
+    CONFIG_RELATIVE_PATH,
     PREFERENCES_RELATIVE_PATH,
     PreferenceError,
     PreferenceLocation,
@@ -94,6 +95,7 @@ __all__ = [
     "WindowsPlatformAdapter",
     "platform_adapter_for",
     "PREFERENCES_RELATIVE_PATH",
+    "CONFIG_RELATIVE_PATH",
     "PreferenceError",
     "PreferenceLocation",
     "Preferences",

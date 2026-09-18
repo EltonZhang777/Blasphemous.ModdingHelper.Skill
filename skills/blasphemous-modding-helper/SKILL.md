@@ -59,7 +59,7 @@ Agent MUST use tools to gather information required by task, including:
 
 Tools' `.md` files SHOULD contain all path specifications required for task. Agent MUST NOT ask user for path again unless needed path information is absent there.
 
-**Done when**: agent has located every path task needs (source code, modding profile, and logs) in `preferences.md` or navigation documents, and has handed any missing or stale path to Step 5.
+**Done when**: agent has located every path task needs (source code, modding profile, and logs) in `config.yml` or navigation documents, and has handed any missing or stale path to Step 5.
 
 ### Step 4: Solve User Question
 

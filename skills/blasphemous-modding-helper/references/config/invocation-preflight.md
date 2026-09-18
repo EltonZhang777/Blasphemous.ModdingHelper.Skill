@@ -44,8 +44,8 @@ Agent MUST run preference check from caller's Mod repository with explicit Skill
 
 Check emits `project`, `user`, or no output. Project scope MUST take precedence over user scope:
 
-- Project: `.skills/blasphemous-modding-helper/preferences.md` under caller's current working directory.
-- User: `$HOME/.skills/blasphemous-modding-helper/preferences.md`.
+- Project: `.skills/blasphemous-modding-helper/config.yml` under caller's current working directory.
+- User: `$HOME/.skills/blasphemous-modding-helper/config.yml`.
 
 When check finds file, agent MUST read, parse, and apply that selected file. complete field schema and approved local-reference locations are defined in [preferences-schema.md](preferences-schema.md). branch MAY require additional fields, but it MUST validate those fields after this shared gate selects active file.
 
@@ -57,8 +57,8 @@ When check finds no file, agent MUST enter [First-Time Setup](first-time-setup.m
 
 - Missing preferences MUST block every operational branch until setup succeeds. The read-only localization lookup branch does not require preferences and remains available when no preference file exists. Setup failure MUST be reported with its error and retry path.
 - Only preflight exception is `/blasphemous-modding-test stop SESSION_ID`. It MUST use only recorded session identity, MUST address only that tracked process tree, and MUST not read or edit preferences when normal context preflight is unavailable.
-- Source-code or modding path failure MUST use this exact handoff: "Some operations failed using the saved paths in `preferences.md`. Would you like to re-run the first-time setup to update them?"
-- If user answers Yes, agent MUST delete active `preferences.md` and return to [First-Time Setup](first-time-setup.md). If user answers No, agent MUST continue with current paths and report specific failure.
+- Source-code or modding path failure MUST use this exact handoff: "Some operations failed using the saved paths in `config.yml`. Would you like to re-run the first-time setup to update them?"
+- If user answers Yes, agent MUST delete active `config.yml` and return to [First-Time Setup](first-time-setup.md). If user answers No, agent MUST continue with current paths and report specific failure.
 
 After this contract completes, agent MUST return to top-level Skill's workflow. top-level document selects applicable source, log, mod-test, or general-modding branch; each branch then adds only its own path, environment, or evidence requirements.
 

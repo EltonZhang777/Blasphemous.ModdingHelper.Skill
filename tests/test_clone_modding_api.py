@@ -7,6 +7,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import yaml
+
 
 SCRIPT_ROOT = (
     Path(__file__).resolve().parents[1]
@@ -142,7 +144,7 @@ class CloneModdingApiContractTests(unittest.TestCase):
         self.project.joinpath(".skills", "blasphemous-modding-helper").mkdir(
             parents=True
         )
-        preferences = self.project / ".skills" / "blasphemous-modding-helper" / "preferences.md"
+        preferences = self.project / ".skills" / "blasphemous-modding-helper" / "config.yml"
         preferences.write_text(
             "lightweight_source_code_path: legacy-source\n"
             "modding_profile_path: legacy-profile\n",
@@ -243,11 +245,18 @@ class CloneModdingApiContractTests(unittest.TestCase):
         self.assertEqual(self._git(commit_target, "rev-parse", "HEAD"), self.dev_commit)
 
     def test_preferences_drive_target_and_selector(self):
-        target = self.root / "configured-reference"
-        preferences = self.root / "configured-preferences.md"
+        target = self.root / "configured # reference"
+        preferences = self.root / "configured-config.yml"
+        configured_target = yaml.safe_dump(
+            str(target), default_flow_style=True, width=4096
+        ).strip()
         preferences.write_text(
-            f"modding_api_reference_path: {target}\n"
-            "modding_api_reference_selector: tag:v1.0.0\n",
+            "# keep this header\n"
+            "unknown:\n"
+            "  nested: [one, two]\n"
+            f"modding_api_reference_path: {configured_target} # keep path note\n"
+            "modding_api_reference_selector: tag:v1.0.0 # keep selector note\n"
+            "unknown_scalar: true\n",
             encoding="utf-8",
         )
         result = self.run_cloner(
@@ -257,6 +266,23 @@ class CloneModdingApiContractTests(unittest.TestCase):
         )
         self.assert_success(result, "tag:v1.0.0", "tag", "v1.0.0", "v1.0.0", self.release_commit)
         self.assertEqual(self._git(target, "rev-parse", "HEAD"), self.release_commit)
+        preference_text = preferences.read_text(encoding="utf-8")
+        self.assertIn("# keep this header", preference_text)
+        self.assertIn("# keep path note", preference_text)
+        self.assertIn("# keep selector note", preference_text)
+        self.assertLess(
+            preference_text.index("unknown:\n"),
+            preference_text.index("modding_api_reference_path:"),
+        )
+        self.assertEqual(
+            yaml.safe_load(preference_text),
+            {
+                "unknown": {"nested": ["one", "two"]},
+                "modding_api_reference_path": str(target.resolve()),
+                "modding_api_reference_selector": "tag:v1.0.0",
+                "unknown_scalar": True,
+            },
+        )
 
     def test_existing_target_and_lock_are_never_replaced(self):
         target = self.root / "existing-reference"
@@ -316,7 +342,7 @@ class CloneModdingApiContractTests(unittest.TestCase):
             "--target-path",
             str(target),
             "--preferences-file",
-            str(blocked_parent / "preferences.md"),
+            str(blocked_parent / "config.yml"),
             "--selector",
             "latest",
             *self.fixture_arguments(self.latest_metadata),

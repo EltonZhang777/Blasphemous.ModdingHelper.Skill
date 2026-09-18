@@ -87,7 +87,7 @@ not substituted with a shell-wrapper result.
 
 The agent does not run this gate automatically. Deployment changes an external profile, launch starts a game process, and gameplay actions require the player. Use a disposable non-Steam or mirror profile and obtain user direction before performing it. For issue #19, the user has deferred this gate until the three worktrees are merged.
 
-1. Confirm `preferences.md`, the project, `modding_profile_path`, and `unity_log_dir`.
+1. Confirm `config.yml`, the project, `modding_profile_path`, and `unity_log_dir`.
 2. Run the documented `run` command with the exact project/profile paths and an explicit `--startup-timeout`.
 3. Record the printed test session ID, `launched`, `ready`, or `mod_loaded` state, warnings, and current BepInEx/Unity log paths.
 4. Ask the player to perform the scenario and provide a natural-language **Manual verification**: state, actions, expected behavior, observed behavior, and approximate failure time.

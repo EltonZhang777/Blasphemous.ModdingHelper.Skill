@@ -1,8 +1,10 @@
-# `preferences.md` Schema for blasphemous-modding-helper
+# `config.yml` Schema for blasphemous-modding-helper
 
 ## Format
 
-`preferences.md` uses plain `key: value` lines (YAML subset; no top-level marker):
+`config.yml` is a top-level YAML mapping. The supported configuration shape uses
+scalar values for known fields and preserves unknown scalar, list, and mapping
+fields when they are not changed by a workflow:
 
 ```yaml
 full_source_code_path: Path/to/blasphemous-source-code
@@ -35,8 +37,8 @@ Local checkout uses the same scope as its preferences file:
 
 | Scope | Reference path | Preferences path |
 |-------|----------------|------------------|
-| User | `$HOME/.skills/blasphemous-modding-helper/references/modding-api` | `$HOME/.skills/blasphemous-modding-helper/preferences.md` |
-| Project | `.skills/blasphemous-modding-helper/references/modding-api` | `.skills/blasphemous-modding-helper/preferences.md` |
+| User | `$HOME/.skills/blasphemous-modding-helper/references/modding-api` | `$HOME/.skills/blasphemous-modding-helper/config.yml` |
+| Project | `.skills/blasphemous-modding-helper/references/modding-api` | `.skills/blasphemous-modding-helper/config.yml` |
 
 `modding_api_reference_path` is absolute after setup. Missing
 ModdingAPI fields remain valid in legacy preferences and are added only when the

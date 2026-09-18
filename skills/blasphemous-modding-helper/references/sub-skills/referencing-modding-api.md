@@ -7,7 +7,7 @@ Before executing command in this reference, agent MUST apply command-context con
 
 ## Reference selection
 
-1. Agent MUST read selected `preferences.md`.
+1. Agent MUST read selected `config.yml`.
 2. If `modding_api_reference_path` is present, agent MUST use that local checkout. The
    path is authoritative for task; agent MUST NOT clone or update it during an
    ordinary question. If its selector is absent, agent MUST treat it as `latest` for
@@ -35,7 +35,7 @@ question:
 read unqualified Git branch; agent MUST NOT interpret it that way. resolver's tag, branch, or commit remains
 part of every remote URL and every local-reference decision.
 
-Reference selection is complete when active `preferences.md` scope has been read and agent has recorded one resolved route: validated local checkout with its selector/lock state, or release-aware remote resolver output required for browsing.
+Reference selection is complete when active `config.yml` scope has been read and agent has recorded one resolved route: validated local checkout with its selector/lock state, or release-aware remote resolver output required for browsing.
 
 ## Stable API topic routing
 

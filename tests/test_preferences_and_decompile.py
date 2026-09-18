@@ -12,6 +12,11 @@ SCRIPT_ROOT = (
     / "blasphemous-modding-helper"
     / "scripts"
 )
+sys.path.insert(0, str(SCRIPT_ROOT))
+
+from blasphemous_modding_helper.preferences import PreferenceError, parse_preferences
+
+
 CHECK_PREFERENCES = SCRIPT_ROOT / "check_preferences.py"
 DECOMPILE_SOURCE = SCRIPT_ROOT / "decompile_source.py"
 
@@ -53,18 +58,18 @@ class PreferencesAndDecompilerCliTests(unittest.TestCase):
             check=False,
         )
 
-    def write_preferences(self, path):
+    def write_config(self, path):
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text("modding_profile_path: profile\n", encoding="utf-8")
 
     def test_project_preferences_take_precedence_over_user_preferences(self):
-        self.write_preferences(
-            self.home / ".skills" / "blasphemous-modding-helper" / "preferences.md"
+        self.write_config(
+            self.home / ".skills" / "blasphemous-modding-helper" / "config.yml"
         )
         project_preferences = (
-            self.root / ".skills" / "blasphemous-modding-helper" / "preferences.md"
+            self.root / ".skills" / "blasphemous-modding-helper" / "config.yml"
         )
-        self.write_preferences(project_preferences)
+        self.write_config(project_preferences)
 
         result = self.run_preferences("--cwd", str(self.root), "--home", str(self.home))
 
@@ -73,14 +78,52 @@ class PreferencesAndDecompilerCliTests(unittest.TestCase):
         self.assertEqual(result.stderr, "")
 
     def test_user_preferences_are_selected_when_project_file_is_absent(self):
-        self.write_preferences(
-            self.home / ".skills" / "blasphemous-modding-helper" / "preferences.md"
+        self.write_config(
+            self.home / ".skills" / "blasphemous-modding-helper" / "config.yml"
         )
 
         result = self.run_preferences("--cwd", str(self.root), "--home", str(self.home))
 
         self.assertEqual(result.returncode, 0)
         self.assertEqual(result.stdout, "user\n")
+
+    def test_old_preferences_filename_is_not_a_fallback(self):
+        self.write_config(
+            self.root / ".skills" / "blasphemous-modding-helper" / "preferences.md"
+        )
+
+        result = self.run_preferences("--cwd", str(self.root), "--home", str(self.home))
+
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(result.stdout, "")
+
+    def test_config_parser_preserves_yaml_scalar_types_and_comments(self):
+        config = self.root / "config.yml"
+        config.write_text(
+            '# caller config\n'
+            'quoted_path: "C:\\\\Games\\\\Blasphemous #1" # inline\n'
+            "retry_count: 3\n"
+            "ratio: 1.5\n"
+            "unknown_field: future-value\n",
+            encoding="utf-8",
+        )
+
+        values = parse_preferences(config, required=("quoted_path",))
+
+        self.assertEqual(values["quoted_path"], "C:\\Games\\Blasphemous #1")
+        self.assertEqual(values["retry_count"], 3)
+        self.assertEqual(values["ratio"], 1.5)
+        self.assertEqual(values["unknown_field"], "future-value")
+
+    def test_config_parser_rejects_malformed_yaml_and_duplicate_keys(self):
+        config = self.root / "config.yml"
+        config.write_text("valid: value\nnot a mapping\n", encoding="utf-8")
+        with self.assertRaises(PreferenceError):
+            parse_preferences(config)
+
+        config.write_text("duplicate: one\nduplicate: two\n", encoding="utf-8")
+        with self.assertRaises(PreferenceError):
+            parse_preferences(config)
 
     def test_missing_preferences_keeps_empty_success_output(self):
         result = self.run_preferences("--cwd", str(self.root), "--home", str(self.home))

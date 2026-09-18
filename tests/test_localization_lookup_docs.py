@@ -36,7 +36,7 @@ class LocalizationLookupDocumentationTests(unittest.TestCase):
         preflight = PREFLIGHT.read_text(encoding="utf-8").casefold()
 
         self.assertIn("must not require", lookup)
-        self.assertIn("preferences.md", lookup)
+        self.assertIn("config.yml", lookup)
         self.assertIn("localization lookup branch", preflight)
         self.assertIn("read-only", preflight)
 

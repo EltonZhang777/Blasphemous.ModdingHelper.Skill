@@ -7,15 +7,15 @@ description: First-time setup flow for blasphemous-modding-helper preferences
 
 ## Overview
 
-When no `preferences.md` is found, this reference describes preference-setup flow.
+When no `config.yml` is found, this reference describes configuration setup flow.
 
 Shared [Invocation preflight](invocation-preflight.md) reference owns blocking gate, preference precedence, tracked-session stop exception, path recovery, and completion contract. This reference owns detailed setup questions, validation, and save operations after that gate selects missing-preferences state.
 
 Before executing command in this reference, agent MUST apply command-context contract in [Invocation preflight](invocation-preflight.md).
 
-Agent MUST ask only questions in this setup flow, MUST save `preferences.md`, and MUST continue only after those steps complete.
+Agent MUST ask only questions in this setup flow, MUST save `config.yml`, and MUST continue only after those steps complete.
 
-Before asking Q1, agent MUST complete the [Python runtime gate](python-runtime.md). Q1 remains the first user question. A failed runtime gate MUST stop setup, show its stable configuration diagnostic, and provide the retry action; it MUST NOT install packages or write `preferences.md`.
+Before asking Q1, agent MUST complete the [Python runtime gate](python-runtime.md). Q1 remains the first user question. A failed runtime gate MUST stop setup, show its stable configuration diagnostic, and provide the retry action; it MUST NOT install packages or write `config.yml`.
 
 On success, agent MUST return validated preferences file to Invocation preflight completion check. On failure, agent MUST report error and retry path through that same contract.
 
@@ -23,7 +23,7 @@ On success, agent MUST return validated preferences file to Invocation preflight
 
 ```mermaid
 flowchart TD
-    Start["No preferences.md found"] --> Runtime["Resolve Python 3.9+ and validate requirements"]
+    Start["No config.yml found"] --> Runtime["Resolve Python 3.9+ and validate requirements"]
     Runtime --> Q1["Q1: Ask save location first"]
     Q1 --> Q2{"Q2: Decompiled source available?"}
 
@@ -55,7 +55,7 @@ flowchart TD
     Validate -->|Failure: lightweight| Q3
     Validate -->|Failure: full source| Q4b
     Validate -->|Failure: modding profile| Q5
-    Validate -->|OK| Save["Create or update preferences.md"]
+    Validate -->|OK| Save["Create or update config.yml"]
     Save --> Complete["Setup complete: return to Invocation preflight"]
 ```
 
@@ -157,7 +157,7 @@ header: "local ModdingAPI reference"
 question: "Configure a local ModdingAPI reference checkout?"
 options:
   - label: "Yes (Recommended)"
-    description: "Clone a shallow, reproducible checkout and save its absolute path and selector in preferences.md"
+    description: "Clone a shallow, reproducible checkout and save its absolute path and selector in config.yml"
   - label: "Skip"
     description: "Leave local reference fields absent and use the release-aware remote fallback"
 ```
@@ -198,7 +198,7 @@ Agent MUST use `--scope project` / `-Scope project` when Q1 selected
 Project and MUST use User when Q1 selected User. clone command refuses existing target, uses shallow history by default, checks out
 tags and commits detached, creates tracking branch for explicit branches,
 writes normalized absolute path plus selector to selected
-`preferences.md`, and writes sibling lock state described in
+`config.yml`, and writes sibling lock state described in
 [preferences-schema.md#sibling-lock-state](preferences-schema.md#sibling-lock-state).
 It does not replace existing checkout.
 
@@ -237,7 +237,7 @@ Agent MUST use approved preferences and local-reference paths in
 ## Setup Workflow After User-questions
 
 1. Agent MUST create directory if needed.
-2. Agent MUST write or update `preferences.md` with selected values, preserve unknown and legacy fields, and add `modding_api_reference_path` and `modding_api_reference_selector` only when Q6 is enabled and clone succeeds.
+2. Agent MUST write or update `config.yml` with selected values, preserve unknown fields, and add `modding_api_reference_path` and `modding_api_reference_selector` only when Q6 is enabled and clone succeeds.
 3. If Q6 was skipped, agent MUST leave both local reference fields absent.
 4. Agent MUST confirm: "Preferences saved to [path], you can edit it by yourself at any time."
 
@@ -249,7 +249,7 @@ Setup is complete only when all of the following are true:
 
 1. The Python runtime gate succeeded before setup questions were asked.
 2. Every required path was validated; optional paths are either valid or were explicitly skipped.
-3. `preferences.md` was written to the selected scope and can be read back.
+3. `config.yml` was written to the selected scope and can be read back.
 4. If Q6 clone succeeded, its normalized path, selector, and lock state were recorded. If Q6 was skipped, both local-reference fields remain absent.
 5. The agent confirmed the saved path and returns the validated preferences file to Invocation preflight.
 
@@ -261,10 +261,10 @@ chooses a valid retry or explicitly skips the optional local reference. While
 setup is incomplete, the agent MUST NOT enter source analysis, log analysis,
 modding, or test operations; it MUST report the failure and its retry path.
 
-## `preferences.md` Template
+## `config.yml` Template
 
 Agent MUST read [preferences-schema.md](preferences-schema.md) for detailed template restrictions.
 
 ## Modifying Preferences Later
 
-Users can edit `preferences.md` directly or delete it to trigger setup again.
+Users can edit `config.yml` directly or delete it to trigger setup again.

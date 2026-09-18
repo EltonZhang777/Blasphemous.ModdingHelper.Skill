@@ -432,8 +432,8 @@ def run_documentation_smoke() -> None:
 
     with tempfile.TemporaryDirectory(prefix="modding-api-reference-doc-smoke-") as raw_root:
         fixture_root = Path(raw_root)
-        local_preferences = fixture_root / "local-preferences.md"
-        skipped_preferences = fixture_root / "skipped-preferences.md"
+        local_preferences = fixture_root / "local-config.yml"
+        skipped_preferences = fixture_root / "skipped-config.yml"
         local_path = fixture_root / "references" / "modding-api"
         local_documentation = local_path / "docs" / "development" / "main.md"
         local_documentation.parent.mkdir(parents=True)

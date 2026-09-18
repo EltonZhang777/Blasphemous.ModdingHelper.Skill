@@ -101,7 +101,7 @@ def resolve_unity_log_path(
         return None, (
             "Unity log directory is not configured. Ask the user for the Unity "
             "log directory, then add 'unity_log_dir: PATH' to the active "
-            f"preferences.md: {preference_path}"
+            f"config.yml: {preference_path}"
         )
 
     directory = _expand_path(configured, cwd or Path.cwd())
@@ -131,7 +131,7 @@ def resolve_unity_log_path(
     return directory / filenames[0], (
         f"{reason} Expected {expected}. Ask the user for the correct directory, "
         "then add or update 'unity_log_dir: PATH' in the active "
-        f"preferences.md: {preference_path}."
+        f"config.yml: {preference_path}."
     )
 
 

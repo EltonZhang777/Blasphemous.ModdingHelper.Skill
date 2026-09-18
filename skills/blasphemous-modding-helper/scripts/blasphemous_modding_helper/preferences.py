@@ -7,8 +7,48 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Iterable, Mapping, Optional, Tuple
 
+try:
+    import yaml
+except ModuleNotFoundError:  # pragma: no cover - the runtime gate reports this first.
+    yaml = None
 
-PREFERENCES_RELATIVE_PATH = Path(".skills") / "blasphemous-modding-helper" / "preferences.md"
+
+CONFIG_RELATIVE_PATH = Path(".skills") / "blasphemous-modding-helper" / "config.yml"
+# Keep the Python symbol for callers while the active file is config.yml.
+PREFERENCES_RELATIVE_PATH = CONFIG_RELATIVE_PATH
+_TEXT_FIELDS = frozenset(
+    {
+        "full_source_code_path",
+        "lightweight_source_code_path",
+        "modding_profile_path",
+        "unity_log_dir",
+        "modding_api_reference_path",
+        "modding_api_reference_selector",
+    }
+)
+
+
+if yaml is not None:
+    class _UniqueKeyLoader(yaml.SafeLoader):
+        pass
+
+
+    def _construct_unique_mapping(loader, node, deep=False):
+        mapping = {}
+        for key_node, value_node in node.value:
+            key = loader.construct_object(key_node, deep=deep)
+            if not isinstance(key, str):
+                raise PreferenceError("config.yml mapping keys must be strings.")
+            if key in mapping:
+                raise PreferenceError(f"Duplicate config key '{key}'.")
+            mapping[key] = loader.construct_object(value_node, deep=deep)
+        return mapping
+
+
+    _UniqueKeyLoader.add_constructor(
+        yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG,
+        _construct_unique_mapping,
+    )
 
 
 class PreferenceError(Exception):
@@ -29,7 +69,44 @@ class Preferences:
 
     scope: str
     path: Path
-    values: Dict[str, str]
+    values: Dict[str, object]
+
+
+def _parse_config(text: str) -> Dict[str, object]:
+    if yaml is None:
+        raise PreferenceError(
+            "PyYAML is required to parse config.yml; validate the Skill runtime dependencies and retry."
+        )
+    try:
+        values = yaml.load(text, Loader=_UniqueKeyLoader)
+    except PreferenceError:
+        raise
+    except yaml.YAMLError as error:
+        raise PreferenceError(f"Invalid config.yml: {error}") from error
+    if not isinstance(values, dict) or not values:
+        raise PreferenceError("config.yml must contain a non-empty top-level mapping.")
+    for key in _TEXT_FIELDS:
+        if key in values and not isinstance(values[key], str):
+            raise PreferenceError(f"config.yml field '{key}' must be a string.")
+    return values
+
+
+def format_yaml_string(value: str) -> str:
+    """Serialize one managed string without reformatting the whole config."""
+
+    if yaml is None:
+        raise PreferenceError(
+            "PyYAML is required to write config.yml; validate the Skill runtime dependencies and retry."
+        )
+    serialized = yaml.safe_dump(
+        value,
+        default_flow_style=True,
+        allow_unicode=True,
+        width=4096,
+    ).strip()
+    if serialized.endswith("\n..."):
+        serialized = serialized[:-4]
+    return serialized
 
 
 def preference_paths(
@@ -41,8 +118,8 @@ def preference_paths(
     current_directory = (cwd or Path.cwd()).expanduser().resolve(strict=False)
     user_home = (home or Path.home()).expanduser().resolve(strict=False)
     return (
-        PreferenceLocation("project", current_directory / PREFERENCES_RELATIVE_PATH),
-        PreferenceLocation("user", user_home / PREFERENCES_RELATIVE_PATH),
+        PreferenceLocation("project", current_directory / CONFIG_RELATIVE_PATH),
+        PreferenceLocation("user", user_home / CONFIG_RELATIVE_PATH),
     )
 
 
@@ -72,43 +149,21 @@ def parse_preferences(
     path: Path,
     *,
     required: Iterable[str] = (),
-) -> Dict[str, str]:
-    """Parse plain ``key: value`` preferences without changing the file."""
+) -> Dict[str, object]:
+    """Parse the supported top-level YAML mapping without changing the file."""
 
     preferences_path = Path(path).expanduser().resolve(strict=False)
     try:
-        lines = preferences_path.read_text(encoding="utf-8").splitlines()
+        text = preferences_path.read_text(encoding="utf-8")
     except (OSError, UnicodeError) as error:
-        raise PreferenceError(
-            f"Could not read preferences.md at {preferences_path}: {error}"
-        ) from error
+        raise PreferenceError(f"Could not read config.yml at {preferences_path}: {error}") from error
 
-    values: Dict[str, str] = {}
-    for line_number, line in enumerate(lines, start=1):
-        stripped = line.strip()
-        if not stripped or stripped.startswith("#"):
-            continue
-        if ":" not in line:
-            raise PreferenceError(
-                f"Invalid preferences.md line {line_number}: expected 'key: value'."
-            )
-        key, value = line.split(":", 1)
-        key = key.strip()
-        value = value.strip()
-        if not key or not value:
-            raise PreferenceError(
-                f"Invalid preferences.md line {line_number}: key and value are required."
-            )
-        if key in values:
-            raise PreferenceError(f"Duplicate preference '{key}' on line {line_number}.")
-        values[key] = value
+    values = _parse_config(text)
 
     missing = [key for key in required if key not in values]
     if missing:
         missing_text = ", ".join(missing)
-        raise PreferenceError(
-            f"preferences.md at {preferences_path} must define {missing_text}."
-        )
+        raise PreferenceError(f"config.yml at {preferences_path} must define {missing_text}.")
     return values
 
 
@@ -132,7 +187,7 @@ def load_preferences(
             parse_preferences(location.path, required=required),
         )
     checked = ", ".join(str(item.path) for item in locations)
-    raise PreferenceError(f"No preferences.md found. Checked: {checked}")
+    raise PreferenceError(f"No config.yml found. Checked: {checked}")
 
 
 def resolve_preference_path(value: str, base: Path) -> Path:
@@ -146,7 +201,7 @@ def resolve_preference_path(value: str, base: Path) -> Path:
 
 
 def validate_source_paths(
-    values: Mapping[str, str],
+    values: Mapping[str, object],
     base: Path,
     *,
     require_lightweight: bool = False,
@@ -154,13 +209,13 @@ def validate_source_paths(
     """Validate configured full/lightweight source roots without writing files."""
 
     result: Dict[str, Path] = {}
-    lightweight = values.get("lightweight_source_code_path", "").strip()
+    lightweight = _text_value(values, "lightweight_source_code_path")
     if require_lightweight and not lightweight:
         raise PreferenceError(
-            "preferences.md must define lightweight_source_code_path."
+            "config.yml must define lightweight_source_code_path."
         )
     for field in ("lightweight_source_code_path", "full_source_code_path"):
-        configured = values.get(field, "").strip()
+        configured = _text_value(values, field)
         if not configured:
             continue
         path = resolve_preference_path(configured, base)
@@ -172,3 +227,12 @@ def validate_source_paths(
             raise PreferenceError(f"Configured {field} is not readable: {path}")
         result[field] = path
     return result
+
+
+def _text_value(values: Mapping[str, object], key: str) -> str:
+    value = values.get(key, "")
+    if value is None:
+        return ""
+    if not isinstance(value, str):
+        raise PreferenceError(f"config.yml field '{key}' must be a string.")
+    return value.strip()

@@ -8,7 +8,7 @@ Python CLI automates filesystem, build, process, and log operations. It does not
 
 ## Entry conditions
 
-1. Agent MUST complete [Invocation preflight](../config/invocation-preflight.md) before using the workflow. This sub-skill adds one profile-specific requirement: the active `preferences.md` MUST define `modding_profile_path`; the agent MUST use the [preferences schema](../config/preferences-schema.md) and [first-time setup](../config/first-time-setup.md) when that field is missing or invalid.
+1. Agent MUST complete [Invocation preflight](../config/invocation-preflight.md) before using the workflow. This sub-skill adds one profile-specific requirement: the active `config.yml` MUST define `modding_profile_path`; the agent MUST use the [config schema](../config/preferences-schema.md) and [first-time setup](../config/first-time-setup.md) when that field is missing or invalid.
 2. Agent MUST resolve a native Python 3.9+ interpreter before invoking the CLI. `PYTHON3` below means that resolved executable; it is not an arbitrary shell command. On Windows, agent MUST use the configured Python installation rather than assuming `python` or `py` is on `PATH`.
 3. The Python CLI is the only Skill entry point and MUST run on a native Windows, Linux, or macOS host. Bash or PowerShell may host the Python process, but they are not separate implementations. The CLI MUST reject Git Bash, Cygwin, WSL, Proton, Wine, and unsupported operating systems. Paths MUST remain quoted when they contain spaces.
 4. Agent MUST confirm that selected profile is disposable or mirror game installation. CLI operates on that profile's `Modding` root and launches its local game executable.
@@ -68,7 +68,7 @@ Common options are accepted by `run`, `clean`, `logs`, and `status`:
 | `--project PATH` | Select one `.csproj`; without it, `run` requires exactly one `.csproj` in the current directory. `clean`, `logs`, and `status` use it only to resolve ambiguity. |
 | `--profile PATH` | Override `modding_profile_path` for this invocation. The preferences file is still required by commands that load context. |
 | `--launcher PATH` | Select a concrete launcher file for this invocation. It is a path, not a shell command. An explicit launcher emits a warning, especially when it is outside the profile. |
-| `--unity-log-dir PATH` | Override `unity_log_dir` for this invocation without editing `preferences.md`. |
+| `--unity-log-dir PATH` | Override `unity_log_dir` for this invocation without editing `config.yml`. |
 
 ### `run`: build, deploy, launch, and optionally wait
 
@@ -184,7 +184,7 @@ Unity:   <unity_log_dir>/output_log.txt       (Windows)
 Unity:   <unity_log_dir>/Player.log           (native Linux/macOS, then output_log.txt)
 ```
 
-`unity_log_dir` is optional in schema but REQUIRED to locate Unity log. On Windows, usual directory is `%USERPROFILE%/AppData/LocalLow/TheGameKitchen/Blasphemous`; agent MUST configure that directory explicitly when it is not already in `preferences.md`. If directory or file is missing, CLI MUST print warning, agent MUST ask user for correct directory, and agent MUST save `unity_log_dir: PATH` in active `preferences.md` after user supplies it. one-run `--unity-log-dir PATH` override is available while confirming value.
+`unity_log_dir` is optional in schema but REQUIRED to locate Unity log. On Windows, usual directory is `%USERPROFILE%/AppData/LocalLow/TheGameKitchen/Blasphemous`; agent MUST configure that directory explicitly when it is not already in `config.yml`. If directory or file is missing, CLI MUST print warning, agent MUST ask user for correct directory, and agent MUST save `unity_log_dir: PATH` in active `config.yml` after user supplies it. one-run `--unity-log-dir PATH` override is available while confirming value.
 
 `LogOutput.log` contains current BepInEx run and overwrites previous run; there is no BepInEx history or polling log to recover. The launcher records pre-session metadata, so an unchanged existing log is marked `stale` and ignored for this session unless its content changes after launch. If the changed log retains the exact pre-session byte prefix ending at a complete line boundary, structured diagnostics in that prefix may receive the `baseline` provenance label; rewritten or unproven content does not. Missing or unreadable BepInEx log is hard logs/readiness failure. Missing Unity log is warning and requires user handoff above.
 
