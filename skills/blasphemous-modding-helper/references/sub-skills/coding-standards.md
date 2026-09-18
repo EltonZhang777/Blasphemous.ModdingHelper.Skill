@@ -1,5 +1,15 @@
 # Coding standards router
 
+## Route map
+
+| Request signal | Route |
+| --- | --- |
+| New file or directory placement in an unstructured Mod, or an explicit organization request | [Project architecture guidelines](project-architecture-guidelines.md) |
+| Mod-owned C# naming, organization, compiler compatibility, or Unity runtime callbacks | [C# and runtime Unity standards](../coding-standards/coding-standards-csharp-unity.md) |
+| ModdingAPI APIs, lifecycle, services, persistence, commands, or logging | [ModdingAPI standards](../coding-standards/coding-standards-moddingAPI.md) |
+| Harmony targets, Patch files/classes, injections, or manual patching | [Harmony patching standards](../coding-standards/coding-standards-harmony-patching.md) |
+| Decompiled, upstream, dependency, generated, or directly copied code | Scope gate; preserve excluded code and load no Mod-owned C# branch |
+
 ## Coding specifications
 
 Before generating, modifying, reviewing, or refactoring Mod-owned C# in Caller Mod repository, agent MUST read this router and [Requirement levels](../requirement-levels-definitions.md). router selects only branch references required by task.

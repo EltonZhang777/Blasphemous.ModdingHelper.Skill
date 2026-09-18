@@ -16,54 +16,86 @@ GUIDE = (
 )
 
 
+def table_rows(text, heading):
+    lines = text.splitlines()
+    heading_index = lines.index(heading)
+    header_index = next(
+        index
+        for index in range(heading_index + 1, len(lines))
+        if lines[index].startswith("|")
+    )
+    rows = []
+    for line in lines[header_index + 2 :]:
+        if not line.startswith("|"):
+            break
+        rows.append([cell.strip() for cell in line.strip("|").split("|")])
+    return rows
+
+
 class ProjectArchitectureDocumentationTests(unittest.TestCase):
-    def test_router_links_the_conditional_architecture_route(self):
+    def test_router_starts_with_a_complete_route_map(self):
         router = ROUTER.read_text(encoding="utf-8")
+        route_rows = table_rows(router, "## Route map")
+        route_text = "\n".join(" | ".join(row) for row in route_rows).casefold()
 
         self.assertTrue(GUIDE.exists())
-        self.assertIn("project-architecture-guidelines.md", router)
-        self.assertIn("no established directory, namespace, module, or feature boundaries", router)
-        self.assertIn("explicitly asks how to organize or place new files or directories", router)
-        self.assertIn("MUST NOT impose the default role categories", router)
-        self.assertIn(
-            "ordinary request in a project with established or feature-oriented structure",
-            router,
-        )
-        self.assertIn("An explicit organization request still activates the guide", router)
+        self.assertLess(router.index("## Route map"), router.index("## Coding specifications"))
+        for target in (
+            "project-architecture-guidelines.md",
+            "coding-standards-csharp-unity.md",
+            "coding-standards-moddingapi.md",
+            "coding-standards-harmony-patching.md",
+        ):
+            self.assertIn(target, route_text)
+        self.assertIn("scope gate", route_text)
 
     def test_guide_covers_categories_and_primary_responsibility(self):
         guide = GUIDE.read_text(encoding="utf-8")
+        categories = {
+            row[0]: " ".join(row[1:]).casefold()
+            for row in table_rows(guide, "## Default shape")
+        }
 
-        for category in ("Components", "Configs", "Extensions", "Patches", "Events", "Commands"):
-            self.assertIn(category, guide)
-        self.assertIn("primary responsibility", guide)
-        self.assertIn("New namespaces SHOULD mirror their directories", guide)
-        self.assertIn("independently meaningful responsibilities MUST be split", guide)
-        self.assertIn("stable responsibility", guide)
+        self.assertEqual(
+            set(categories),
+            {"Components", "Configs", "Extensions", "Patches", "Events", "Commands"},
+        )
+        for category, terms in {
+            "Components": ("runtime", "domain"),
+            "Configs": ("configuration", "persistence"),
+            "Extensions": ("extension methods",),
+            "Patches": ("harmony patch",),
+            "Events": ("event", "handlers"),
+            "Commands": ("console command",),
+        }.items():
+            for term in terms:
+                self.assertIn(term, categories[category])
+        guide_lower = guide.casefold()
         for phrase in (
-            "runtime or domain objects",
-            "User configuration, serialized settings",
-            "Extension methods and support types",
-            "Harmony Patch files and Patch classes",
-            "Event definitions, handlers",
-            "Mod console command classes",
+            "primary responsibility",
+            "new namespaces",
+            "independently meaningful responsibilities",
+            "stable responsibility",
         ):
-            self.assertIn(phrase, guide)
+            self.assertIn(phrase, guide_lower)
 
     def test_guide_preserves_existing_structure_and_boundaries(self):
-        guide = GUIDE.read_text(encoding="utf-8")
+        guide = GUIDE.read_text(encoding="utf-8").casefold()
 
         for phrase in (
-            "MUST NOT move, rename, or restructure existing files",
-            "HarmonyPatches",
-            "Harmony bridge that raises an event remains here",
-            "generic Utils, Helpers, or Managers buckets",
-            "TraverseUtils.cs is a legacy example explicitly excluded",
-            "Blasphemous.LocalizationPatcher",
-            "Blasphemous.InventorySorting",
-            "not templates",
+            "must not move, rename, or restructure existing files",
+            "harmonypatches",
+            "harmony bridge that raises an event remains here",
+            "generic utils, helpers, or managers buckets",
+            "traverseutils.cs",
+            "must not be copied as an architecture requirement",
         ):
             self.assertIn(phrase, guide)
+        for repository in (
+            "https://github.com/EltonZhang777/Blasphemous.LocalizationPatcher",
+            "https://github.com/EltonZhang777/Blasphemous.InventorySorting",
+        ):
+            self.assertIn(repository.casefold(), guide)
 
 
 if __name__ == "__main__":
