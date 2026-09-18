@@ -35,19 +35,27 @@ After setup succeeds, agent MUST reuse the validated interpreter context for nor
 Agent MUST run preference check from caller's Mod repository with explicit Skill-root path:
 
 ```bash
-"$PYTHON3" "$SKILL_ROOT/scripts/check_preferences.py"
+"$PYTHON3" "$SKILL_ROOT/scripts/check_preferences.py" --validate
 ```
 
 ```powershell
-& $PYTHON3 (Join-Path $SkillRoot 'scripts\check_preferences.py')
+& $PYTHON3 (Join-Path $SkillRoot 'scripts\check_preferences.py') --validate
 ```
 
-Check emits `project`, `user`, or no output. Project scope MUST take precedence over user scope:
+Validation mode emits structured `PREFERENCES_*` fields with a stable status of
+`skipped`, `passed`, `normalized`, or `failed`. A `failed` result includes an
+actionable reason, marks `PREFERENCES_SETUP=required`, and MUST enter
+[First-Time Setup](first-time-setup.md) before any downstream operational
+workflow continues. Project scope MUST take precedence over user scope:
 
 - Project: `.skills/blasphemous-modding-helper/config.yml` under caller's current working directory.
 - User: `$HOME/.skills/blasphemous-modding-helper/config.yml`.
 
 When check finds file, agent MUST read, parse, and apply that selected file. complete field schema and approved local-reference locations are defined in [preferences-schema.md](preferences-schema.md). branch MAY require additional fields, but it MUST validate those fields after this shared gate selects active file.
+
+The no-argument `check_preferences.py` mode remains available for callers that
+only need the legacy `project`, `user`, or empty scope output; it does not run
+freshness validation or write configuration metadata.
 
 When check finds no file, agent MUST enter [First-Time Setup](first-time-setup.md). Agent MUST NOT infer defaults or enter source analysis, log analysis, modding operations, or test workflow commands before setup reports success or explicit setup failure.
 

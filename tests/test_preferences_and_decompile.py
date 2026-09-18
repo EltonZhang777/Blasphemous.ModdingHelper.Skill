@@ -117,13 +117,17 @@ class PreferencesAndDecompilerCliTests(unittest.TestCase):
 
     def test_config_parser_rejects_malformed_yaml_and_duplicate_keys(self):
         config = self.root / "config.yml"
-        config.write_text("valid: value\nnot a mapping\n", encoding="utf-8")
-        with self.assertRaises(PreferenceError):
-            parse_preferences(config)
-
-        config.write_text("duplicate: one\nduplicate: two\n", encoding="utf-8")
-        with self.assertRaises(PreferenceError):
-            parse_preferences(config)
+        for invalid in (
+            "valid: value\nnot a mapping\n",
+            "duplicate: one\nduplicate: two\n",
+            "",
+            "null\n",
+            "[]\n",
+        ):
+            config.write_text(invalid, encoding="utf-8")
+            with self.subTest(config=invalid):
+                with self.assertRaises(PreferenceError):
+                    parse_preferences(config)
 
     def test_missing_preferences_keeps_empty_success_output(self):
         result = self.run_preferences("--cwd", str(self.root), "--home", str(self.home))

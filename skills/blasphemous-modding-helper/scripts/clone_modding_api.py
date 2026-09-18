@@ -24,8 +24,8 @@ if str(SCRIPT_ROOT) not in sys.path:
 from blasphemous_modding_helper.runtime import run_command  # noqa: E402
 from blasphemous_modding_helper.preferences import (  # noqa: E402
     PreferenceError,
-    format_yaml_string,
     parse_preferences,
+    update_config_text,
 )
 import resolve_modding_api  # noqa: E402
 
@@ -585,55 +585,14 @@ def atomic_write(path: Path, content: str) -> Tuple[int, int, int, int]:
 def write_preferences(state: CloneState) -> Tuple[int, int, int, int]:
     assert state.preferences_file is not None
     existing = state.preferences_content if state.preferences_existed else ""
-    lines = existing.splitlines()
-    output: List[str] = []
-    path_seen = False
-    selector_seen = False
-    reference_path = format_yaml_string(str(state.target_path))
-    selector = format_yaml_string(state.selector)
-    for line in lines:
-        path_match = re.match(r"^modding_api_reference_path\s*:\s*(.*)$", line)
-        selector_match = re.match(r"^modding_api_reference_selector\s*:\s*(.*)$", line)
-        if path_match:
-            output.append(
-                f"modding_api_reference_path: {reference_path}"
-                f"{inline_comment(path_match.group(1))}"
-            )
-            path_seen = True
-        elif selector_match:
-            output.append(
-                f"modding_api_reference_selector: {selector}"
-                f"{inline_comment(selector_match.group(1))}"
-            )
-            selector_seen = True
-        else:
-            output.append(line)
-    if not path_seen:
-        output.append(f"modding_api_reference_path: {reference_path}")
-    if not selector_seen:
-        output.append(f"modding_api_reference_selector: {selector}")
-    return atomic_write(state.preferences_file, "\n".join(output) + "\n")
-
-
-def inline_comment(value: str) -> str:
-    quote = None
-    escaped = False
-    for index, character in enumerate(value):
-        if quote == '"' and escaped:
-            escaped = False
-            continue
-        if quote == '"' and character == "\\":
-            escaped = True
-            continue
-        if quote is not None:
-            if character == quote:
-                quote = None
-            continue
-        if character in ("'", '"'):
-            quote = character
-        elif character == "#" and index > 0 and value[index - 1].isspace():
-            return value[index - 1 :]
-    return ""
+    updated = update_config_text(
+        existing,
+        {
+            "modding_api_reference_path": str(state.target_path),
+            "modding_api_reference_selector": state.selector,
+        },
+    )
+    return atomic_write(state.preferences_file, updated)
 
 
 def write_lock_state(state: CloneState) -> None:

@@ -237,7 +237,7 @@ Agent MUST use approved preferences and local-reference paths in
 ## Setup Workflow After User-questions
 
 1. Agent MUST create directory if needed.
-2. Agent MUST write or update `config.yml` with selected values, preserve unknown fields, and add `modding_api_reference_path` and `modding_api_reference_selector` only when Q6 is enabled and clone succeeds.
+2. Agent MUST write or update `config.yml` with selected values, preserve unknown fields, include the default `check_period_days: 7` unless an existing valid value is retained, and add `modding_api_reference_path` and `modding_api_reference_selector` only when Q6 is enabled and clone succeeds.
 3. If Q6 was skipped, agent MUST leave both local reference fields absent.
 4. Agent MUST confirm: "Preferences saved to [path], you can edit it by yourself at any time."
 

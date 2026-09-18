@@ -30,6 +30,25 @@ modding_api_reference_selector: latest
 | `unity_log_dir` | string | Optional | Directory containing the current Unity log. Windows normally contains `output_log.txt`; native Linux/macOS profiles normally contain `Player.log`. The test CLI reports a recovery handoff when this field or its log is missing. |
 | `modding_api_reference_path` | string, optional | N/A | Normalized absolute path to a local ModdingAPI reference checkout. When absent, the agent uses the release-aware remote fallback. |
 | `modding_api_reference_selector` | string, optional | `latest` when a local path is configured | Selector used for the local checkout: `latest`, `tag:REF`, `branch:REF`, or `commit:SHA`. `main` is not an implicit selector. |
+| `check_period_days` | positive number, optional | `7` | Freshness period for shared configuration validation. Positive floating-point values are rounded down and stored as positive integers; invalid values enter first-time setup. |
+
+## Freshness validation metadata
+
+The shared `check_preferences.py --validate` gate manages only these fields:
+
+```yaml
+last_checked_time: '2026-09-18T12:34:56Z'
+last_checked_version: 2.0.0
+check_period_days: 7
+```
+
+`last_checked_time` is UTC ISO 8601 metadata and `last_checked_version` is the
+exact version from the installed Skill's `version.yml`. Missing, malformed, or
+future metadata triggers validation. A current configuration within its period
+returns `skipped` without writing. Successful validation returns `passed` or
+`normalized`, writes the managed metadata, and preserves unrelated fields,
+comments, and order. Invalid YAML or invalid `check_period_days` returns
+`failed`, leaves the file unchanged, and routes to first-time setup.
 
 ## Approved local reference locations
 
