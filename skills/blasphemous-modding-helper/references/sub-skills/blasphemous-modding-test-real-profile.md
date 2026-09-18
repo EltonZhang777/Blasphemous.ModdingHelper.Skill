@@ -295,5 +295,3 @@ Agent MUST use this checklist for complete implementation or Manual verification
 - [ ] Current BepInEx and configured Unity logs produce bounded output by default and full output only with `--full`; missing Unity configuration produces visible handoff warning.
 - [ ] Automated startup evidence is reported as `launched`, `ready`, `mod_loaded`, or `timeout`; Manual verification is collected from player in natural language.
 - [ ] Missing profile, build, artifact, launcher, log, timeout, deployment, and rollback conditions map to stable failure categories and recovery steps above.
-
-Design decisions behind this contract are recorded in [Blasphemous mod test spec](../../../../docs/specs/blasphemous-modding-test.md), [stack-safe rollback ADR](../../../../docs/adr/0001-stack-safe-mod-test-rollback.md), and [Python CLI ADR](../../../../docs/adr/0002-python-stdlib-test-cli.md).
