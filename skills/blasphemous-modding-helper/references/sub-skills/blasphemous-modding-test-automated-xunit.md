@@ -29,7 +29,7 @@ The sibling-project and naming convention is guidance for a repository adding th
 
 ### Prerequisite library
 
-A prerequisite library MAY use a production library, a sibling `<ModRepoName>.Tests` xUnit project, and a separate external Test Mod. The xUnit project tests deterministic library behavior as an external consumer where practical. The Test Mod is a separate Real-profile artifact for behavior that needs Unity, BepInEx, game state, or player interaction.
+A prerequisite library MAY use a production library, a sibling `<ModRepoName>.Tests` xUnit project, and an optional external Test Mod. The xUnit project tests deterministic library behavior as an external consumer where practical. The Test Mod is a separate Real-profile artifact for behavior that needs Unity, BepInEx, game state, or player interaction.
 
 ### Standalone Mod
 
