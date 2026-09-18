@@ -7,7 +7,7 @@ This record is the evidence surface for issue #19. It separates fixture evidence
 Run from the repository root:
 
 ```text
-<python3> tests/run_blasphemous_modding_test.py --require-clean
+<python3> tests/run_blasphemous_modding_test.py
 ```
 
 The Python runner exercises the CLI, script-local contract tests, help contracts,
@@ -16,8 +16,12 @@ logs, and session state. It does not modify a real game profile or claim
 gameplay verification. The broader maintainer gate is:
 
 ```text
-<python3> skills/blasphemous-modding-helper/scripts/test_modding_api_acceptance.py --require-clean
+<python3> skills/blasphemous-modding-helper/scripts/test_modding_api_acceptance.py
 ```
+
+These commands verify functionality without requiring a clean worktree. Append
+`--require-clean` for an explicit cleanliness gate; CI uses that gate on a
+fresh checkout. Local runs should omit it when preserving pre-existing changes.
 
 | Acceptance area | Fixture evidence |
 | --- | --- |
@@ -56,13 +60,13 @@ runner performs no deployment and launches no game:
 Repository runner:
 
 ```text
-<python3> tests/run_blasphemous_modding_test.py --require-clean
+<python3> tests/run_blasphemous_modding_test.py
 ```
 
 Maintainer acceptance runner:
 
 ```text
-<python3> skills/blasphemous-modding-helper/scripts/test_modding_api_acceptance.py --require-clean
+<python3> skills/blasphemous-modding-helper/scripts/test_modding_api_acceptance.py
 ```
 
 Both runners accept an explicit Python 3 executable through `--python`; the

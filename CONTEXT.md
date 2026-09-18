@@ -26,6 +26,10 @@ _Avoid_: build folder, latest output
 The directory that contains the complete deployable contents of one mod package, including plugins, data, localization, and other resource files.
 _Avoid_: DLL folder, package container
 
+**Steam game installation**:
+A Blasphemous installation used as the source-acquisition input for Steam validation and DLL decompilation. It is separate from the `Modding profile` used for mod runtime testing.
+_Avoid_: Modding profile, Steam install (when naming a source-acquisition path)
+
 **Modding profile**:
 A game installation or mirror prepared for mod development, identified by its game launcher, Modding directory, and BepInEx installation.
 _Avoid_: Steam install, game folder (when the modded profile is meant)

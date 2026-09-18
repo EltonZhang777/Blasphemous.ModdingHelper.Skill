@@ -28,7 +28,8 @@ flowchart TD
     Q1 --> Q2{"Q2: Decompiled source available?"}
 
     Q2 -->|Yes| Q3["Q3: Ask lightweight source path"]
-    Q2 -->|No| Decompile["Run decompiler synchronously"]
+    Q2 -->|No| Preview["Show Steam path, DLL side effects, and output"]
+    Preview --> Decompile["Run decompiler synchronously"]
 
     Decompile -->|Success| AutoLight["Set lightweight path to skill-root/source_code/"]
     Decompile -->|Failure| DecompileError["Report error and ask whether to provide paths manually"]
@@ -80,7 +81,7 @@ options:
     description: "Project scope; see preferences-schema.md#approved-local-reference-locations — scoped to this repository"
 ```
 
-Note: Agent MUST ask this first so auto-write for decompile branch knows destination.
+Note: Agent MUST ask this first so the decompile branch knows its destination and can show the planned output before execution.
 
 ### Q2: Decompiled Source Branch
 
@@ -89,14 +90,17 @@ header: "decompiled source"
 question: "Do you have decompiled Blasphemous source code?"
 options:
   - label: "No (run decompiler)"
-    description: "Automatically decompile game DLLs from Steam installation"
+    description: "Run the decompiler against a separately resolved Steam game installation"
   - label: "Yes"
     description: "I already have decompiled source code, I will provide paths"
 ```
 
-- When user selects **No**, agent MUST run decompile script synchronously:
-  - **Windows**: `& $PYTHON3 (Join-Path $SkillRoot 'scripts\decompile_source.py')`
-  - **macOS/Linux**: `"$PYTHON3" "$SKILL_ROOT/scripts/decompile_source.py"`
+- When user selects **No**, that choice authorizes source acquisition. Before running the script, agent MUST show the resolved Steam game installation path, the `Assembly-CSharp.dll` and `Assembly-CSharp-firstpass.dll` files that will be removed, the Steam restoration step, the output path, and the required Steam, .NET, and `ilspycmd` tools.
+  - The Steam game installation MUST be resolved separately from `modding_profile_path`; the decompile branch MUST NOT substitute the Modding profile as its source-acquisition path.
+  - Agent MUST validate the selected game path before the destructive step and stop when the path or required tools are invalid.
+  - Agent MUST then run the decompile script synchronously:
+    - **Windows**: `& $PYTHON3 (Join-Path $SkillRoot 'scripts\decompile_source.py')`
+    - **macOS/Linux**: `"$PYTHON3" "$SKILL_ROOT/scripts/decompile_source.py"`
   On success, `lightweight_source_code_path` is auto-filled to `<skill-root>/source_code/`. On failure, agent MUST prompt user whether to provide paths manually.
 - When user selects **Yes**, agent MUST enter manual path flow.
 
