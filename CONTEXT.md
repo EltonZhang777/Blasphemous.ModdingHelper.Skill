@@ -42,6 +42,24 @@ _Avoid_: mod folder (when the target must be precise)
 The plugins directory inside the modding root. A package's plugin files are mapped here without changing their package-relative names.
 _Avoid_: DLL folder
 
+## Skill configuration vocabulary
+
+**Skill configuration**:
+The YAML mapping stored as `config.yml` in project or user scope; it contains caller-owned paths and optional Skill settings selected by the shared configuration gate.
+_Avoid_: `preferences.md`, caller Mod source, generated runtime state
+
+**Configuration validation metadata**:
+The managed `last_checked_time` and `last_checked_version` values recording the most recent successful Skill configuration validation.
+_Avoid_: user-owned path configuration, a successful Mod test
+
+**Configuration validation period**:
+The user-controlled `check_period_days` value that determines how long a successful configuration validation remains current.
+_Avoid_: a Skill release lifetime, a Test session
+
+**Skill version source**:
+The canonical `version.yml` distributed beside the installed Skill definition and used for exact version comparison and manifest synchronization.
+_Avoid_: a caller Mod version, a ModdingAPI release selector
+
 ## Blasphemous localization
 
 **Blasphemous 1 localization corpus**:
@@ -106,6 +124,44 @@ The Branch reference for ModdingAPI APIs, the BlasMod lifecycle, services, devel
 **Harmony patching standards**:
 The Branch reference for Patch files and classes, targets, injections, framework-managed patch discovery, and approved manual patching.
 
+## Project architecture vocabulary
+
+**Project architecture guidelines**:
+A soft routing guide for locating newly authored Mod-owned files and directories when a Caller Mod repository lacks an established architecture or the user asks for organization.
+_Avoid_: mandatory migration, repository-wide rewrite
+
+**Established architecture**:
+Stable directory, namespace, and module boundaries already used by a Caller Mod repository; new work preserves these boundaries.
+_Avoid_: a single existing folder, the Skill repository layout
+
+**Architecture category**:
+A directory whose name states the primary responsibility of its new files; each file is assigned to one primary category.
+_Avoid_: catch-all directory, duplicate placement
+
+**Components directory**:
+The `Components/` category for reusable Mod-owned runtime or domain objects, state, registries, and management components.
+_Avoid_: unknown files, generic utilities
+
+**Configs directory**:
+The `Configs/` category for user configuration, serialized settings, and persistence data models.
+_Avoid_: live runtime components
+
+**Extensions directory**:
+The `Extensions/` category for extension methods and support types tightly coupled to those extensions.
+_Avoid_: generic utility directory, legacy helper examples as authority
+
+**Patches directory**:
+The `Patches/` category for Harmony Patch files and classes; a Harmony patch that raises an event remains a Patch by primary mechanism.
+_Avoid_: event-only handler, `HarmonyPatches/` as a universal requirement
+
+**Events directory**:
+The `Events/` category for event definitions, handlers, and subscription orchestration; Harmony bridges belong in `Patches/`.
+_Avoid_: Harmony Patch file
+
+**Commands directory**:
+The `Commands/` category for Mod console command classes and their command-specific behavior.
+_Avoid_: general-purpose service code
+
 ## Test lifecycle
 
 **Test session**:
@@ -127,6 +183,34 @@ _Avoid_: temporary file
 **Manual verification**:
 The player-operated part of testing, where the user performs game actions and describes the observed behavior in natural language. It is not an automated CLI result.
 _Avoid_: automated gameplay test, pass status
+
+**Session data**:
+The per-Test-session temporary directory under the system temporary state root that contains the session manifest, rollback records, and any Test log snapshot.
+_Avoid_: caller repository, game profile, live log directory
+
+**Current log**:
+The profile-local BepInEx log or configured Unity log that may still be written or overwritten by a later game launch.
+_Avoid_: Test log snapshot, bounded evidence report
+
+**Test log snapshot**:
+The complete byte-preserving BepInEx and Unity log copies captured after the user confirms the Test session is complete. If the game remains running because stop was not approved or failed, the snapshot preserves the current content and records that capture condition; later analysis of that completed session uses these copies as evidence.
+_Avoid_: current log, startup evidence report, bounded evidence
+
+**Real-profile test**:
+A verification path that requires a real, disposable, or mirror Modding profile and the game process; it may include **Manual verification** after startup evidence is collected.
+_Avoid_: treating `mod_loaded` or startup logs as proof of gameplay behavior
+
+**Automated xUnit test**:
+A deterministic test executed by a .NET xUnit runner without starting the game, using a Modding profile, or requiring player actions; test doubles are allowed when they preserve that boundary.
+_Avoid_: real-profile verification, gameplay proof
+
+**Automated test project**:
+The caller Mod repository's sibling `<ModRepoName>.Tests` project that contains Automated xUnit tests and references the main Mod project.
+_Avoid_: the real-game Test Mod, the Skill repository's own Python fixture tests
+
+**Test Mod**:
+A separate Mod-owned build and package used to exercise behavior inside the real game during a Real-profile test; it is distinct from the Automated test project.
+_Avoid_: xUnit test assembly, production Mod project
 
 ## Harmony vocabulary
 
