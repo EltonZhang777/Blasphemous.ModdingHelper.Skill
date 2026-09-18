@@ -50,3 +50,14 @@ Route: scope gate; preserve the external source and do not load the Mod-owned C#
 ```
 
 Harmony branch MUST preserve this scope gate and requirement-level contract as its target and resolver rules evolve.
+
+## Route project architecture requests
+
+For a request about placing a new Mod-owned file or directory, the router MUST activate [Project architecture guidelines](project-architecture-guidelines.md) when either condition holds:
+
+- The Caller Mod repository has no established directory, namespace, module, or feature boundaries.
+- The user explicitly asks how to organize or place new files or directories.
+
+For an ordinary request in a project with established or feature-oriented structure, the router MUST NOT impose the default role categories. An explicit organization request still activates the guide, but the existing structure takes precedence.
+
+The architecture guide is soft guidance for new files. It MUST NOT move, rename, or restructure existing files, and it MUST NOT replace the detailed C#, ModdingAPI, or Harmony references selected elsewhere in this router. The route result MUST explain whether it activated, which existing-structure boundary applied, and which primary responsibility determined the placement.
