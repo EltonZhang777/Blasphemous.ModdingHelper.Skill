@@ -217,6 +217,8 @@ class SnapshotResult:
     process_state: str
     snapshot_path: Path
     sources: Tuple[SnapshotSourceResult, ...]
+    awaiting: Optional[str] = None
+    message: Optional[str] = None
 
 
 # Compatibility aliases for the public test-session seam.
@@ -487,13 +489,17 @@ class TestSession:
         environment: str,
         *,
         explicit_unity_log_dir: Optional[str] = None,
+        stop_decision: Optional[str] = None,
+        force_stop_decision: Optional[str] = None,
     ) -> SnapshotResult:
-        return capture_test_log_snapshot(
+        return request_test_log_snapshot(
             session_id,
             profile,
             preferences,
             environment,
             explicit_unity_log_dir=explicit_unity_log_dir,
+            stop_decision=stop_decision,
+            force_stop_decision=force_stop_decision,
             state_root=self.store.root,
             process_adapter=self.process_adapter,
             file_adapter=self.file_adapter,
@@ -1353,6 +1359,352 @@ def _capture_snapshot_source(
                 pass
 
 
+def _record_snapshot_flow(
+    state_path: Path,
+    state: str,
+    stop_decision: str,
+    stop_result: str,
+    *,
+    force_stop_decision: Optional[str] = None,
+    error: Optional[str] = None,
+    current_capture_allowed: bool = False,
+) -> Dict[str, object]:
+    manifest = _read_session_manifest(state_path)
+    flow: Dict[str, object] = {
+        "version": 1,
+        "state": state,
+        "recorded_at": datetime.now(timezone.utc).isoformat(),
+        "stop_decision": stop_decision,
+        "stop_result": stop_result,
+    }
+    if force_stop_decision is not None:
+        flow["force_stop_decision"] = force_stop_decision
+    if error:
+        flow["error"] = error
+    if current_capture_allowed:
+        flow["current_capture_allowed"] = True
+    manifest["snapshot_flow"] = flow
+    try:
+        _atomic_write_json(state_path, manifest)
+    except OSError as write_error:
+        raise CliError(
+            EXIT_LOGS,
+            "logs/snapshot",
+            f"Could not persist Test log snapshot approval state: {write_error}",
+        ) from write_error
+    return manifest
+
+
+def _snapshot_pending_result(
+    session_id: str,
+    state_path: Path,
+    awaiting: str,
+    message: str,
+) -> SnapshotResult:
+    manifest = _read_session_manifest(state_path)
+    process_value = manifest.get("process")
+    process_state = (
+        str(process_value.get("state", "unknown"))
+        if isinstance(process_value, dict)
+        else "unknown"
+    )
+    return SnapshotResult(
+        session_id,
+        "pending",
+        process_state,
+        state_path.parent / "snapshots",
+        (),
+        awaiting,
+        message,
+    )
+
+
+def _snapshot_running_process(
+    session_id: str,
+    process_value: Dict[str, object],
+    *,
+    process_adapter: Optional[ProcessAdapter],
+) -> bool:
+    try:
+        identity = ProcessIdentity(
+            int(process_value["pid"]),
+            str(process_value["start_token"]),
+            Path(str(process_value["launcher"])),
+        )
+    except (KeyError, TypeError, ValueError) as error:
+        raise CliError(
+            EXIT_LOGS,
+            "logs/snapshot",
+            f"Session {session_id} has incomplete tracked process state: {error}",
+        ) from error
+    try:
+        return bool((process_adapter or ProcessAdapter()).is_alive(identity))
+    except (CliError, OSError) as error:
+        raise CliError(
+            EXIT_LOGS,
+            "logs/snapshot",
+            f"Could not inspect the tracked process for session {session_id}: {error}",
+        ) from error
+
+
+def _validate_snapshot_decision(value: Optional[str], label: str) -> None:
+    if value not in {None, "approve", "decline"}:
+        raise CliError(
+            EXIT_LOGS,
+            "logs/snapshot",
+            f"{label} must be 'approve' or 'decline'.",
+        )
+
+
+def request_test_log_snapshot(
+    session_id: str,
+    profile: ProfilePreflight,
+    preferences: Preferences,
+    environment: str,
+    *,
+    explicit_unity_log_dir: Optional[str] = None,
+    stop_decision: Optional[str] = None,
+    force_stop_decision: Optional[str] = None,
+    state_root: Optional[Path] = None,
+    process_adapter: Optional[ProcessAdapter] = None,
+    file_adapter: Optional[FileAdapter] = None,
+) -> SnapshotResult:
+    """Resolve explicit stop approvals before capturing a running session."""
+
+    _validate_snapshot_decision(stop_decision, "--stop-decision")
+    _validate_snapshot_decision(force_stop_decision, "--force-stop-decision")
+    if stop_decision is not None and force_stop_decision is not None:
+        raise CliError(
+            EXIT_LOGS,
+            "logs/snapshot",
+            "Pass either --stop-decision or --force-stop-decision, not both.",
+        )
+
+    state_path = _session_manifest_path(
+        session_id,
+        code=EXIT_LOGS,
+        category="logs/snapshot",
+        state_root=state_root,
+    )
+    manifest = _read_session_manifest(state_path)
+    if manifest.get("session_id") != session_id:
+        raise CliError(
+            EXIT_LOGS,
+            "logs/snapshot",
+            f"Session state does not match session {session_id}.",
+        )
+    recorded_profile = manifest.get("profile")
+    if recorded_profile and not _profile_paths_match(
+        Path(str(recorded_profile)),
+        profile.profile,
+    ):
+        raise CliError(
+            EXIT_LOGS,
+            "logs/snapshot",
+            f"Session {session_id} belongs to profile {recorded_profile}, but the selected profile is {profile.profile}.",
+        )
+    process_value = manifest.get("process")
+    if not isinstance(process_value, dict):
+        raise CliError(
+            EXIT_LOGS,
+            "logs/snapshot",
+            f"Session {session_id} has no tracked game process.",
+        )
+
+    flow = manifest.get("snapshot_flow")
+    flow_state = str(flow.get("state", "")) if isinstance(flow, dict) else ""
+    process_state = str(process_value.get("state", ""))
+    running = process_state == "launched" and _snapshot_running_process(
+        session_id,
+        process_value,
+        process_adapter=process_adapter,
+    )
+
+    if not running:
+        if force_stop_decision is not None and flow_state != "awaiting_force_stop":
+            raise CliError(
+                EXIT_LOGS,
+                "logs/snapshot",
+                "A force-stop decision is only valid after a normal stop failure.",
+            )
+        return capture_test_log_snapshot(
+            session_id,
+            profile,
+            preferences,
+            environment,
+            explicit_unity_log_dir=explicit_unity_log_dir,
+            state_root=state_root,
+            process_adapter=process_adapter,
+            file_adapter=file_adapter,
+        )
+
+    if flow_state == "awaiting_force_stop":
+        if stop_decision is not None:
+            raise CliError(
+                EXIT_LOGS,
+                "logs/snapshot",
+                "The normal stop decision was already recorded; pass --force-stop-decision.",
+            )
+        if force_stop_decision is None:
+            return _snapshot_pending_result(
+                session_id,
+                state_path,
+                "force_stop",
+                f"Normal stop failed for session {session_id}; pass --force-stop-decision approve or decline. No logs were captured.",
+            )
+        if force_stop_decision == "decline":
+            _record_snapshot_flow(
+                state_path,
+                "current_capture",
+                "approved",
+                "failed",
+                force_stop_decision="declined",
+                error=str(flow.get("error")) if isinstance(flow, dict) and flow.get("error") else None,
+                current_capture_allowed=True,
+            )
+            return capture_test_log_snapshot(
+                session_id,
+                profile,
+                preferences,
+                environment,
+                explicit_unity_log_dir=explicit_unity_log_dir,
+                state_root=state_root,
+                process_adapter=process_adapter,
+                file_adapter=file_adapter,
+                allow_running=True,
+                capture_condition="process_running_force_stop_declined",
+                stop_decision="approved",
+                stop_result="failed",
+                stop_error=str(flow.get("error")) if isinstance(flow, dict) and flow.get("error") else None,
+                force_stop_decision="declined",
+            )
+        try:
+            stop_result = stop_session(
+                session_id,
+                force=True,
+                state_root=state_root,
+                process_adapter=process_adapter,
+            )
+        except CliError as error:
+            error_text = str(error)
+            _record_snapshot_flow(
+                state_path,
+                "current_capture",
+                "approved",
+                "failed",
+                force_stop_decision="approved",
+                error=error_text,
+                current_capture_allowed=True,
+            )
+            return capture_test_log_snapshot(
+                session_id,
+                profile,
+                preferences,
+                environment,
+                explicit_unity_log_dir=explicit_unity_log_dir,
+                state_root=state_root,
+                process_adapter=process_adapter,
+                file_adapter=file_adapter,
+                allow_running=True,
+                capture_condition="process_running_force_stop_failed",
+                stop_decision="approved",
+                stop_result="failed",
+                stop_error=error_text,
+                force_stop_decision="approved",
+            )
+        return capture_test_log_snapshot(
+            session_id,
+            profile,
+            preferences,
+            environment,
+            explicit_unity_log_dir=explicit_unity_log_dir,
+            state_root=state_root,
+            process_adapter=process_adapter,
+            file_adapter=file_adapter,
+            capture_condition="post_force_stop",
+            stop_decision="approved",
+            stop_result=stop_result.state,
+            force_stop_decision="approved",
+        )
+
+    if force_stop_decision is not None:
+        raise CliError(
+            EXIT_LOGS,
+            "logs/snapshot",
+            "Record the ordinary stop decision before requesting a force-stop decision.",
+        )
+    if stop_decision is None:
+        _record_snapshot_flow(
+            state_path,
+            "awaiting_stop",
+            "pending",
+            "not_requested",
+        )
+        return _snapshot_pending_result(
+            session_id,
+            state_path,
+            "stop",
+            f"Session {session_id} is still running; pass --stop-decision approve or decline. No logs were captured.",
+        )
+    if stop_decision == "decline":
+        _record_snapshot_flow(
+            state_path,
+            "current_capture",
+            "declined",
+            "declined",
+            current_capture_allowed=True,
+        )
+        return capture_test_log_snapshot(
+            session_id,
+            profile,
+            preferences,
+            environment,
+            explicit_unity_log_dir=explicit_unity_log_dir,
+            state_root=state_root,
+            process_adapter=process_adapter,
+            file_adapter=file_adapter,
+            allow_running=True,
+            capture_condition="process_running_stop_declined",
+            stop_decision="declined",
+            stop_result="declined",
+        )
+
+    try:
+        stop_result = stop_session(
+            session_id,
+            force=False,
+            state_root=state_root,
+            process_adapter=process_adapter,
+        )
+    except CliError as error:
+        _record_snapshot_flow(
+            state_path,
+            "awaiting_force_stop",
+            "approved",
+            "failed",
+            error=str(error),
+        )
+        return _snapshot_pending_result(
+            session_id,
+            state_path,
+            "force_stop",
+            f"Normal stop failed for session {session_id}; pass --force-stop-decision approve or decline. No logs were captured.",
+        )
+    return capture_test_log_snapshot(
+        session_id,
+        profile,
+        preferences,
+        environment,
+        explicit_unity_log_dir=explicit_unity_log_dir,
+        state_root=state_root,
+        process_adapter=process_adapter,
+        file_adapter=file_adapter,
+        capture_condition="post_stop",
+        stop_decision="approved",
+        stop_result=stop_result.state,
+    )
+
+
 def _reject_hard_linked_destination(path: Path) -> None:
     if path.is_symlink():
         raise OSError(f"deployment target is a symlink: {path}")
@@ -1875,8 +2227,14 @@ def capture_test_log_snapshot(
     state_root: Optional[Path] = None,
     process_adapter: Optional[ProcessAdapter] = None,
     file_adapter: Optional[FileAdapter] = None,
+    allow_running: bool = False,
+    capture_condition: Optional[str] = None,
+    stop_decision: str = "not_requested",
+    stop_result: str = "not_requested",
+    stop_error: Optional[str] = None,
+    force_stop_decision: Optional[str] = None,
 ) -> SnapshotResult:
-    """Capture complete current logs for one exited Test session."""
+    """Capture complete current logs after the session's stop contract."""
 
     state_path = _session_manifest_path(
         session_id,
@@ -1908,26 +2266,41 @@ def capture_test_log_snapshot(
             "logs/snapshot",
             f"Session {session_id} has no tracked game process.",
         )
-    try:
-        _ensure_session_process_stopped(
-            session_id,
-            manifest,
-            process_adapter=process_adapter,
-        )
-    except CliError as error:
-        raise CliError(
-            EXIT_LOGS,
-            "logs/snapshot",
-            f"Cannot capture Test log snapshot for session {session_id}: {error}",
-        ) from error
-
     process_state = str(process_value.get("state", ""))
-    if process_state not in {"exited", "stopped"}:
-        raise CliError(
-            EXIT_LOGS,
-            "logs/snapshot",
-            f"Session {session_id} is not in an exited state; snapshot capture requires the tracked process tree to be exited.",
-        )
+    if allow_running:
+        flow = manifest.get("snapshot_flow")
+        if not isinstance(flow, dict) or flow.get("current_capture_allowed") is not True:
+            raise CliError(
+                EXIT_LOGS,
+                "logs/snapshot",
+                f"Session {session_id} requires an explicit current-log capture decision.",
+            )
+        if process_state not in {"launched", "exited", "stopped"}:
+            raise CliError(
+                EXIT_LOGS,
+                "logs/snapshot",
+                f"Session {session_id} is not in a capturable process state: {process_state or 'unknown'}.",
+            )
+    else:
+        try:
+            _ensure_session_process_stopped(
+                session_id,
+                manifest,
+                process_adapter=process_adapter,
+            )
+        except CliError as error:
+            raise CliError(
+                EXIT_LOGS,
+                "logs/snapshot",
+                f"Cannot capture Test log snapshot for session {session_id}: {error}",
+            ) from error
+        process_state = str(process_value.get("state", ""))
+        if process_state not in {"exited", "stopped"}:
+            raise CliError(
+                EXIT_LOGS,
+                "logs/snapshot",
+                f"Session {session_id} is not in an exited state; snapshot capture requires the tracked process tree to be exited.",
+            )
 
     unity_path, unity_warning = resolve_unity_log_path(
         preferences,
@@ -1970,18 +2343,26 @@ def capture_test_log_snapshot(
         if all(value.get("status") == "copied" for value in source_metadata.values())
         else "incomplete"
     )
-    manifest["snapshot"] = {
+    snapshot_metadata: Dict[str, object] = {
         "version": 1,
         "status": overall_status,
         "captured_at": captured_at,
         "process_state": process_state,
-        "capture_condition": (
-            "post_stop" if process_state == "stopped" else "process_exited"
-        ),
-        "stop_decision": "not_requested",
-        "stop_result": "stopped" if process_state == "stopped" else "not_requested",
+        "process_running": process_state == "launched",
+        "capture_condition": capture_condition
+        or ("post_stop" if process_state == "stopped" else "process_exited"),
+        "stop_decision": stop_decision,
+        "stop_result": stop_result
+        if stop_result != "not_requested"
+        else ("stopped" if process_state == "stopped" else "not_requested"),
         "sources": source_metadata,
     }
+    if stop_error:
+        snapshot_metadata["stop_error"] = stop_error
+    if force_stop_decision is not None:
+        snapshot_metadata["force_stop_decision"] = force_stop_decision
+    manifest.pop("snapshot_flow", None)
+    manifest["snapshot"] = snapshot_metadata
     try:
         _atomic_write_json(state_path, manifest)
     except OSError as error:
@@ -3704,13 +4085,14 @@ bounded tail.
 
     snapshot_parser = subparsers.add_parser(
         "snapshot",
-        help="Capture complete BepInEx and Unity logs for one exited session.",
+        help="Capture complete BepInEx and Unity logs for one Test session.",
         usage="%(prog)s SESSION_ID [OPTIONS]",
-        description="""Capture complete BepInEx and Unity logs for one completed Test session.
+        description="""Capture complete BepInEx and Unity logs for one user-confirmed Test session.
 
 Context: --project, --profile, --launcher, and --unity-log-dir override saved
-context for this invocation. The tracked process tree must already be exited;
-this command never stops it.
+context for this invocation. An exited process is captured immediately. A
+running process requires --stop-decision approve|decline. If normal stopping
+fails, a separate --force-stop-decision approve|decline is required.
 """,
         formatter_class=HELP_FORMATTER,
         epilog="""Example:
@@ -3723,6 +4105,16 @@ this command never stops it.
         help="The session identifier printed by run.",
     )
     _add_common_options(snapshot_parser)
+    snapshot_parser.add_argument(
+        "--stop-decision",
+        choices=("approve", "decline"),
+        help="Explicitly approve or decline the normal stop before capturing a running session.",
+    )
+    snapshot_parser.add_argument(
+        "--force-stop-decision",
+        choices=("approve", "decline"),
+        help="After normal stop fails, explicitly approve or decline force-stop before capturing current logs.",
+    )
 
     status_parser = subparsers.add_parser(
         "status",
@@ -4048,10 +4440,17 @@ def snapshot_command(
         context.preferences,
         context.environment,
         explicit_unity_log_dir=args.unity_log_dir,
+        stop_decision=args.stop_decision,
+        force_stop_decision=args.force_stop_decision,
     )
     print(f"Snapshot session: {result.session_id}")
     print(f"Snapshot state: {result.status}")
     print(f"Snapshot process state: {result.process_state}")
+    if result.status == "pending":
+        print(f"Snapshot approval: {result.awaiting}")
+        if result.message:
+            print(result.message)
+        return EXIT_SUCCESS
     print("Snapshot sources:")
     for source in result.sources:
         detail = source.error or f"{source.byte_count or 0} bytes"

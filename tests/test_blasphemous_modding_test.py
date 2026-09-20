@@ -667,10 +667,12 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
                     "--profile PATH",
                     "--launcher PATH",
                     "--unity-log-dir PATH",
-                    "tracked process tree must already be exited",
+                    "--stop-decision {approve,decline}",
+                    "--force-stop-decision {approve,decline}",
+                    "running process requires --stop-decision",
                     "Context:",
                 ),
-                "absent": ("--configuration", "--artifact", "--dry-run", "--force", "--full", "--remove-new-files"),
+                "absent": ("--configuration", "--artifact", "--dry-run", "--full", "--remove-new-files"),
             },
             "stop": {
                 "present": (
@@ -779,6 +781,8 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
                 "launcher",
                 "--unity-log-dir",
                 "UNITY_LOGS",
+                "--stop-decision",
+                "approve",
             ),
             ("stop", "SESSION_ID", "--force"),
             (
@@ -1032,7 +1036,7 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
         self.assertEqual(manifest["snapshot"]["sources"]["unity"]["status"], "missing")
         self.assertEqual(unity_target.read_bytes(), b"unity-before")
 
-    def test_snapshot_rejects_running_process_without_capture(self):
+    def test_snapshot_running_process_waits_for_explicit_stop_approval(self):
         (
             module,
             session,
@@ -1053,18 +1057,202 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
             "Darwin": "macOS",
         }[platform.system()]
 
-        with self.assertRaises(module.CliError) as failure:
-            session.snapshot(
-                deployment.session_id,
-                profile_preflight,
-                module.load_preferences(cwd=self.root, home=self.home),
-                environment,
-            )
+        result = session.snapshot(
+            deployment.session_id,
+            profile_preflight,
+            module.load_preferences(cwd=self.root, home=self.home),
+            environment,
+        )
 
-        self.assertEqual(failure.exception.category, "logs/snapshot")
-        self.assertIn("still running", str(failure.exception))
+        self.assertEqual(result.status, "pending")
+        self.assertEqual(result.awaiting, "stop")
         manifest = json.loads(deployment.state_path.read_text(encoding="utf-8"))
         self.assertNotIn("snapshot", manifest)
+        self.assertEqual(manifest["snapshot_flow"]["state"], "awaiting_stop")
+        session.process_adapter.terminate_tree.assert_not_called()
+
+    def prepare_running_snapshot_context(self, module, profile_preflight):
+        unity_log_dir = self.root / "unity-logs"
+        unity_log_dir.mkdir()
+        self.write_project_preferences(profile_preflight.profile, unity_log_dir)
+        (profile_preflight.bepinex_root / "LogOutput.log").write_bytes(b"running-bepinex")
+        (unity_log_dir / "output_log.txt").write_bytes(b"running-unity")
+        environment = {
+            "Windows": "Windows",
+            "Linux": "Linux",
+            "Darwin": "macOS",
+        }[platform.system()]
+        return module.load_preferences(cwd=self.root, home=self.home), environment
+
+    def test_snapshot_approved_stop_captures_after_normal_stop(self):
+        module, session, deployment, profile_preflight, _process, identity = self.create_launched_session()
+        preferences, environment = self.prepare_running_snapshot_context(module, profile_preflight)
+        session.process_adapter.is_alive.return_value = True
+        session.process_adapter.wait_for_exit.return_value = True
+
+        result = session.snapshot(
+            deployment.session_id,
+            profile_preflight,
+            preferences,
+            environment,
+            stop_decision="approve",
+        )
+
+        self.assertEqual(result.status, "complete")
+        self.assertEqual(result.process_state, "stopped")
+        session.process_adapter.terminate_tree.assert_called_once_with(identity, force=False)
+        manifest = json.loads(deployment.state_path.read_text(encoding="utf-8"))
+        self.assertEqual(manifest["snapshot"]["capture_condition"], "post_stop")
+        self.assertEqual(manifest["snapshot"]["stop_decision"], "approved")
+        self.assertEqual(manifest["snapshot"]["stop_result"], "stopped")
+
+    def test_snapshot_normal_stop_failure_waits_for_separate_force_approval(self):
+        module, session, deployment, profile_preflight, _process, identity = self.create_launched_session()
+        preferences, environment = self.prepare_running_snapshot_context(module, profile_preflight)
+        session.process_adapter.is_alive.return_value = True
+        session.process_adapter.wait_for_exit.side_effect = [False, True]
+
+        pending = session.snapshot(
+            deployment.session_id,
+            profile_preflight,
+            preferences,
+            environment,
+            stop_decision="approve",
+        )
+
+        self.assertEqual(pending.status, "pending")
+        self.assertEqual(pending.awaiting, "force_stop")
+        manifest = json.loads(deployment.state_path.read_text(encoding="utf-8"))
+        self.assertNotIn("snapshot", manifest)
+        self.assertEqual(manifest["snapshot_flow"]["state"], "awaiting_force_stop")
+
+        result = session.snapshot(
+            deployment.session_id,
+            profile_preflight,
+            preferences,
+            environment,
+            force_stop_decision="approve",
+        )
+
+        self.assertEqual(result.status, "complete")
+        self.assertEqual(result.process_state, "stopped")
+        self.assertEqual(
+            session.process_adapter.terminate_tree.call_args_list,
+            [mock.call(identity, force=False), mock.call(identity, force=True)],
+        )
+        manifest = json.loads(deployment.state_path.read_text(encoding="utf-8"))
+        self.assertEqual(manifest["snapshot"]["capture_condition"], "post_force_stop")
+        self.assertEqual(manifest["snapshot"]["force_stop_decision"], "approved")
+
+    def test_snapshot_declined_stop_captures_explicit_current_logs(self):
+        module, session, deployment, profile_preflight, _process, _identity = self.create_launched_session()
+        preferences, environment = self.prepare_running_snapshot_context(module, profile_preflight)
+        session.process_adapter.is_alive.return_value = True
+
+        result = session.snapshot(
+            deployment.session_id,
+            profile_preflight,
+            preferences,
+            environment,
+            stop_decision="decline",
+        )
+
+        self.assertEqual(result.status, "complete")
+        self.assertEqual(result.process_state, "launched")
+        session.process_adapter.terminate_tree.assert_not_called()
+        manifest = json.loads(deployment.state_path.read_text(encoding="utf-8"))
+        snapshot = manifest["snapshot"]
+        self.assertEqual(snapshot["capture_condition"], "process_running_stop_declined")
+        self.assertTrue(snapshot["process_running"])
+        self.assertEqual(snapshot["stop_decision"], "declined")
+
+    def test_snapshot_command_reports_pending_approval(self):
+        module, session, deployment, profile_preflight, _process, _identity = self.create_launched_session()
+        self.prepare_running_snapshot_context(module, profile_preflight)
+        session.process_adapter.is_alive.return_value = True
+
+        result = self.run_module_cli(
+            module,
+            "snapshot",
+            deployment.session_id,
+            session=session,
+        )
+
+        self.assert_success(result)
+        self.assertIn("Snapshot state: pending", result.stdout)
+        self.assertIn("Snapshot approval: stop", result.stdout)
+        self.assertIn("No logs were captured", result.stdout)
+        manifest = json.loads(deployment.state_path.read_text(encoding="utf-8"))
+        self.assertNotIn("snapshot", manifest)
+
+    def test_snapshot_declined_force_stop_captures_current_logs_after_failure(self):
+        module, session, deployment, profile_preflight, _process, identity = self.create_launched_session()
+        preferences, environment = self.prepare_running_snapshot_context(module, profile_preflight)
+        session.process_adapter.is_alive.return_value = True
+        session.process_adapter.wait_for_exit.return_value = False
+
+        pending = session.snapshot(
+            deployment.session_id,
+            profile_preflight,
+            preferences,
+            environment,
+            stop_decision="approve",
+        )
+        self.assertEqual(pending.awaiting, "force_stop")
+
+        result = session.snapshot(
+            deployment.session_id,
+            profile_preflight,
+            preferences,
+            environment,
+            force_stop_decision="decline",
+        )
+
+        self.assertEqual(result.status, "complete")
+        self.assertEqual(result.process_state, "launched")
+        self.assertEqual(session.process_adapter.terminate_tree.call_count, 1)
+        session.process_adapter.terminate_tree.assert_called_once_with(identity, force=False)
+        manifest = json.loads(deployment.state_path.read_text(encoding="utf-8"))
+        snapshot = manifest["snapshot"]
+        self.assertEqual(snapshot["capture_condition"], "process_running_force_stop_declined")
+        self.assertEqual(snapshot["force_stop_decision"], "declined")
+        self.assertEqual(snapshot["stop_result"], "failed")
+
+    def test_snapshot_failed_force_stop_captures_current_logs_with_error(self):
+        module, session, deployment, profile_preflight, _process, identity = self.create_launched_session()
+        preferences, environment = self.prepare_running_snapshot_context(module, profile_preflight)
+        session.process_adapter.is_alive.return_value = True
+        session.process_adapter.wait_for_exit.side_effect = [False, False]
+
+        pending = session.snapshot(
+            deployment.session_id,
+            profile_preflight,
+            preferences,
+            environment,
+            stop_decision="approve",
+        )
+        self.assertEqual(pending.awaiting, "force_stop")
+
+        result = session.snapshot(
+            deployment.session_id,
+            profile_preflight,
+            preferences,
+            environment,
+            force_stop_decision="approve",
+        )
+
+        self.assertEqual(result.status, "complete")
+        self.assertEqual(result.process_state, "launched")
+        self.assertEqual(
+            session.process_adapter.terminate_tree.call_args_list,
+            [mock.call(identity, force=False), mock.call(identity, force=True)],
+        )
+        manifest = json.loads(deployment.state_path.read_text(encoding="utf-8"))
+        snapshot = manifest["snapshot"]
+        self.assertEqual(snapshot["capture_condition"], "process_running_force_stop_failed")
+        self.assertEqual(snapshot["force_stop_decision"], "approved")
+        self.assertEqual(snapshot["stop_result"], "failed")
+        self.assertIn("still running", snapshot["stop_error"])
 
     def test_snapshot_rejects_a_different_profile(self):
         (

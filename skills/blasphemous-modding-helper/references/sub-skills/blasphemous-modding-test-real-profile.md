@@ -210,16 +210,33 @@ Completion criterion: agent reports state, current/stale/missing status of both 
 
 ```text
 <TEST_CLI> snapshot SESSION_ID [common options]
+<TEST_CLI> snapshot SESSION_ID --stop-decision approve|decline
+<TEST_CLI> snapshot SESSION_ID --force-stop-decision approve|decline
 ```
 
-`snapshot` copies the complete BepInEx and configured Unity log bytes into
-the session's temporary `snapshots/` directory after the tracked process tree
-is confirmed exited. It never stops a process, changes the live log files, or
-writes into the caller Mod repository or game profile. The manifest records
-per-source status, source and target paths, byte counts, SHA-256 digests, the
-capture condition, and process/stop metadata. A missing or failed source is
-reported independently and leaves any previously successful same-source copy
-in place; the overall snapshot is incomplete until both sources are copied.
+`snapshot` copies the complete BepInEx and configured Unity log bytes into the
+session's temporary `snapshots/` directory. It never changes the live log
+files, writes into the caller Mod repository or game profile, or infers an
+approval from silence. If the tracked process is already exited, capture is
+immediate. If it is still running, the first invocation returns `pending`
+without copying logs; ask the user for ordinary stop approval, then repeat with
+`--stop-decision approve` or `--stop-decision decline`.
+
+An approved ordinary stop reuses the tracked-process stop behavior and captures
+only after the process tree is confirmed exited. If ordinary stop fails, the
+operation remains `pending` and requires separate
+`--force-stop-decision approve` or `--force-stop-decision decline`; force
+approval is never inferred. An explicit refusal at either prompt, or a failed
+approved force stop, captures the current logs and records the running-process
+condition, stop decision, stop result, and any stop error. An unanswered prompt
+does not capture.
+
+The manifest records per-source status, source and target paths, byte counts,
+SHA-256 digests, the capture condition, and process/stop metadata. A missing or
+failed source is reported independently and leaves any previously successful
+same-source copy in place; the overall snapshot is incomplete until both
+sources are copied. Snapshot files remain session data through archive and
+safe clean; original log paths and cleanup behavior are unchanged.
 
 ### `status`: read-only session view
 
