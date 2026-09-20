@@ -89,7 +89,7 @@ The workflow stores temporary session state for process ownership, deployment ma
 ## Implementation Decisions
 
 - The feature is a Python standard-library CLI using `argparse`, with one implementation boundary on native Windows, Linux, and macOS. PowerShell or Bash may host the process but are not separate Skill entry points.
-- The CLI exposes `run`, `stop`, `clean`, `logs`, and read-only `status` operations. It uses project configuration before user configuration, and explicit arguments override saved values.
+- The CLI exposes `run`, `stop`, `clean`, `logs`, `snapshot`, and read-only `status` operations. It uses project configuration before user configuration, and explicit arguments override saved values.
 - The default build configuration is Debug. Release is explicit. A project is inferred only when the current directory contains exactly one project file; ambiguity requires explicit selection.
 - Build-root resolution inspects ancestor `.sln` and `.slnx` files, matches their project membership to the requested `.csproj`, selects one matching solution, and fails explicitly when matching membership is ambiguous. With no match, the project directory is the visible fallback; the artifact plan reports the selected root and trailing-separator `SolutionDir`.
 - A normal run builds the project, resolves the declared target name, and uses the corresponding package directory in the build output container. An explicit artifact selects deploy-only behavior. A dry run does not deploy or launch.

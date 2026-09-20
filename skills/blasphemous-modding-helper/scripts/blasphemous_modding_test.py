@@ -199,6 +199,26 @@ class CleanResult:
     file_outcomes: Tuple[CleanupFileOutcome, ...] = ()
 
 
+@dataclass(frozen=True)
+class SnapshotSourceResult:
+    name: str
+    status: str
+    source_path: Optional[Path]
+    target_path: Path
+    byte_count: Optional[int]
+    sha256: Optional[str]
+    error: Optional[str]
+
+
+@dataclass(frozen=True)
+class SnapshotResult:
+    session_id: str
+    status: str
+    process_state: str
+    snapshot_path: Path
+    sources: Tuple[SnapshotSourceResult, ...]
+
+
 # Compatibility aliases for the public test-session seam.
 LogEvidenceSource = log_diagnostics.LogEvidenceSource
 EvidenceHit = log_diagnostics.EvidenceHit
@@ -457,6 +477,26 @@ class TestSession:
             environment,
             timeout,
             explicit_unity_log_dir=explicit_unity_log_dir,
+        )
+
+    def snapshot(
+        self,
+        session_id: str,
+        profile: ProfilePreflight,
+        preferences: Preferences,
+        environment: str,
+        *,
+        explicit_unity_log_dir: Optional[str] = None,
+    ) -> SnapshotResult:
+        return capture_test_log_snapshot(
+            session_id,
+            profile,
+            preferences,
+            environment,
+            explicit_unity_log_dir=explicit_unity_log_dir,
+            state_root=self.store.root,
+            process_adapter=self.process_adapter,
+            file_adapter=self.file_adapter,
         )
 
     def stop(self, session_id: str, force: bool = False) -> StopResult:
@@ -1210,6 +1250,109 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _snapshot_failure_metadata(
+    metadata: Dict[str, object],
+    status: str,
+    error: str,
+    previous: Optional[Dict[str, object]],
+) -> Dict[str, object]:
+    metadata["status"] = status
+    metadata["error"] = error
+    if isinstance(previous, dict) and previous.get("status") == "copied":
+        metadata["previous"] = {
+            "status": previous.get("status"),
+            "target_path": previous.get("target_path"),
+            "byte_count": previous.get("byte_count"),
+            "sha256": previous.get("sha256"),
+        }
+    return metadata
+
+
+def _capture_snapshot_source(
+    name: str,
+    source: Optional[Path],
+    target: Path,
+    *,
+    previous: Optional[Dict[str, object]],
+    file_adapter: FileAdapter,
+    warning: Optional[str] = None,
+) -> Dict[str, object]:
+    metadata: Dict[str, object] = {
+        "status": "missing",
+        "source_path": str(source.resolve(strict=False)) if source else None,
+        "target_path": str(target),
+        "byte_count": None,
+        "sha256": None,
+    }
+    if source is None:
+        return _snapshot_failure_metadata(
+            metadata,
+            "missing",
+            warning or f"{name} log path is not configured.",
+            previous,
+        )
+
+    source_path = source.resolve(strict=False)
+    metadata["source_path"] = str(source_path)
+    try:
+        source_stat = source_path.stat()
+    except FileNotFoundError:
+        return _snapshot_failure_metadata(
+            metadata,
+            "missing",
+            f"{name} log was not found: {source_path}",
+            previous,
+        )
+    except OSError as error:
+        return _snapshot_failure_metadata(
+            metadata,
+            "failed",
+            f"Could not inspect {name} log {source_path}: {error}",
+            previous,
+        )
+    if not stat.S_ISREG(source_stat.st_mode):
+        return _snapshot_failure_metadata(
+            metadata,
+            "failed",
+            f"{name} log is not a regular file: {source_path}",
+            previous,
+        )
+
+    temporary: Optional[Path] = None
+    try:
+        source_digest = _sha256(source_path)
+        temporary = target.with_name(f".{target.name}.{uuid.uuid4().hex}.tmp")
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if _first_symlink_component(target.parent) is not None:
+            raise OSError(f"snapshot directory contains a symlink: {target.parent}")
+        if target.is_symlink():
+            raise OSError(f"snapshot target is a symlink: {target}")
+        if target.exists() and not target.is_file():
+            raise OSError(f"snapshot target is not a regular file: {target}")
+        file_adapter.copy(source_path, temporary)
+        if temporary.is_symlink() or not temporary.is_file():
+            raise OSError(f"snapshot staging target is not a regular file: {temporary}")
+        if temporary.stat().st_size != source_stat.st_size:
+            raise OSError(f"snapshot byte count mismatch for {source_path}")
+        if _sha256(temporary) != source_digest:
+            raise OSError(f"snapshot digest mismatch for {source_path}")
+        os.replace(temporary, target)
+        return {
+            **metadata,
+            "status": "copied",
+            "byte_count": source_stat.st_size,
+            "sha256": source_digest,
+        }
+    except (OSError, ValueError) as error:
+        return _snapshot_failure_metadata(metadata, "failed", str(error), previous)
+    finally:
+        if temporary is not None and temporary.exists():
+            try:
+                temporary.unlink()
+            except OSError:
+                pass
+
+
 def _reject_hard_linked_destination(path: Path) -> None:
     if path.is_symlink():
         raise OSError(f"deployment target is a symlink: {path}")
@@ -1719,6 +1862,161 @@ def collect_log_evidence(
         runtime_aliases,
         full=full,
         unity_warning=unity_warning,
+    )
+
+
+def capture_test_log_snapshot(
+    session_id: str,
+    profile: ProfilePreflight,
+    preferences: Preferences,
+    environment: str,
+    *,
+    explicit_unity_log_dir: Optional[str] = None,
+    state_root: Optional[Path] = None,
+    process_adapter: Optional[ProcessAdapter] = None,
+    file_adapter: Optional[FileAdapter] = None,
+) -> SnapshotResult:
+    """Capture complete current logs for one exited Test session."""
+
+    state_path = _session_manifest_path(
+        session_id,
+        code=EXIT_LOGS,
+        category="logs/snapshot",
+        state_root=state_root,
+    )
+    manifest = _read_session_manifest(state_path)
+    if manifest.get("session_id") != session_id:
+        raise CliError(
+            EXIT_LOGS,
+            "logs/snapshot",
+            f"Session state does not match session {session_id}.",
+        )
+    recorded_profile = manifest.get("profile")
+    if recorded_profile and not _profile_paths_match(
+        Path(str(recorded_profile)),
+        profile.profile,
+    ):
+        raise CliError(
+            EXIT_LOGS,
+            "logs/snapshot",
+            f"Session {session_id} belongs to profile {recorded_profile}, but the selected profile is {profile.profile}.",
+        )
+    process_value = manifest.get("process")
+    if not isinstance(process_value, dict):
+        raise CliError(
+            EXIT_LOGS,
+            "logs/snapshot",
+            f"Session {session_id} has no tracked game process.",
+        )
+    try:
+        _ensure_session_process_stopped(
+            session_id,
+            manifest,
+            process_adapter=process_adapter,
+        )
+    except CliError as error:
+        raise CliError(
+            EXIT_LOGS,
+            "logs/snapshot",
+            f"Cannot capture Test log snapshot for session {session_id}: {error}",
+        ) from error
+
+    process_state = str(process_value.get("state", ""))
+    if process_state not in {"exited", "stopped"}:
+        raise CliError(
+            EXIT_LOGS,
+            "logs/snapshot",
+            f"Session {session_id} is not in an exited state; snapshot capture requires the tracked process tree to be exited.",
+        )
+
+    unity_path, unity_warning = resolve_unity_log_path(
+        preferences,
+        environment,
+        explicit_directory=explicit_unity_log_dir,
+    )
+    snapshot_path = state_path.parent / "snapshots"
+    previous_snapshot = manifest.get("snapshot")
+    previous_sources = (
+        previous_snapshot.get("sources")
+        if isinstance(previous_snapshot, dict)
+        else None
+    )
+    if not isinstance(previous_sources, dict):
+        previous_sources = {}
+
+    source_specs = (
+        ("bepinex", profile.bepinex_root / "LogOutput.log", None, "bepinex.log"),
+        ("unity", unity_path, unity_warning, "unity.log"),
+    )
+    captured_at = datetime.now(timezone.utc).isoformat()
+    source_metadata: Dict[str, Dict[str, object]] = {}
+    adapter = file_adapter or FileAdapter()
+    for name, source, warning, filename in source_specs:
+        source_metadata[name] = _capture_snapshot_source(
+            name,
+            source,
+            snapshot_path / filename,
+            previous=(
+                previous_sources.get(name)
+                if isinstance(previous_sources.get(name), dict)
+                else None
+            ),
+            file_adapter=adapter,
+            warning=warning,
+        )
+
+    overall_status = (
+        "complete"
+        if all(value.get("status") == "copied" for value in source_metadata.values())
+        else "incomplete"
+    )
+    manifest["snapshot"] = {
+        "version": 1,
+        "status": overall_status,
+        "captured_at": captured_at,
+        "process_state": process_state,
+        "capture_condition": (
+            "post_stop" if process_state == "stopped" else "process_exited"
+        ),
+        "stop_decision": "not_requested",
+        "stop_result": "stopped" if process_state == "stopped" else "not_requested",
+        "sources": source_metadata,
+    }
+    try:
+        _atomic_write_json(state_path, manifest)
+    except OSError as error:
+        raise CliError(
+            EXIT_LOGS,
+            "logs/snapshot",
+            f"Could not persist Test log snapshot metadata for session {session_id}: {error}",
+        ) from error
+
+    results = tuple(
+        SnapshotSourceResult(
+            name,
+            str(metadata.get("status", "failed")),
+            (
+                Path(str(metadata["source_path"]))
+                if metadata.get("source_path")
+                else None
+            ),
+            Path(str(metadata["target_path"])),
+            (
+                int(metadata["byte_count"])
+                if metadata.get("byte_count") is not None
+                else None
+            ),
+            str(metadata["sha256"]) if metadata.get("sha256") else None,
+            str(metadata["error"]) if metadata.get("error") else None,
+        )
+        for name, metadata in source_metadata.items()
+    )
+    return SnapshotResult(
+        session_id,
+        overall_status,
+        process_state,
+        snapshot_path,
+        results,
     )
 
 
@@ -3271,6 +3569,7 @@ def build_parser() -> argparse.ArgumentParser:
         epilog="""Canonical workflow (run from the caller's Mod repository):
   blasphemous-modding-test run --project <PROJECT.csproj> --profile <PROFILE> --startup-timeout 60
   blasphemous-modding-test logs SESSION_ID
+  blasphemous-modding-test snapshot SESSION_ID
   blasphemous-modding-test stop SESSION_ID
   blasphemous-modding-test stop SESSION_ID --force
   blasphemous-modding-test clean SESSION_ID
@@ -3402,6 +3701,28 @@ bounded tail.
         action="store_true",
         help="Print complete log contents instead of the bounded tail.",
     )
+
+    snapshot_parser = subparsers.add_parser(
+        "snapshot",
+        help="Capture complete BepInEx and Unity logs for one exited session.",
+        usage="%(prog)s SESSION_ID [OPTIONS]",
+        description="""Capture complete BepInEx and Unity logs for one completed Test session.
+
+Context: --project, --profile, --launcher, and --unity-log-dir override saved
+context for this invocation. The tracked process tree must already be exited;
+this command never stops it.
+""",
+        formatter_class=HELP_FORMATTER,
+        epilog="""Example:
+  blasphemous-modding-test snapshot SESSION_ID
+""",
+    )
+    snapshot_parser.add_argument(
+        "session_id",
+        metavar="SESSION_ID",
+        help="The session identifier printed by run.",
+    )
+    _add_common_options(snapshot_parser)
 
     status_parser = subparsers.add_parser(
         "status",
@@ -3700,6 +4021,44 @@ def logs_command(
     return EXIT_SUCCESS
 
 
+def snapshot_command(
+    args: argparse.Namespace,
+    session: TestSession,
+) -> int:
+    context = _resolve_context(args, require_project=False)
+    state_path = session.manifest_path(
+        args.session_id,
+        code=EXIT_LOGS,
+        category="logs/snapshot",
+    )
+    manifest = _read_session_manifest(state_path)
+    recorded_profile = manifest.get("profile")
+    if recorded_profile:
+        recorded_path = Path(str(recorded_profile)).resolve(strict=False)
+        if recorded_path != context.profile.profile:
+            raise CliError(
+                EXIT_LOGS,
+                "logs/snapshot",
+                f"Session {args.session_id} belongs to profile {recorded_path}, "
+                f"but the selected profile is {context.profile.profile}. Pass --profile for the session profile.",
+            )
+    result = session.snapshot(
+        args.session_id,
+        context.profile,
+        context.preferences,
+        context.environment,
+        explicit_unity_log_dir=args.unity_log_dir,
+    )
+    print(f"Snapshot session: {result.session_id}")
+    print(f"Snapshot state: {result.status}")
+    print(f"Snapshot process state: {result.process_state}")
+    print("Snapshot sources:")
+    for source in result.sources:
+        detail = source.error or f"{source.byte_count or 0} bytes"
+        print(f"  {source.name}: {source.status} ({detail})")
+    return EXIT_SUCCESS
+
+
 def stop_command(
     args: argparse.Namespace,
     session: TestSession,
@@ -3756,6 +4115,8 @@ def dispatch_command(
         return run_command(args, active_session)
     if args.command == "logs":
         return logs_command(args, active_session)
+    if args.command == "snapshot":
+        return snapshot_command(args, active_session)
     if args.command == "stop":
         return stop_command(args, active_session)
     if args.command == "clean":

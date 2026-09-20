@@ -625,6 +625,7 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
         for example in (
             "blasphemous-modding-test run --project <PROJECT.csproj> --profile <PROFILE> --startup-timeout 60",
             "blasphemous-modding-test logs SESSION_ID",
+            "blasphemous-modding-test snapshot SESSION_ID",
             "blasphemous-modding-test stop SESSION_ID --force",
             "blasphemous-modding-test clean SESSION_ID",
             "blasphemous-modding-test status",
@@ -658,6 +659,18 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
                     "Context:",
                 ),
                 "absent": ("--configuration", "--artifact", "--dry-run", "--force", "--remove-new-files"),
+            },
+            "snapshot": {
+                "present": (
+                    "SESSION_ID",
+                    "--project PATH",
+                    "--profile PATH",
+                    "--launcher PATH",
+                    "--unity-log-dir PATH",
+                    "tracked process tree must already be exited",
+                    "Context:",
+                ),
+                "absent": ("--configuration", "--artifact", "--dry-run", "--force", "--full", "--remove-new-files"),
             },
             "stop": {
                 "present": (
@@ -755,6 +768,18 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
                 "UNITY_LOGS",
                 "--full",
             ),
+            (
+                "snapshot",
+                "SESSION_ID",
+                "--project",
+                "Mod.csproj",
+                "--profile",
+                "PROFILE",
+                "--launcher",
+                "launcher",
+                "--unity-log-dir",
+                "UNITY_LOGS",
+            ),
             ("stop", "SESSION_ID", "--force"),
             (
                 "clean",
@@ -826,6 +851,290 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
         self.assert_success(result)
         self.assertIn("SESSION_ID", result.stdout)
         self.assertIn("--full", result.stdout)
+
+    def test_snapshot_copies_exited_logs_and_survives_clean(self):
+        (
+            module,
+            session,
+            deployment,
+            profile_preflight,
+            _process,
+            _identity,
+        ) = self.create_launched_session()
+        unity_log_dir = self.root / "unity logs"
+        unity_log_dir.mkdir()
+        self.write_project_preferences(profile_preflight.profile, unity_log_dir)
+        bepinex = profile_preflight.bepinex_root / "LogOutput.log"
+        unity = unity_log_dir / "output_log.txt"
+        bepinex_bytes = b"bepinex\x00complete\n"
+        unity_bytes = b"unity\x00complete\n"
+        bepinex.write_bytes(bepinex_bytes)
+        unity.write_bytes(unity_bytes)
+        session.process_adapter.is_alive.return_value = False
+        environment = {
+            "Windows": "Windows",
+            "Linux": "Linux",
+            "Darwin": "macOS",
+        }[platform.system()]
+
+        result = session.snapshot(
+            deployment.session_id,
+            profile_preflight,
+            module.load_preferences(cwd=self.root, home=self.home),
+            environment,
+        )
+
+        self.assertEqual(result.status, "complete")
+        manifest = json.loads(deployment.state_path.read_text(encoding="utf-8"))
+        snapshot = manifest["snapshot"]
+        self.assertEqual(snapshot["status"], "complete")
+        self.assertEqual(snapshot["capture_condition"], "process_exited")
+        self.assertEqual(snapshot["process_state"], "exited")
+        self.assertEqual(snapshot["stop_decision"], "not_requested")
+        self.assertEqual(snapshot["stop_result"], "not_requested")
+        sources = snapshot["sources"]
+        self.assertEqual(set(sources), {"bepinex", "unity"})
+        targets = []
+        for name, expected, original in (
+            ("bepinex", bepinex_bytes, bepinex),
+            ("unity", unity_bytes, unity),
+        ):
+            metadata = sources[name]
+            target = Path(metadata["target_path"])
+            targets.append(target)
+            self.assertEqual(metadata["status"], "copied")
+            self.assertEqual(metadata["byte_count"], len(expected))
+            self.assertEqual(metadata["sha256"], hashlib.sha256(expected).hexdigest())
+            self.assertEqual(target.read_bytes(), expected)
+            self.assertEqual(original.read_bytes(), expected)
+            self.assertTrue(target.is_relative_to(deployment.state_path.parent))
+            self.assertNotIn(profile_preflight.profile, target.parents)
+        self.assertNotEqual(targets[0].name, targets[1].name)
+
+        archived = session.archive_previous(
+            profile_preflight.profile,
+            "a" * 32,
+        )
+        self.assertEqual(archived, (deployment.session_id,))
+        archived_manifest = json.loads(
+            deployment.state_path.read_text(encoding="utf-8")
+        )
+        self.assertEqual(archived_manifest["session_state"], "archived")
+        for target in targets:
+            self.assertTrue(target.is_file())
+
+        session.clean(deployment.session_id)
+        for target in targets:
+            self.assertTrue(target.is_file())
+
+    def test_snapshot_replaces_sources_and_preserves_previous_copy_on_failure(self):
+        (
+            module,
+            session,
+            deployment,
+            profile_preflight,
+            _process,
+            _identity,
+        ) = self.create_launched_session()
+        unity_log_dir = self.root / "unity-logs"
+        unity_log_dir.mkdir()
+        self.write_project_preferences(profile_preflight.profile, unity_log_dir)
+        bepinex = profile_preflight.bepinex_root / "LogOutput.log"
+        unity = unity_log_dir / "output_log.txt"
+        bepinex.write_bytes(b"first-bepinex")
+        unity.write_bytes(b"first-unity")
+        session.process_adapter.is_alive.return_value = False
+        environment = {
+            "Windows": "Windows",
+            "Linux": "Linux",
+            "Darwin": "macOS",
+        }[platform.system()]
+        preferences = module.load_preferences(cwd=self.root, home=self.home)
+        first = session.snapshot(
+            deployment.session_id,
+            profile_preflight,
+            preferences,
+            environment,
+        )
+        targets = {
+            source.name: source.target_path
+            for source in first.sources
+        }
+        bepinex.write_bytes(b"second-bepinex")
+        unity.write_bytes(b"second-unity")
+
+        class FailingBepInExCopy(module.FileAdapter):
+            def copy(self, source, destination):
+                if source == bepinex:
+                    raise OSError("simulated BepInEx copy failure")
+                super().copy(source, destination)
+
+        session.file_adapter = FailingBepInExCopy()
+        result = session.snapshot(
+            deployment.session_id,
+            profile_preflight,
+            preferences,
+            environment,
+        )
+
+        self.assertEqual(result.status, "incomplete")
+        manifest = json.loads(deployment.state_path.read_text(encoding="utf-8"))
+        snapshot = manifest["snapshot"]
+        self.assertEqual(snapshot["sources"]["bepinex"]["status"], "failed")
+        self.assertIn("previous", snapshot["sources"]["bepinex"])
+        self.assertEqual(targets["bepinex"].read_bytes(), b"first-bepinex")
+        self.assertEqual(snapshot["sources"]["unity"]["status"], "copied")
+        self.assertEqual(targets["unity"].read_bytes(), b"second-unity")
+
+    def test_snapshot_reports_missing_source_without_deleting_successful_copy(self):
+        (
+            module,
+            session,
+            deployment,
+            profile_preflight,
+            _process,
+            _identity,
+        ) = self.create_launched_session()
+        unity_log_dir = self.root / "unity-logs"
+        unity_log_dir.mkdir()
+        self.write_project_preferences(profile_preflight.profile, unity_log_dir)
+        bepinex = profile_preflight.bepinex_root / "LogOutput.log"
+        unity = unity_log_dir / "output_log.txt"
+        bepinex.write_bytes(b"bepinex-before")
+        unity.write_bytes(b"unity-before")
+        session.process_adapter.is_alive.return_value = False
+        environment = {
+            "Windows": "Windows",
+            "Linux": "Linux",
+            "Darwin": "macOS",
+        }[platform.system()]
+        preferences = module.load_preferences(cwd=self.root, home=self.home)
+        first = session.snapshot(
+            deployment.session_id,
+            profile_preflight,
+            preferences,
+            environment,
+        )
+        unity_target = next(source.target_path for source in first.sources if source.name == "unity")
+        unity.unlink()
+        bepinex.write_bytes(b"bepinex-after")
+
+        result = session.snapshot(
+            deployment.session_id,
+            profile_preflight,
+            preferences,
+            environment,
+        )
+
+        self.assertEqual(result.status, "incomplete")
+        manifest = json.loads(deployment.state_path.read_text(encoding="utf-8"))
+        self.assertEqual(manifest["snapshot"]["sources"]["bepinex"]["status"], "copied")
+        self.assertEqual(manifest["snapshot"]["sources"]["unity"]["status"], "missing")
+        self.assertEqual(unity_target.read_bytes(), b"unity-before")
+
+    def test_snapshot_rejects_running_process_without_capture(self):
+        (
+            module,
+            session,
+            deployment,
+            profile_preflight,
+            _process,
+            _identity,
+        ) = self.create_launched_session()
+        unity_log_dir = self.root / "unity-logs"
+        unity_log_dir.mkdir()
+        self.write_project_preferences(profile_preflight.profile, unity_log_dir)
+        (profile_preflight.bepinex_root / "LogOutput.log").write_bytes(b"running")
+        (unity_log_dir / "output_log.txt").write_bytes(b"running")
+        session.process_adapter.is_alive.return_value = True
+        environment = {
+            "Windows": "Windows",
+            "Linux": "Linux",
+            "Darwin": "macOS",
+        }[platform.system()]
+
+        with self.assertRaises(module.CliError) as failure:
+            session.snapshot(
+                deployment.session_id,
+                profile_preflight,
+                module.load_preferences(cwd=self.root, home=self.home),
+                environment,
+            )
+
+        self.assertEqual(failure.exception.category, "logs/snapshot")
+        self.assertIn("still running", str(failure.exception))
+        manifest = json.loads(deployment.state_path.read_text(encoding="utf-8"))
+        self.assertNotIn("snapshot", manifest)
+
+    def test_snapshot_rejects_a_different_profile(self):
+        (
+            module,
+            session,
+            deployment,
+            profile_preflight,
+            _process,
+            _identity,
+        ) = self.create_launched_session()
+        other_profile = self.create_profile("other-profile")
+        other_launcher = other_profile / "other-launcher"
+        other_launcher.write_bytes(b"launcher")
+        if os.name != "nt":
+            other_launcher.chmod(0o755)
+        other_preflight = module.preflight_profile(
+            other_profile,
+            {
+                "Windows": "Windows",
+                "Linux": "Linux",
+                "Darwin": "macOS",
+            }[platform.system()],
+            explicit_launcher=other_launcher.name,
+        )
+        self.write_project_preferences(profile_preflight.profile, self.root / "unity-logs")
+        (self.root / "unity-logs").mkdir(exist_ok=True)
+        session.process_adapter.is_alive.return_value = False
+
+        with self.assertRaises(module.CliError) as failure:
+            session.snapshot(
+                deployment.session_id,
+                other_preflight,
+                module.load_preferences(cwd=self.root, home=self.home),
+                {
+                    "Windows": "Windows",
+                    "Linux": "Linux",
+                    "Darwin": "macOS",
+                }[platform.system()],
+            )
+
+        self.assertEqual(failure.exception.category, "logs/snapshot")
+        self.assertIn("belongs to profile", str(failure.exception))
+
+    def test_snapshot_command_uses_the_session_addressed_operation(self):
+        (
+            module,
+            session,
+            deployment,
+            profile_preflight,
+            _process,
+            _identity,
+        ) = self.create_launched_session()
+        unity_log_dir = self.root / "unity-logs"
+        unity_log_dir.mkdir()
+        self.write_project_preferences(profile_preflight.profile, unity_log_dir)
+        (profile_preflight.bepinex_root / "LogOutput.log").write_bytes(b"bepinex")
+        (unity_log_dir / "output_log.txt").write_bytes(b"unity")
+        session.process_adapter.is_alive.return_value = False
+
+        result = self.run_module_cli(
+            module,
+            "snapshot",
+            deployment.session_id,
+            session=session,
+        )
+
+        self.assert_success(result)
+        self.assertIn("Snapshot state: complete", result.stdout)
+        self.assertIn("bepinex: copied", result.stdout)
+        self.assertIn("unity: copied", result.stdout)
 
     def test_logs_reports_bounded_current_evidence_without_persisting_logs(self):
         module, session, deployment, profile_preflight, process, identity = self.create_launched_session()

@@ -41,7 +41,7 @@ Bash host invocation shape:
 
 Argument shapes below abbreviate the resolved Python invocation above as `<TEST_CLI>`. Agent MUST expand that placeholder with the Python executable and installed Skill-root path; it MUST NOT replace it with a legacy shell/JavaScript implementation or a checkout-relative script path.
 
-CLI has five commands: `run`, `stop`, `clean`, `logs`, and read-only `status`. session identifier printed by `run` is 32-character lowercase hexadecimal value and is required by `stop`, `clean`, and `logs`.
+CLI has six commands: `run`, `stop`, `clean`, `logs`, `snapshot`, and read-only `status`. session identifier printed by `run` is 32-character lowercase hexadecimal value and is required by `stop`, `clean`, `logs`, and `snapshot`.
 
 ## Encoding and path output
 
@@ -57,13 +57,14 @@ Canonical flow for a normal build, startup evidence, tracked stop, safe cleanup,
 <TEST_CLI> run --project <PROJECT.csproj> --profile <PROFILE> --startup-timeout 60
 <TEST_CLI> logs SESSION_ID
 <TEST_CLI> stop SESSION_ID
+<TEST_CLI> snapshot SESSION_ID
 <TEST_CLI> clean SESSION_ID
 <TEST_CLI> status
 ```
 
 If graceful stop does not finish, retry only the same tracked session with `<TEST_CLI> stop SESSION_ID --force`. `stop` does not accept project, profile, launcher, log-directory, artifact, build, or cleanup options.
 
-Common options are accepted by `run`, `clean`, `logs`, and `status`:
+Common options are accepted by `run`, `clean`, `logs`, `snapshot`, and `status`:
 
 | Option | Meaning |
 | --- | --- |
@@ -204,6 +205,21 @@ Startup states are deliberately narrower than gameplay results:
 | `timeout` | `--startup-timeout` expired before `mod_loaded`; the session and process remain for diagnosis. |
 
 Completion criterion: agent reports state, current/stale/missing status of both sources, relevant warnings, and bounded or full log output requested by user.
+
+### `snapshot`: preserve completed-session logs
+
+```text
+<TEST_CLI> snapshot SESSION_ID [common options]
+```
+
+`snapshot` copies the complete BepInEx and configured Unity log bytes into
+the session's temporary `snapshots/` directory after the tracked process tree
+is confirmed exited. It never stops a process, changes the live log files, or
+writes into the caller Mod repository or game profile. The manifest records
+per-source status, source and target paths, byte counts, SHA-256 digests, the
+capture condition, and process/stop metadata. A missing or failed source is
+reported independently and leaves any previously successful same-source copy
+in place; the overall snapshot is incomplete until both sources are copied.
 
 ### `status`: read-only session view
 
