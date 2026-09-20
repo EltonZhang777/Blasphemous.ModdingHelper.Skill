@@ -72,6 +72,8 @@ class EvidenceReport:
     sources: Tuple[LogEvidenceSource, ...]
     warnings: Tuple[str, ...]
     hits: Tuple[EvidenceHit, ...] = ()
+    evidence_source: str = "current"
+    snapshot_metadata: Optional[Mapping[str, object]] = None
 
 
 def _expand_path(value: str, base: Path) -> Path:
@@ -875,6 +877,8 @@ def wait_for_startup_evidence(
                 final_report.sources,
                 final_report.warnings,
                 final_report.hits,
+                final_report.evidence_source,
+                final_report.snapshot_metadata,
             )
             if update is not None:
                 update(timed_out)

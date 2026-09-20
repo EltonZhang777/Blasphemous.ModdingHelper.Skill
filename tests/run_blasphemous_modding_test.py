@@ -25,7 +25,7 @@ SCRIPT_TESTS = (
     / "blasphemous-modding-helper"
     / "scripts"
 )
-CLI_COMMANDS = ("run", "stop", "clean", "logs", "status")
+CLI_COMMANDS = ("run", "stop", "clean", "logs", "snapshot", "status")
 SCRIPT_TEST_ENTRY_POINTS = (
     SCRIPT_TESTS / "test_modding_api_lifecycle.py",
     SCRIPT_TESTS / "test_referencing_modding_api.py",

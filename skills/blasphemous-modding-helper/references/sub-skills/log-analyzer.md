@@ -29,7 +29,7 @@ When mod-test CLI reports missing Unity log directory or log:
 
 1. Agent MUST ask user for directory that contains current Unity log.
 2. Agent MUST add `unity_log_dir: PATH` to active `config.yml`, or pass `--unity-log-dir PATH` for one-run override. active file is scope selected by [Invocation preflight](../config/invocation-preflight.md).
-3. Agent MUST re-run `logs SESSION_ID` or explicit startup-evidence wait.
+3. Agent MUST re-run `logs SESSION_ID --current` or explicit startup-evidence wait.
 
 This step is complete only when CLI resolves Unity log or warning remains visible with exact missing path and configuration file to update. CLI reads existing BepInEx and Unity logs in place; it does not create persistent log copies.
 
@@ -55,6 +55,35 @@ baseline labels. Baseline labels are provenance only; log lines remain visible. 
 observed warnings and errors remain visible as `framework` or `unknown`
 evidence, and target-owned errors remain beside the startup result. The report
 stays bounded and does not persist a complete log copy.
+
+## Test-session analysis source
+
+For a completed Test session, agent MUST analyze the session-bound snapshot:
+
+```text
+<TEST_CLI> logs SESSION_ID --snapshot
+```
+
+The operation MUST identify the requested session, require a complete BepInEx
+and Unity snapshot, and report every affected source plus the recovery action
+when the snapshot is missing or incomplete. It MUST NOT silently read a later
+live profile log in that mode. Snapshot analysis MUST label the evidence source
+and expose the snapshot capture condition, process state, stop decision, and
+the stop result. A snapshot captured while the process was running remains valid
+session evidence but is not described as post-stop final output. A later
+recapture after process exit updates the same session snapshot and is the
+snapshot used by subsequent analysis.
+
+For live diagnosis, agent MUST explicitly request current evidence:
+
+```text
+<TEST_CLI> logs SESSION_ID --current
+```
+
+Current analysis continues to resolve `modding_profile_path` and
+`unity_log_dir` from the active configuration and keeps the existing bounded
+diagnostic ownership rules. `--current` is required; the CLI has no implicit
+current-log alias.
 
 ## Completion criteria
 

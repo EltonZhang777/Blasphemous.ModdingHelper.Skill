@@ -34,6 +34,21 @@ Test doubles, mocks, and stubs remain compatible with the Automated xUnit route 
 - The Skill repository's Python CLI and fixture tests remain under their existing Python test contract. The caller-Mod xUnit convention does not redirect or replace them.
 - A Test Mod is a game-side real-profile artifact; an Automated test project is a standard .NET test project. They MUST NOT be described as interchangeable.
 
+## Manual completion and session identity
+
+The agent MUST treat an explicit statement that testing is complete or a
+natural-language success, failure, or anomalous result as a snapshot trigger
+only when the result is clear and can be associated with exactly one Test
+session. An ambiguous result or an unclear session identity remains unresolved.
+
+When the result or session is ambiguous, the agent MUST NOT invoke `snapshot`,
+MUST NOT select the newest session by guess, and MUST NOT infer the session from
+process state.
+The agent MUST ask the user for the Test session ID and any missing result
+detail before capturing evidence. Process exit, startup polling, `logs`,
+`stop`, and `clean` MUST NOT resolve a missing completion confirmation or
+session identity.
+
 ## Completion criterion
 
 The request is classified before execution, the selected branch owns the operational steps, and the final report names automated, startup, and **Manual verification** evidence separately. The `/blasphemous-modding-test stop SESSION_ID` safety path is owned by the [Real-profile branch](blasphemous-modding-test-real-profile.md).
