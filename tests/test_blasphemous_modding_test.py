@@ -72,15 +72,6 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
         )
 
     def run_module_cli(self, module, *arguments, session=None):
-        if (
-            arguments
-            and arguments[0] == "logs"
-            and "--help" not in arguments
-            and "--snapshot" not in arguments
-            and "--current" not in arguments
-        ):
-            # Existing fixture cases exercise live analysis; keep that intent explicit.
-            arguments = (*arguments, "--current")
         stdout = io.StringIO()
         stderr = io.StringIO()
         with mock.patch.object(module.Path, "cwd", return_value=self.root.resolve()):
@@ -582,6 +573,7 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
             module,
             "logs",
             session_id,
+            "--current",
             "--project",
             str(project),
             "--unity-log-dir",
@@ -1527,6 +1519,7 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
             module,
             "logs",
             deployment.session_id,
+            "--current",
             session=session,
         )
 
@@ -1564,6 +1557,7 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
             module,
             "logs",
             deployment.session_id,
+            "--current",
             session=session,
         )
 
@@ -1592,6 +1586,7 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
             module,
             "logs",
             deployment.session_id,
+            "--current",
             session=session,
         )
 
@@ -1631,6 +1626,7 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
             module,
             "logs",
             deployment.session_id,
+            "--current",
             session=session,
         )
 
@@ -1658,6 +1654,7 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
             module,
             "logs",
             deployment.session_id,
+            "--current",
             "--full",
             session=session,
         )
@@ -1684,6 +1681,7 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
             module,
             "logs",
             deployment.session_id,
+            "--current",
             session=session,
         )
 
@@ -1709,6 +1707,7 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
             module,
             "logs",
             deployment.session_id,
+            "--current",
             session=session,
         )
 
@@ -1736,6 +1735,7 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
             module,
             "logs",
             deployment.session_id,
+            "--current",
             session=session,
         )
 
@@ -1761,6 +1761,7 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
             module,
             "logs",
             deployment.session_id,
+            "--current",
             session=session,
         )
 
@@ -1797,6 +1798,7 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
             module,
             "logs",
             deployment.session_id,
+            "--current",
             session=session,
         )
 
@@ -1825,6 +1827,7 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
             module,
             "logs",
             deployment.session_id,
+            "--current",
             session=session,
         )
 
@@ -1846,6 +1849,7 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
             module,
             "logs",
             deployment.session_id,
+            "--current",
             session=session,
         )
 
@@ -1871,6 +1875,7 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
             module,
             "logs",
             deployment.session_id,
+            "--current",
             session=session,
         )
 
@@ -1894,6 +1899,7 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
             module,
             "logs",
             deployment.session_id,
+            "--current",
             session=session,
         )
 
@@ -1916,6 +1922,7 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
             module,
             "logs",
             deployment.session_id,
+            "--current",
             session=session,
         )
 
@@ -1936,6 +1943,7 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
             module,
             "logs",
             deployment.session_id,
+            "--current",
             session=session,
         )
 
@@ -1958,6 +1966,7 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
             module,
             "logs",
             deployment.session_id,
+            "--current",
             session=session,
         )
 
@@ -1980,6 +1989,7 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
             module,
             "logs",
             deployment.session_id,
+            "--current",
             session=session,
         )
 
@@ -2006,6 +2016,7 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
             module,
             "logs",
             deployment.session_id,
+            "--current",
             session=session,
         )
 
@@ -2038,6 +2049,7 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
             module,
             "logs",
             deployment.session_id,
+            "--current",
             session=session,
         )
 
@@ -2122,6 +2134,7 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
             module,
             "logs",
             deployment.session_id,
+            "--current",
             session=session,
         )
 
@@ -2144,6 +2157,7 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
             module,
             "logs",
             deployment.session_id,
+            "--current",
             session=session,
         )
 
@@ -2162,6 +2176,7 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
             module,
             "logs",
             deployment.session_id,
+            "--current",
             session=session,
         )
 
