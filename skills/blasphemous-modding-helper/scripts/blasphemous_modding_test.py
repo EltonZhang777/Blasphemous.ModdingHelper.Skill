@@ -25,11 +25,11 @@ import uuid
 import zipfile
 import xml.etree.ElementTree as ET
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
 from pathlib import PurePosixPath
-from typing import ContextManager, Dict, Iterator, List, Optional, Sequence, Tuple
+from typing import ContextManager, Dict, Iterator, List, Mapping, Optional, Sequence, Tuple
 
 _SCRIPT_DIRECTORY = Path(__file__).resolve().parent
 if str(_SCRIPT_DIRECTORY) not in sys.path:
@@ -460,6 +460,28 @@ class TestSession:
             environment,
             full=full,
             explicit_unity_log_dir=explicit_unity_log_dir,
+        )
+
+    def analyze(
+        self,
+        session_id: str,
+        profile: ProfilePreflight,
+        preferences: Preferences,
+        environment: str,
+        *,
+        snapshot: bool = False,
+        full: bool = False,
+        explicit_unity_log_dir: Optional[str] = None,
+    ) -> EvidenceReport:
+        return analyze_test_session_logs(
+            session_id,
+            profile,
+            preferences,
+            environment,
+            snapshot=snapshot,
+            full=full,
+            explicit_unity_log_dir=explicit_unity_log_dir,
+            state_root=self.store.root,
         )
 
     def wait_for_startup_evidence(
@@ -2163,6 +2185,119 @@ _STRUCTURED_ERROR_RECORD = log_diagnostics._STRUCTURED_ERROR_RECORD
 _alias_matches_record = log_diagnostics._alias_matches_record
 _line_mentions_alias = log_diagnostics._line_mentions_alias
 
+
+def _snapshot_analysis_sources(
+    state_path: Path,
+    manifest: Mapping[str, object],
+) -> Tuple[Tuple[Path, Path], Mapping[str, object]]:
+    snapshot = manifest.get("snapshot")
+    if not isinstance(snapshot, dict):
+        raise CliError(
+            EXIT_LOGS,
+            "logs/analysis",
+            f"Session {state_path.parent.name} has no complete BepInEx/Unity Test log snapshot. Run snapshot {state_path.parent.name} after completion; use logs {state_path.parent.name} --current only for explicitly requested live evidence.",
+        )
+    sources = snapshot.get("sources")
+    details = []
+    if not isinstance(sources, dict) or snapshot.get("status") != "complete":
+        for name in ("bepinex", "unity"):
+            value = sources.get(name) if isinstance(sources, dict) else None
+            details.append(
+                f"{name}={value.get('status', 'missing') if isinstance(value, dict) else 'missing'}"
+            )
+        raise CliError(
+            EXIT_LOGS,
+            "logs/analysis",
+            f"Test log snapshot for session {state_path.parent.name} is incomplete ({', '.join(details)}). Restore the affected source and rerun snapshot {state_path.parent.name}; use --current only for explicitly requested live evidence.",
+        )
+
+    snapshot_directory = state_path.parent / "snapshots"
+    paths = []
+    for name, filename in (("bepinex", "bepinex.log"), ("unity", "unity.log")):
+        value = sources.get(name)
+        if not isinstance(value, dict) or value.get("status") != "copied":
+            details.append(
+                f"{name}={value.get('status', 'missing') if isinstance(value, dict) else 'missing'}"
+            )
+            continue
+        target_value = value.get("target_path") if isinstance(value, dict) else None
+        expected = snapshot_directory / filename
+        if not isinstance(target_value, str) or not target_value.strip():
+            details.append(f"{name}=missing target")
+            continue
+        target = Path(target_value)
+        if (
+            not target.is_absolute()
+            or not _profile_paths_match(target, expected)
+            or target.is_symlink()
+            or _first_symlink_component(target.parent) is not None
+            or not expected.is_file()
+        ):
+            details.append(f"{name}=missing target")
+            continue
+        paths.append(target)
+    if len(paths) != 2:
+        raise CliError(
+            EXIT_LOGS,
+            "logs/analysis",
+            f"Test log snapshot for session {state_path.parent.name} is incomplete ({', '.join(details) or 'snapshot target unavailable'}). Restore the affected source and rerun snapshot {state_path.parent.name}; use --current only for explicitly requested live evidence.",
+        )
+    return (paths[0], paths[1]), snapshot
+
+
+def analyze_test_session_logs(
+    session_id: str,
+    profile: ProfilePreflight,
+    preferences: Preferences,
+    environment: str,
+    *,
+    snapshot: bool = False,
+    full: bool = False,
+    explicit_unity_log_dir: Optional[str] = None,
+    state_root: Optional[Path] = None,
+) -> EvidenceReport:
+    state_path = _session_manifest_path(
+        session_id,
+        code=EXIT_LOGS,
+        category="logs/analysis",
+        state_root=state_root,
+    )
+    manifest = _read_session_manifest(state_path)
+    if manifest.get("session_id") != session_id:
+        raise CliError(
+            EXIT_LOGS,
+            "logs/analysis",
+            f"Session state does not match session {session_id}.",
+        )
+    recorded_profile = manifest.get("profile")
+    if recorded_profile and not _profile_paths_match(
+        Path(str(recorded_profile)),
+        profile.profile,
+    ):
+        raise CliError(
+            EXIT_LOGS,
+            "logs/analysis",
+            f"Session {session_id} belongs to profile {recorded_profile}, but the selected profile is {profile.profile}.",
+        )
+    source_paths = None
+    snapshot_metadata = None
+    if snapshot:
+        source_paths, snapshot_metadata = _snapshot_analysis_sources(
+            state_path,
+            manifest,
+        )
+    return collect_log_evidence(
+        state_path,
+        profile,
+        preferences,
+        environment,
+        full=full,
+        explicit_unity_log_dir=explicit_unity_log_dir,
+        source_paths=source_paths,
+        snapshot_metadata=snapshot_metadata,
+    )
+
+
 def collect_log_evidence(
     state_path: Path,
     profile: ProfilePreflight,
@@ -2171,6 +2306,8 @@ def collect_log_evidence(
     *,
     full: bool = False,
     explicit_unity_log_dir: Optional[str] = None,
+    source_paths: Optional[Tuple[Path, Optional[Path]]] = None,
+    snapshot_metadata: Optional[Mapping[str, object]] = None,
 ) -> EvidenceReport:
     """Read session state and delegate log classification to the shared package."""
 
@@ -2201,19 +2338,38 @@ def collect_log_evidence(
     if not runtime_aliases:
         runtime_aliases = (target_name,)
 
-    unity_path, unity_warning = resolve_unity_log_path(
-        preferences,
-        environment,
-        explicit_directory=explicit_unity_log_dir,
-    )
-    return log_diagnostics.collect_log_evidence(
-        profile.bepinex_root / "LogOutput.log",
+    if source_paths is None:
+        bepinex_path = profile.bepinex_root / "LogOutput.log"
+        unity_path, unity_warning = resolve_unity_log_path(
+            preferences,
+            environment,
+            explicit_directory=explicit_unity_log_dir,
+        )
+        analysis_process_state = process_value
+        evidence_source = "current"
+    else:
+        bepinex_path, unity_path = source_paths
+        unity_warning = None
+        analysis_process_state = {
+            "session_id": str(manifest.get("session_id", state_path.parent.name)),
+            "started_at_epoch_ns": 0,
+        }
+        evidence_source = "snapshot"
+    report = log_diagnostics.collect_log_evidence(
+        bepinex_path,
         unity_path,
-        process_value,
+        analysis_process_state,
         target_name,
         runtime_aliases,
         full=full,
         unity_warning=unity_warning,
+    )
+    if evidence_source == "current":
+        return report
+    return replace(
+        report,
+        evidence_source=evidence_source,
+        snapshot_metadata=snapshot_metadata,
     )
 
 
@@ -2408,6 +2564,7 @@ def _update_evidence_state(state_path: Path, report: EvidenceReport) -> None:
         "ready": report.ready,
         "mod_loaded": report.mod_loaded,
         "timed_out": report.timed_out,
+        "evidence_source": report.evidence_source,
         "recorded_at": datetime.now(timezone.utc).isoformat(),
         "hits": [
             {
@@ -4058,13 +4215,14 @@ of unchanged files first created by the session.
 
     logs_parser = subparsers.add_parser(
         "logs",
-        help="Read current BepInEx and Unity startup logs for one session.",
+        help="Analyze current logs or one session's Test log snapshot.",
         usage="%(prog)s SESSION_ID [OPTIONS]",
-        description="""Read current BepInEx and Unity startup evidence for SESSION_ID.
+        description="""Analyze BepInEx and Unity startup evidence for SESSION_ID.
 
 Context: --project, --profile, --launcher, and --unity-log-dir override saved
-context for this invocation. --full prints complete current logs instead of the
-bounded tail.
+context for this invocation. --current reads live logs; --snapshot reads the
+session-bound Test log snapshot and never falls back to live logs. --full
+prints complete selected logs instead of the bounded tail.
 """,
         formatter_class=HELP_FORMATTER,
         epilog="""Example:
@@ -4081,6 +4239,17 @@ bounded tail.
         "--full",
         action="store_true",
         help="Print complete log contents instead of the bounded tail.",
+    )
+    logs_source_group = logs_parser.add_mutually_exclusive_group()
+    logs_source_group.add_argument(
+        "--snapshot",
+        action="store_true",
+        help="Analyze the complete Test-session snapshot; fail if it is missing or incomplete.",
+    )
+    logs_source_group.add_argument(
+        "--current",
+        action="store_true",
+        help="Explicitly analyze the configured live log sources.",
     )
 
     snapshot_parser = subparsers.add_parser(
@@ -4178,6 +4347,19 @@ def _print_evidence_report(
     include_logs: bool = False,
     full_logs: bool = False,
 ) -> None:
+    print(
+        "Evidence source: "
+        + ("Test session snapshot" if report.evidence_source == "snapshot" else "current logs")
+    )
+    if report.evidence_source == "snapshot":
+        metadata = report.snapshot_metadata or {}
+        print(f"Snapshot status: {metadata.get('status', 'unknown')}")
+        print(f"Snapshot capture condition: {metadata.get('capture_condition', 'unknown')}")
+        print(f"Snapshot process state: {metadata.get('process_state', 'unknown')}")
+        print(f"Snapshot stop decision: {metadata.get('stop_decision', 'unknown')}")
+        print(f"Snapshot stop result: {metadata.get('stop_result', 'unknown')}")
+        if metadata.get("stop_error"):
+            print(f"Snapshot stop error: {metadata['stop_error']}")
     print(f"Startup state: {report.state}")
     print(f"Ready state: {'ready' if report.ready else 'not-ready'}")
     print(f"Mod-loaded state: {'loaded' if report.mod_loaded else 'not-loaded'}")
@@ -4202,7 +4384,9 @@ def _print_evidence_report(
                 )
     for source in report.sources:
         path = str(source.path) if source.path is not None else "not configured"
-        if not source.exists:
+        if report.evidence_source == "snapshot" and source.exists:
+            status = "snapshot"
+        elif not source.exists:
             status = "missing"
         elif source.current:
             status = "current"
@@ -4394,11 +4578,12 @@ def logs_command(
                 f"Session {args.session_id} belongs to profile {recorded_path}, "
                 f"but the selected profile is {context.profile.profile}. Pass --profile for the session profile.",
             )
-    report = session.collect_log_evidence(
-        state_path,
+    report = session.analyze(
+        args.session_id,
         context.profile,
         context.preferences,
         context.environment,
+        snapshot=args.snapshot,
         full=args.full,
         explicit_unity_log_dir=args.unity_log_dir,
     )

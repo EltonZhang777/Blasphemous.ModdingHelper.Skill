@@ -56,6 +56,35 @@ observed warnings and errors remain visible as `framework` or `unknown`
 evidence, and target-owned errors remain beside the startup result. The report
 stays bounded and does not persist a complete log copy.
 
+## Test-session analysis source
+
+For a completed Test session, agent MUST analyze the session-bound snapshot:
+
+```text
+<TEST_CLI> logs SESSION_ID --snapshot
+```
+
+The operation MUST identify the requested session, require a complete BepInEx
+and Unity snapshot, and report every affected source plus the recovery action
+when the snapshot is missing or incomplete. It MUST NOT silently read a later
+live profile log in that mode. Snapshot analysis MUST label the evidence source
+and expose the snapshot capture condition, process state, stop decision, and
+the stop result. A snapshot captured while the process was running remains valid
+session evidence but is not described as post-stop final output. A later
+recapture after process exit updates the same session snapshot and is the
+snapshot used by subsequent analysis.
+
+For live diagnosis, agent MUST explicitly request current evidence:
+
+```text
+<TEST_CLI> logs SESSION_ID --current
+```
+
+Current analysis continues to resolve `modding_profile_path` and
+`unity_log_dir` from the active configuration and keeps the existing bounded
+diagnostic ownership rules. The bare `logs SESSION_ID` form remains a
+compatibility alias for current analysis.
+
 ## Completion criteria
 
 Agent MUST mark log analysis complete only when report contains all of these:

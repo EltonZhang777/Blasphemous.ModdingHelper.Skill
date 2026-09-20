@@ -172,10 +172,17 @@ Completion criterion: tracked process is stopped or confirmed gone, and no unrel
 ### `logs`: read current startup evidence
 
 ```text
-<TEST_CLI> logs SESSION_ID [common options] [--full]
+<TEST_CLI> logs SESSION_ID [common options] [--full] [--current|--snapshot]
 ```
 
-`logs` uses the selected profile and log-directory context. `--project`, `--profile`, `--launcher`, and `--unity-log-dir` override saved values for this invocation; `--full` is the only logs-specific output override.
+`logs` uses the selected profile and log-directory context. `--project`, `--profile`, `--launcher`, and `--unity-log-dir` override saved values for this invocation; `--full` controls output size. `--current` explicitly reads the configured live sources. The bare command remains a compatibility alias for current analysis.
+
+`--snapshot` analyzes the complete Test-session snapshot associated with
+`SESSION_ID`. It never falls back to live sources: a missing or incomplete
+snapshot reports the affected source and tells the agent to rerun `snapshot`
+after recovery. Snapshot analysis prints the snapshot capture condition,
+process state, stop decision, and stop result, including a visible non-final
+condition for captures made while the game remained running.
 
 CLI reads existing logs in place and stores only bounded evidence metadata in temporary session manifest. It does not create persistent log report or copy log contents. Default output is last 200 lines per source; `--full` prints complete current file. Evidence hits retain source label, concrete path, line number, match reason, kind, bounded text, and available `mod_id`/`mod_name` independently of the output tail, so early startup hits remain reportable without unbounded output.
 

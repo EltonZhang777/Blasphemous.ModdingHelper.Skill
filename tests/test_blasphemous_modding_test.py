@@ -656,6 +656,8 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
                     "--launcher PATH",
                     "--unity-log-dir PATH",
                     "--full",
+                    "--snapshot",
+                    "--current",
                     "Context:",
                 ),
                 "absent": ("--configuration", "--artifact", "--dry-run", "--force", "--remove-new-files"),
@@ -769,6 +771,7 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
                 "--unity-log-dir",
                 "UNITY_LOGS",
                 "--full",
+                "--current",
             ),
             (
                 "snapshot",
@@ -1323,6 +1326,175 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
         self.assertIn("Snapshot state: complete", result.stdout)
         self.assertIn("bepinex: copied", result.stdout)
         self.assertIn("unity: copied", result.stdout)
+
+    def test_snapshot_analysis_reads_the_session_snapshot_not_later_current_logs(self):
+        module, session, deployment, profile_preflight, _process, _identity = self.create_launched_session()
+        preferences, environment = self.prepare_running_snapshot_context(module, profile_preflight)
+        session.process_adapter.is_alive.return_value = False
+        snapshot = session.snapshot(
+            deployment.session_id,
+            profile_preflight,
+            preferences,
+            environment,
+        )
+        self.assertEqual(snapshot.status, "complete")
+        (profile_preflight.bepinex_root / "LogOutput.log").write_bytes(b"later-current-bepinex")
+        (self.root / "unity-logs" / "output_log.txt").write_bytes(b"later-current-unity")
+
+        result = self.run_module_cli(
+            module,
+            "logs",
+            deployment.session_id,
+            "--snapshot",
+            session=session,
+        )
+
+        self.assert_success(result)
+        self.assertIn("Evidence source: Test session snapshot", result.stdout)
+        self.assertIn("Snapshot capture condition: process_exited", result.stdout)
+        self.assertIn("running-bepinex", result.stdout)
+        self.assertIn("running-unity", result.stdout)
+        self.assertNotIn("later-current-bepinex", result.stdout)
+        self.assertIn("snapshots", result.stdout)
+
+    def test_snapshot_analysis_reports_missing_snapshot_without_current_fallback(self):
+        module, session, deployment, profile_preflight, _process, _identity = self.create_launched_session()
+        self.prepare_running_snapshot_context(module, profile_preflight)
+        (profile_preflight.bepinex_root / "LogOutput.log").write_bytes(b"live-only")
+
+        result = self.run_module_cli(
+            module,
+            "logs",
+            deployment.session_id,
+            "--snapshot",
+            session=session,
+        )
+
+        self.assertEqual(result.returncode, module.EXIT_LOGS)
+        self.assertIn("has no complete BepInEx/Unity Test log snapshot", result.stderr)
+        self.assertIn("--current", result.stderr)
+        self.assertNotIn("live-only", result.stdout)
+
+    def test_snapshot_analysis_reports_incomplete_source_and_recovery_action(self):
+        module, session, deployment, profile_preflight, _process, _identity = self.create_launched_session()
+        preferences, environment = self.prepare_running_snapshot_context(module, profile_preflight)
+        session.process_adapter.is_alive.return_value = False
+        (self.root / "unity-logs" / "output_log.txt").unlink()
+        snapshot = session.snapshot(
+            deployment.session_id,
+            profile_preflight,
+            preferences,
+            environment,
+        )
+        self.assertEqual(snapshot.status, "incomplete")
+
+        result = self.run_module_cli(
+            module,
+            "logs",
+            deployment.session_id,
+            "--snapshot",
+            session=session,
+        )
+
+        self.assertEqual(result.returncode, module.EXIT_LOGS)
+        self.assertIn("snapshot", result.stderr.lower())
+        self.assertIn("unity=missing", result.stderr)
+        self.assertIn("rerun snapshot", result.stderr)
+        self.assertNotIn("running-bepinex", result.stdout)
+
+    def test_running_snapshot_analysis_exposes_non_final_capture_condition(self):
+        module, session, deployment, profile_preflight, _process, _identity = self.create_launched_session()
+        preferences, environment = self.prepare_running_snapshot_context(module, profile_preflight)
+        session.process_adapter.is_alive.return_value = True
+        snapshot = session.snapshot(
+            deployment.session_id,
+            profile_preflight,
+            preferences,
+            environment,
+            stop_decision="decline",
+        )
+        self.assertEqual(snapshot.status, "complete")
+
+        result = self.run_module_cli(
+            module,
+            "logs",
+            deployment.session_id,
+            "--snapshot",
+            session=session,
+        )
+
+        self.assert_success(result)
+        self.assertIn("Evidence source: Test session snapshot", result.stdout)
+        self.assertIn("Snapshot capture condition: process_running_stop_declined", result.stdout)
+        self.assertIn("Snapshot process state: launched", result.stdout)
+        self.assertIn("Snapshot stop decision: declined", result.stdout)
+
+    def test_snapshot_recapture_after_exit_updates_same_session_analysis(self):
+        module, session, deployment, profile_preflight, _process, _identity = self.create_launched_session()
+        preferences, environment = self.prepare_running_snapshot_context(module, profile_preflight)
+        session.process_adapter.is_alive.return_value = True
+        first = session.snapshot(
+            deployment.session_id,
+            profile_preflight,
+            preferences,
+            environment,
+            stop_decision="decline",
+        )
+        self.assertEqual(first.status, "complete")
+        (profile_preflight.bepinex_root / "LogOutput.log").write_bytes(b"after-exit-bepinex")
+        (self.root / "unity-logs" / "output_log.txt").write_bytes(b"after-exit-unity")
+        session.process_adapter.is_alive.return_value = False
+
+        second = session.snapshot(
+            deployment.session_id,
+            profile_preflight,
+            preferences,
+            environment,
+        )
+
+        self.assertEqual(second.status, "complete")
+        self.assertEqual(second.process_state, "exited")
+        manifest = json.loads(deployment.state_path.read_text(encoding="utf-8"))
+        self.assertEqual(manifest["snapshot"]["capture_condition"], "process_exited")
+        self.assertEqual(
+            next(source for source in second.sources if source.name == "bepinex").target_path.read_bytes(),
+            b"after-exit-bepinex",
+        )
+        result = self.run_module_cli(
+            module,
+            "logs",
+            deployment.session_id,
+            "--snapshot",
+            session=session,
+        )
+        self.assert_success(result)
+        self.assertIn("after-exit-bepinex", result.stdout)
+        self.assertIn("Snapshot capture condition: process_exited", result.stdout)
+
+    def test_explicit_current_log_analysis_keeps_live_source_mode(self):
+        module, session, deployment, profile_preflight, _process, _identity = self.create_launched_session()
+        preferences, environment = self.prepare_running_snapshot_context(module, profile_preflight)
+        session.process_adapter.is_alive.return_value = False
+        session.snapshot(
+            deployment.session_id,
+            profile_preflight,
+            preferences,
+            environment,
+        )
+        (profile_preflight.bepinex_root / "LogOutput.log").write_bytes(b"explicit-current")
+
+        result = self.run_module_cli(
+            module,
+            "logs",
+            deployment.session_id,
+            "--current",
+            session=session,
+        )
+
+        self.assert_success(result)
+        self.assertIn("Evidence source: current logs", result.stdout)
+        self.assertIn("explicit-current", result.stdout)
+        self.assertNotIn("running-bepinex", result.stdout)
 
     def test_logs_reports_bounded_current_evidence_without_persisting_logs(self):
         module, session, deployment, profile_preflight, process, identity = self.create_launched_session()
