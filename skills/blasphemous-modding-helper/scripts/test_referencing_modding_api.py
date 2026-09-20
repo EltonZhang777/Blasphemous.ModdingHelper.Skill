@@ -249,7 +249,7 @@ def assert_version_relationship(
     ):
         raise DocumentationTestFailure(
             "ModdingAPI version relationship is incomplete; report fixture version, "
-            "selected preference, local checkout version, and remote resolution version."
+            "selected configuration selector, local checkout version, and remote resolution version."
         )
     if fixture_version != remote_resolution:
         raise DocumentationTestFailure(
@@ -259,7 +259,7 @@ def assert_version_relationship(
         )
     if checkout_selector != preference_selector:
         raise DocumentationTestFailure(
-            "ModdingAPI version mismatch: preference "
+            "ModdingAPI version mismatch: configuration selector "
             f"{preference_selector} != local checkout selector {checkout_selector}. "
             "Next step: run the local reference manager update or repair its lock state."
         )
@@ -269,7 +269,7 @@ def assert_version_relationship(
         expected_remote = selected_version(remote_selector)
     if expected_remote != remote_resolution:
         raise DocumentationTestFailure(
-            "ModdingAPI version mismatch: remote preference "
+            "ModdingAPI version mismatch: remote selector "
             f"{remote_selector} != remote resolution {remote_resolution}. "
             "Next step: repair the selector or resolve the matching Release."
         )
@@ -281,7 +281,7 @@ def assert_version_relationship(
         expected_local = selected_version(preference_selector)
     if expected_local != local_checkout:
         raise DocumentationTestFailure(
-            "ModdingAPI version mismatch: preference "
+            "ModdingAPI version mismatch: configuration selector "
             f"{preference_selector} != local checkout {local_checkout}. "
             "Next step: run the local reference manager update or repair its lock state."
         )
@@ -339,7 +339,7 @@ def run_documentation_smoke() -> None:
     assert_not_contains(top_level, "## Skill command context", "top-level Skill")
     assert_not_contains(
         top_level,
-        "## Preferences gate (see Invocation preflight)",
+        "## Configuration gate (see Invocation preflight)",
         "top-level Skill",
     )
     assert_not_contains(top_level, "main branch", "top-level Skill")
@@ -348,7 +348,7 @@ def run_documentation_smoke() -> None:
     for heading in (
         "# Invocation preflight",
         "## Command context",
-        "## Preferences gate",
+        "## Configuration gate",
         "## First-time setup and recovery",
         "## Completion criteria",
     ):
@@ -432,8 +432,8 @@ def run_documentation_smoke() -> None:
 
     with tempfile.TemporaryDirectory(prefix="modding-api-reference-doc-smoke-") as raw_root:
         fixture_root = Path(raw_root)
-        local_preferences = fixture_root / "local-preferences.md"
-        skipped_preferences = fixture_root / "skipped-preferences.md"
+        local_preferences = fixture_root / "local-config.yml"
+        skipped_preferences = fixture_root / "skipped-config.yml"
         local_path = fixture_root / "references" / "modding-api"
         local_documentation = local_path / "docs" / "development" / "main.md"
         local_documentation.parent.mkdir(parents=True)
@@ -528,13 +528,13 @@ def run_documentation_smoke() -> None:
             or local_route.get("checkout_version") != local_version
         ):
             raise DocumentationTestFailure(
-                "configured local preferences must select the local reference route and version"
+                "configured local settings must select the local reference route and version"
             )
         if not Path(local_route["documentation_path"]).is_file():
             raise DocumentationTestFailure("local route must point at docs/development/main.md")
         if local_route.get("selector") != f"tag:{local_version}":
             raise DocumentationTestFailure(
-                "local preferences must preserve the configured selector"
+                "local settings must preserve the configured selector"
             )
 
         remote_route = select_route(parse_preferences(skipped_preferences))

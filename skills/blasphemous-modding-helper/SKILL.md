@@ -11,7 +11,7 @@ You are helping with Blasphemous mod development.
 
 After reading Requirement levels, agent MUST classify the request before choosing an operational branch.
 
-- For a natural-language request to identify, explain, compare, or translate a Blasphemous 1 term, name, UI phrase, or textual reference, agent MUST read [Localization lookup](references/sub-skills/localization-lookup.md). Agent MUST treat this as a read-only localization branch and MUST NOT require preferences.
+- For a natural-language request to identify, explain, compare, or translate a Blasphemous 1 term, name, UI phrase, or textual reference, agent MUST read [Localization lookup](references/sub-skills/localization-lookup.md). Agent MUST treat this as a read-only localization branch and MUST NOT require configuration.
 - For source analysis, log analysis, mod testing, or Mod work, agent MUST continue through the shared entry gate and the applicable branch below.
 
 ## Requirement levels
@@ -20,7 +20,7 @@ At start of every Skill invocation, agent MUST read [Requirement levels](referen
 
 ## Shared entry gate
 
-The [Invocation preflight](references/config/invocation-preflight.md) reference is the sole authority for the shared entry gate: Skill-root resolution, caller Mod-repository context, Python interpreter and host expectations, preference scope and precedence, when first-time setup is required, path recovery, the tracked-session stop exception, and shared completion. It delegates detailed setup questions, validation, save operations, and optional local checkout to [First-Time Setup](references/config/first-time-setup.md). It routes Python interpreter and dependency validation to [Python Runtime](references/config/python-runtime.md). The read-only localization branch follows its documented preference exception.
+The [Invocation preflight](references/config/invocation-preflight.md) reference is the sole authority for the shared entry gate: Skill-root resolution, caller Mod-repository context, Python interpreter and host expectations, configuration scope and precedence, when first-time setup is required, path recovery, the tracked-session stop exception, and shared completion. It delegates detailed setup questions, validation, save operations, and optional local checkout to [First-Time Setup](references/config/first-time-setup.md). It routes Python interpreter and dependency validation to [Python Runtime](references/config/python-runtime.md). The read-only localization branch follows its documented configuration exception.
 
 ## Coding standards
 
@@ -59,7 +59,7 @@ Agent MUST use tools to gather information required by task, including:
 
 Tools' `.md` files SHOULD contain all path specifications required for task. Agent MUST NOT ask user for path again unless needed path information is absent there.
 
-**Done when**: agent has located every path task needs (source code, modding profile, and logs) in `preferences.md` or navigation documents, and has handed any missing or stale path to Step 5.
+**Done when**: agent has located every path task needs (source code, modding profile, and logs) in `config.yml` or navigation documents, and has handed any missing or stale path to Step 5.
 
 ### Step 4: Solve User Question
 
@@ -71,4 +71,4 @@ Agent MUST use gathered information to solve user question.
 
 Agent MUST follow the path-failure recovery contract in the shared entry gate.
 
-**Done when**: shared recovery contract has produced validated preferences file, or agent has continued with current paths and reported specific failure and next action.
+**Done when**: shared recovery contract has produced a validated configuration file, or agent has continued with current paths and reported specific failure and next action.

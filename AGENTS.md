@@ -2,20 +2,20 @@
 
 ## Scope and safety
 
-This repository packages `blasphemous-modding-helper`, a cross-agent skill for Blasphemous mod development. It contains Skill instructions and references, a cross-platform decompiler helper, and a Node.js installer. The game source tree, modding profile, logs, and generated preferences belong outside this repository.
+This repository packages `blasphemous-modding-helper`, a cross-agent skill for Blasphemous mod development. It contains Skill instructions and references, a cross-platform decompiler helper, and a Node.js installer. The game source tree, modding profile, logs, and generated configuration data belong outside this repository.
 
-Keep generated decompiled source, profiles, logs, preferences, and other caller data out of the Skill package and release archive.
+Keep generated decompiled source, profiles, logs, configuration, and other caller data out of the Skill package and release archive.
 
 ## Source of truth
 
 Use the narrowest authoritative file for each change:
 
-- `skills/blasphemous-modding-helper/SKILL.md` owns installed Skill behavior, workflow routing, frontmatter, and the shared preferences gate.
+- `skills/blasphemous-modding-helper/SKILL.md` owns installed Skill behavior, workflow routing, frontmatter, and the shared configuration gate.
 - `skills/blasphemous-modding-helper/references/config/` and `references/sub-skills/` own detailed setup and branch behavior; read only the references selected by the task.
-- `skills/blasphemous-modding-helper/scripts/blasphemous_modding_helper/preferences.py` owns preference scope and parsing; `decompiler.py` owns the cross-platform decompilation workflow.
+- `skills/blasphemous-modding-helper/scripts/blasphemous_modding_helper/preferences.py` owns configuration scope and parsing; `decompiler.py` owns the cross-platform decompilation workflow.
 - `skills/blasphemous-modding-helper/references/source-code-navigation/MAIN.md` is the source-navigation authority; read it before searching source details.
 - `bin/install.js` owns installer behavior, agent detection, provider IDs, and CLI flags. `install.sh` and `install.ps1` are entry shims and stay behaviorally aligned with it.
-- `ci/update-version/version.yml` is the version source; `ci/update-version/UpdateVersionNumber.py` synchronizes public version fields.
+- `skills/blasphemous-modding-helper/version.yml` is the version source; `ci/update-version/UpdateVersionNumber.py` synchronizes public version fields.
 - `README.md`, `package.json`, `.claude-plugin/plugin.json`, `gemini-extension.json`, and `skills-lock.json` are public package docs or manifests.
 - `.github/workflows/build.yml` is the CI and release-packaging contract.
 
@@ -42,6 +42,6 @@ The repository has no npm test/build script; use the branch checks and CI contra
 
 - Installer or JavaScript: run syntax, installer regression, wrapper, dry-run, and help checks relevant to the change.
 - Python Skill workflows: follow `docs/verification/blasphemous-modding-test.md` with a resolved Python 3.9+ interpreter; compile changed entry points when applicable.
-- Version or manifest: run the updater in dry-run mode and compare changed manifests with `ci/update-version/version.yml`.
+- Version or manifest: run the updater in dry-run mode and compare changed manifests with `skills/blasphemous-modding-helper/version.yml`.
 - Skill or Markdown references: validate changed relative links and preserve `MAIN.md` routing.
 - Any change: run `git diff --check` and finish with `git status --short`.

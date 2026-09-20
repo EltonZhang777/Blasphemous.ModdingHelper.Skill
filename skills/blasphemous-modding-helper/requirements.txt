@@ -1,1 +1,2 @@
-# The Skill currently uses Python's standard library only.
+# The runtime gate validates this dependency and never installs it automatically.
+PyYAML>=6.0

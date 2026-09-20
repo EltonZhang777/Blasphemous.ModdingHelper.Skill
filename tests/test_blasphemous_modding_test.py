@@ -330,7 +330,7 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
         return process, identity
 
     def write_project_preferences(self, profile, unity_log_dir=None):
-        preferences = self.root / ".skills" / "blasphemous-modding-helper" / "preferences.md"
+        preferences = self.root / ".skills" / "blasphemous-modding-helper" / "config.yml"
         preferences.parent.mkdir(parents=True, exist_ok=True)
         values = [f"modding_profile_path: {profile}"]
         if unity_log_dir is not None:
@@ -339,7 +339,7 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
         return preferences
 
     def write_user_preferences(self, profile):
-        preferences = self.home / ".skills" / "blasphemous-modding-helper" / "preferences.md"
+        preferences = self.home / ".skills" / "blasphemous-modding-helper" / "config.yml"
         preferences.parent.mkdir(parents=True)
         preferences.write_text(
             f"modding_profile_path: {profile}\n",
@@ -1425,7 +1425,7 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
                 result = session.wait_for_startup_evidence(
                     deployment.state_path,
                     profile_preflight,
-                    module.Preferences("project", self.root / "preferences.md", {"modding_profile_path": str(profile_preflight.profile)}),
+                    module.Preferences("project", self.root / "config.yml", {"modding_profile_path": str(profile_preflight.profile)}),
                     "Windows",
                     0.0,
                 )
@@ -2217,7 +2217,7 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
         )
 
         self.assert_success(result)
-        self.assertIn(f"Preferences: project ({project_preferences})", result.stdout)
+        self.assertIn(f"Configuration: project ({project_preferences})", result.stdout)
         self.assertIn(f"Modding profile: {project_profile}", result.stdout)
         self.assertNotIn(f"Modding profile: {user_profile}", result.stdout)
 
@@ -2268,7 +2268,7 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
         result = self.run_cli("run", "--dry-run")
 
         self.assertEqual(result.returncode, 10)
-        self.assertIn("preferences.md", result.stderr)
+        self.assertIn("config.yml", result.stderr)
 
     def test_no_project_returns_usage_configuration_error(self):
         profile = self.create_profile()
@@ -2415,14 +2415,14 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
         self.assertIn("No known game launcher", result.stderr)
 
     def test_invalid_preferences_encoding_returns_profile_preference_error(self):
-        preferences = self.root / ".skills" / "blasphemous-modding-helper" / "preferences.md"
+        preferences = self.root / ".skills" / "blasphemous-modding-helper" / "config.yml"
         preferences.parent.mkdir(parents=True)
         preferences.write_bytes(b"modding_profile_path: \xff\n")
 
         result = self.run_cli("status")
 
         self.assertEqual(result.returncode, 10)
-        self.assertIn("Could not read preferences.md", result.stderr)
+        self.assertIn("Could not read config.yml", result.stderr)
 
     def test_compatibility_shell_is_rejected(self):
         profile = self.create_profile()

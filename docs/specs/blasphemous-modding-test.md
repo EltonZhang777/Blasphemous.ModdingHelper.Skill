@@ -8,7 +8,7 @@ The missing workflow creates several risks. A developer may copy the wrong build
 
 ## Solution
 
-Provide a cross-platform `argparse` CLI and a dedicated mod-testing sub-skill. The CLI owns deterministic build selection, package validation, safe deployment, profile-local game launch, process tracking, log inspection, session rollback, and stable exit codes. The sub-skill owns the user-facing workflow, preferences integration, manual gameplay boundary, acceptance criteria, and troubleshooting guidance.
+Provide a cross-platform `argparse` CLI and a dedicated mod-testing sub-skill. The CLI owns deterministic build selection, package validation, safe deployment, profile-local game launch, process tracking, log inspection, session rollback, and stable exit codes. The sub-skill owns the user-facing workflow, configuration integration, manual gameplay boundary, acceptance criteria, and troubleshooting guidance.
 
 The default workflow builds the selected project in Debug configuration, resolves the package directory named by the project, validates every package-relative file, deploys it to the selected modding profile, launches the profile-local game, and reports separate `launched`, `ready`, and `mod_loaded` states. Release configuration is explicit. A release archive is an explicit fallback only; it is never selected by timestamp or silently substituted for a build package.
 
@@ -37,8 +37,8 @@ The workflow stores temporary session state for process ownership, deployment ma
 19. As a mod developer, I want every safe file under the package root to be deployed, so that DLLs, data, localization, images, JSON, and other mod resources remain available.
 20. As a mod developer, I want package-relative paths preserved, so that a data dependency remains in the data directory and a plugin remains in the plugin directory.
 21. As a mod developer, I want the CLI to reject ambiguous package layouts, so that a malformed package is not partially deployed.
-22. As a mod developer, I want the modding profile to come from the existing preferences model, so that source paths and runtime paths remain separate concerns.
-23. As a mod developer, I want explicit profile arguments to override preferences for one invocation, so that temporary profile testing does not rewrite saved configuration.
+22. As a mod developer, I want the modding profile to come from the existing configuration model, so that source paths and runtime paths remain separate concerns.
+23. As a mod developer, I want explicit profile arguments to override saved configuration for one invocation, so that temporary profile testing does not rewrite saved configuration.
 24. As a mod developer, I want a profile preflight to verify the profile, game launcher, Modding root, and BepInEx installation, so that a vanilla or unrelated directory is not modified.
 25. As a mod developer, I want the CLI to create only missing Modding subdirectories, so that a valid profile can receive a package without allowing the CLI to invent a profile root.
 26. As a mod developer, I want non-Steam mirror profiles supported, so that testing does not depend on the original Steam installation.
@@ -68,9 +68,9 @@ The workflow stores temporary session state for process ownership, deployment ma
 50. As an AI agent, I want a mod-loaded state tied to the target mod's load evidence, so that BepInEx startup alone is not reported as target-mod success.
 51. As a mod developer, I want startup timeout to leave the process and session available for diagnosis, so that a timeout does not erase useful failure evidence.
 52. As an AI agent, I want the BepInEx log read from the selected profile, so that startup errors are analyzed from the same profile that was launched.
-53. As an AI agent, I want the Unity log directory configured by preferences, so that platform-specific locations do not require hardcoded assumptions.
+53. As an AI agent, I want the Unity log directory configured by the saved configuration, so that platform-specific locations do not require hardcoded assumptions.
 54. As a user, I want a missing Unity log to produce a clear question, so that I can provide the correct directory instead of watching an opaque failure.
-55. As a user, I want a supplied Unity log directory saved in the active preferences scope, so that later test runs can reuse it.
+55. As a user, I want a supplied Unity log directory saved in the active configuration scope, so that later test runs can reuse it.
 56. As an AI agent, I want bounded log output by default, so that normal analysis remains readable.
 57. As an AI agent, I want an explicit full-log option, so that deeper diagnosis remains possible without changing the default output.
 58. As a mod developer, I want the agent to collect my natural-language gameplay description, so that manual behavior remains part of the test evidence.
@@ -89,7 +89,7 @@ The workflow stores temporary session state for process ownership, deployment ma
 ## Implementation Decisions
 
 - The feature is a Python standard-library CLI using `argparse`, with one implementation boundary on native Windows, Linux, and macOS. PowerShell or Bash may host the process but are not separate Skill entry points.
-- The CLI exposes `run`, `stop`, `clean`, `logs`, and read-only `status` operations. It uses project preferences before user preferences, and explicit arguments override saved values.
+- The CLI exposes `run`, `stop`, `clean`, `logs`, and read-only `status` operations. It uses project configuration before user configuration, and explicit arguments override saved values.
 - The default build configuration is Debug. Release is explicit. A project is inferred only when the current directory contains exactly one project file; ambiguity requires explicit selection.
 - Build-root resolution inspects ancestor `.sln` and `.slnx` files, matches their project membership to the requested `.csproj`, selects one matching solution, and fails explicitly when matching membership is ambiguous. With no match, the project directory is the visible fallback; the artifact plan reports the selected root and trailing-separator `SolutionDir`.
 - A normal run builds the project, resolves the declared target name, and uses the corresponding package directory in the build output container. An explicit artifact selects deploy-only behavior. A dry run does not deploy or launch.
@@ -103,10 +103,10 @@ The workflow stores temporary session state for process ownership, deployment ma
 - Stop and clean refuse to operate while the tracked game process is running. Stop is idempotent when the tracked process has already exited.
 - The evidence state is split into launched, ready, and mod loaded. Ready uses current BepInEx chainloader completion evidence; mod loaded uses target-mod loading evidence. A timeout preserves the process and session for diagnosis.
 - Structured warning and error evidence is grouped as target-owned, framework-owned, session baseline, or unknown. A session-baseline label is derived only when the current log retains a byte prefix ending at a complete line boundary and proven equal to the pre-session log; concrete warning text is never a built-in baseline rule. Labels never suppress newly observed or target-owned diagnostics.
-- The BepInEx log is profile-relative. The Unity log directory is an optional preferences field. When it is missing, the agent asks the user and writes the answer to the active preferences scope; the CLI itself does not conduct the conversational update.
+- The BepInEx log is profile-relative. The Unity log directory is an optional configuration field. When it is missing, the agent asks the user and writes the answer to the active configuration scope; the CLI itself does not conduct the conversational update.
 - Current logs are read from their existing system locations. Default current-log output is bounded; full output is explicit. A user-confirmed completed Test session may additionally create its two-source snapshot in session data; no persistent log report or repository archive is created.
 - User-facing CLI output is UTF-8, and subprocess text is decoded explicitly with safe replacement for undecodable bytes. Unicode and space-containing path values remain intact across the lifecycle; replacement applies only to undecodable subprocess or log text.
-- The CLI returns stable categories: success, usage/configuration, profile/preference, build, package, deployment/rollback, launch, log/readiness, and stop/clean.
+- The CLI returns stable categories: success, usage/configuration, profile/configuration, build, package, deployment/rollback, launch, log/readiness, and stop/clean.
 - Root and subcommand help are part of the agent-facing CLI contract. Each subcommand lists only its accepted options, explains applicable context overrides, and provides a canonical example; `stop` accepts only `SESSION_ID` and optional `--force`.
 - The sub-skill is the authority for the user-facing flow, manual gameplay boundary, acceptance criteria, and troubleshooting. The top-level skill links to it once.
 - This specification defines behavior only. It does not implement the CLI, modify a game profile, build a mod, or automate gameplay.
@@ -118,7 +118,7 @@ The workflow stores temporary session state for process ownership, deployment ma
 - Fixture tests cover Debug-build selection, explicit Release selection, project ambiguity, deterministic `.sln`/`.slnx` membership, ambiguous solution rejection, project-directory fallback, package-directory selection, explicit archive selection, safe relative paths, rejected traversal, missing profile requirements, and dry-run non-mutation.
 - Fixture tests cover overwriting an existing file, restoring the previous file, retaining new files, protecting files modified during testing, explicit new-file removal, per-file cleanup outcomes, post-clean status, process-exit cleanup, and rollback failure reporting.
 - Fixture tests cover repeated sessions, archived-session warnings, newest-first cleanup, status output, idempotent stop, and refusal to clean while a newer session is active.
-- Fixture tests cover launched, ready, mod-loaded, timeout, missing BepInEx log, missing Unity log, and preferences update handoff behavior.
+- Fixture tests cover launched, ready, mod-loaded, timeout, missing BepInEx log, missing Unity log, and configuration update handoff behavior.
 - Fixture tests cover target, framework, dynamically derived session baseline, unknown, rewritten-prefix fallback, unrelated-error, and newly observed warning classification; focused snapshot tests cover user-confirmed capture, current-process fallback, source failures, and session retention.
 - Fixture tests cover Unicode and space-containing paths through dry-run, build errors, run, logs, status, stop, and clean, including undecodable log bytes.
 - Parser-level tests cover valid invocations, reject misplaced cross-command options, and assert root/subcommand help for the canonical workflow and limited stop contract.

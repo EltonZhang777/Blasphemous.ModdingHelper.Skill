@@ -7,17 +7,17 @@ Before executing command in this reference, agent MUST apply command-context con
 
 ## Reference selection
 
-1. Agent MUST read selected `preferences.md`.
+1. Agent MUST read selected `config.yml`.
 2. If `modding_api_reference_path` is present, agent MUST use that local checkout. The
    path is authoritative for task; agent MUST NOT clone or update it during an
    ordinary question. If its selector is absent, agent MUST treat it as `latest` for
    explicit local-reference lifecycle commands.
 3. If local fields are absent, agent MUST use release-aware remote fallback below.
-   This is valid for legacy preferences and for first-time setup where the
+   This is valid for legacy configuration and for first-time setup where the
    user selected **Skip** for local checkout.
 
 Optional fields, normalized-path rule, and approved user/project scope
-locations are defined in [preferences-schema.md](../config/preferences-schema.md).
+locations are defined in the [config schema](../config/preferences-schema.md).
 Explicit local-checkout setup flow is in
 [first-time-setup.md#q6-local-moddingapi-reference](../config/first-time-setup.md#q6-local-moddingapi-reference).
 
@@ -35,7 +35,7 @@ question:
 read unqualified Git branch; agent MUST NOT interpret it that way. resolver's tag, branch, or commit remains
 part of every remote URL and every local-reference decision.
 
-Reference selection is complete when active `preferences.md` scope has been read and agent has recorded one resolved route: validated local checkout with its selector/lock state, or release-aware remote resolver output required for browsing.
+Reference selection is complete when active `config.yml` scope has been read and agent has recorded one resolved route: validated local checkout with its selector/lock state, or release-aware remote resolver output required for browsing.
 
 ## Stable API topic routing
 
@@ -119,7 +119,7 @@ report, MUST NOT invent URL, and MUST ask for corrected selector, local checkout
 or retry when Release lookup fails.
 
 The fixture schema, provenance fields, and mismatch recovery contract are
-defined in [preferences-schema.md#resolver-fixture-contract](../config/preferences-schema.md#resolver-fixture-contract).
+defined in the [config schema](../config/preferences-schema.md#resolver-fixture-contract).
 The smoke check consumes that contract and never presents fixture data as live Release
 metadata.
 
@@ -159,11 +159,11 @@ the existing operation model:
 ```
 
 Manager reads `modding_api_reference_path` and
-`modding_api_reference_selector` from selected preferences file, unless
+`modding_api_reference_selector` from the selected configuration file, unless
 `--target-path`/`-TargetPath` or `--selector`/`-Selector` is supplied. It also
 accepts same `--scope`/`-Scope` and `--preferences-file`/`-PreferencesFile`
 options as fresh-clone command. When none of those three routing options
-is supplied, it uses active preferences context selected by [Invocation
+is supplied, it uses the active configuration context selected by [Invocation
 preflight](../config/invocation-preflight.md); explicit scope always selects
 its approved path.
 
@@ -212,10 +212,10 @@ caller's Mod repository using the explicit Skill-root path:
 ```
 
 It verifies top-level pointer, stable and archived route tables, the
-game-source boundary, and both preferences outcomes: configured local path
+game-source boundary, and both configuration outcomes: configured local path
 selects local route, while skipped local setup selects release-aware
-remote route. It also reports the selected preference selector, local lock
-selector, local lock version, remote preference/resolution version, matching
+remote route. It also reports the selected configuration selector, local lock
+selector, local lock version, remote selector/resolution version, matching
 fixture version, and historical fixture label; a mismatch fails with recovery
 guidance. Bash and PowerShell
 command forms invoke this same Python entry point and therefore retain

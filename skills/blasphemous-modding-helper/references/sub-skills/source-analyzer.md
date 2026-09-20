@@ -11,7 +11,7 @@ This sub-skill analyzes Blasphemous game source code, with focus on game mechani
 
 ## Entry conditions
 
-Before source analysis, agent MUST complete [Invocation preflight](../config/invocation-preflight.md). This branch adds source-path requirement: active `preferences.md` MUST provide at least one valid `full_source_code_path` or `lightweight_source_code_path`.
+Before source analysis, agent MUST complete [Invocation preflight](../config/invocation-preflight.md). This branch adds source-path requirement: active `config.yml` MUST provide at least one valid `full_source_code_path` or `lightweight_source_code_path`.
 
 ## Analysis Approach
 1. Agent MUST analyze user input to extract expected pattern, source-code details to find, and source-code file to check when one is specified.
@@ -24,5 +24,5 @@ Before source analysis, agent MUST complete [Invocation preflight](../config/inv
 
 ## Completion criteria
 
-Agent MUST mark source analysis complete only when active preferences file and source path used are recorded, relevant source evidence has been checked, and every cited class or file path has been verified against selected source tree. If required source paths are missing or invalid, agent MUST report exact missing path and next setup or recovery action instead of claiming completion.
+Agent MUST mark source analysis complete only when active configuration file and source path used are recorded, relevant source evidence has been checked, and every cited class or file path has been verified against selected source tree. If required source paths are missing or invalid, agent MUST report exact missing path and next setup or recovery action instead of claiming completion.
 

@@ -2,7 +2,7 @@
 
 The user-facing activation path is the top-level `blasphemous-modding-helper` Skill; the Agent selects this reference automatically.
 
-Agent MUST use this read-only branch for a natural-language request to identify, explain, compare, or translate a Blasphemous 1 term, name, UI phrase, or textual reference. Agent MUST NOT require `preferences.md`, a Modding profile, a source-code path, or a Python runtime for this branch.
+Agent MUST use this read-only branch for a natural-language request to identify, explain, compare, or translate a Blasphemous 1 term, name, UI phrase, or textual reference. Agent MUST NOT require `config.yml`, a Modding profile, a source-code path, or a Python runtime for this branch.
 
 ## Procedure
 
@@ -56,7 +56,7 @@ Agent MUST use this read-only branch for a natural-language request to identify,
 
 7. Agent MUST report candidates and ambiguity when several rows match or the wording is ordinary prose. Agent MUST NOT force a canonical game concept from a weak text match.
    - After the selected TSV search, agent MUST search [Semantic aliases](../localization/semantic-aliases.md), including when text matches are ambiguous. Agent MUST follow the matching, context, confidence, and confirmation rules in that document.
-   - If no localization or alias evidence resolves the term, agent MUST route code-like identifiers, explicit source references, or unresolved terms requiring gameplay evidence to [Source analyzer](source-analyzer.md). Agent MUST follow that branch's source-path and preferences preflight.
+   - If no localization or alias evidence resolves the term, agent MUST route code-like identifiers, explicit source references, or unresolved terms requiring gameplay evidence to [Source analyzer](source-analyzer.md). Agent MUST follow that branch's source-path and configuration preflight.
    - Agent MUST report source-derived runtime behavior, mechanics, values, and code relationships as `Gameplay evidence`, and keep localization rows under `Localization evidence`.
    - If source evidence supports a relationship between a code identifier and a localized concept, agent MUST label it explicitly as an `Inference` and cite both sides. Agent MUST NOT create a persistent code-name-to-translation mapping table.
    - A natural-language term that remains unresolved and is not code-like MUST remain a candidate or actionable unresolved result. Agent MUST NOT turn it into an automatic source or web-search guess.
