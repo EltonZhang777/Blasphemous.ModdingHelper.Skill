@@ -347,7 +347,7 @@ class CloneModdingApiContractTests(unittest.TestCase):
             "latest",
             *self.fixture_arguments(self.latest_metadata),
         )
-        self.assert_failure(result, 1, "preferences")
+        self.assert_failure(result, 1, "blocked-preferences")
         self.assertFalse(target.exists(), result.stderr)
         self.assertFalse(Path(str(target) + ".lock").exists(), result.stderr)
 

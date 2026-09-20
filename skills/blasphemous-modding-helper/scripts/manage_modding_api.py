@@ -314,8 +314,8 @@ def select_preference_context(state: ManagerState) -> Optional[Path]:
         ):
             raise ManagerError(
                 EXIT_USAGE,
-                f"preferences file scope does not match --scope {state.scope}",
-                "Use the preferences path belonging to the selected scope.",
+                f"configuration file scope does not match --scope {state.scope}",
+                "Use the configuration path belonging to the selected scope.",
             )
     return default_target
 

@@ -2217,7 +2217,7 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
         )
 
         self.assert_success(result)
-        self.assertIn(f"Preferences: project ({project_preferences})", result.stdout)
+        self.assertIn(f"Configuration: project ({project_preferences})", result.stdout)
         self.assertIn(f"Modding profile: {project_profile}", result.stdout)
         self.assertNotIn(f"Modding profile: {user_profile}", result.stdout)
 

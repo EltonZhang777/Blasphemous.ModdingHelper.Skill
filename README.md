@@ -69,14 +69,14 @@ After installation, manually activate the skill:
 
 ## 📦 What's Included
 
-- **Core Skill** — Top-level configuration with coding specifications, preferences management, and workflow guidelines
+- **Core Skill** — Top-level configuration with coding specifications, configuration management, and workflow guidelines
 - **Source Code Navigation Guides** — 10 AI-friendly docs for navigating decompiled Blasphemous source code (core, player, enemies, bosses, UI, items, levels, tools, localization, and main index)
 - **Automatically routed workflows**:
   - **Source Analyzer** — Read and analyze game source code to understand mechanics, structure, and dependencies
   - **Log Analyzer** — Debug and error tracking for mod development (BepInEx and Unity logs)
   - **Mod Test** — Build, deploy, launch, inspect startup evidence, stop, clean, and collect Manual verification
   - **Localization Lookup** — Read-only lookup and translation support for Blasphemous 1 terms and UI text
-- **Configuration Reference** — First-time setup and preferences documentation
+- **Configuration Reference** — First-time setup and configuration documentation
 
 Only the top-level `blasphemous-modding-helper` skill is activated. The Agent automatically selects the applicable workflow reference; users do not need to invoke these references directly.
 

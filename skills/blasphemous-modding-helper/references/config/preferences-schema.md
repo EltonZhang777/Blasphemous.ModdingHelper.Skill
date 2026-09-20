@@ -34,7 +34,7 @@ modding_api_reference_selector: latest
 
 ## Freshness validation metadata
 
-The shared `check_preferences.py --validate` gate manages only these fields:
+The shared `check_preferences.py --validate` configuration gate manages only these fields:
 
 ```yaml
 last_checked_time: '2026-09-18T12:34:56Z'
@@ -52,15 +52,15 @@ comments, and order. Invalid YAML or invalid `check_period_days` returns
 
 ## Approved local reference locations
 
-Local checkout uses the same scope as its preferences file:
+Local checkout uses the same scope as its configuration file:
 
-| Scope | Reference path | Preferences path |
+| Scope | Reference path | Config path |
 |-------|----------------|------------------|
 | User | `$HOME/.skills/blasphemous-modding-helper/references/modding-api` | `$HOME/.skills/blasphemous-modding-helper/config.yml` |
 | Project | `.skills/blasphemous-modding-helper/references/modding-api` | `.skills/blasphemous-modding-helper/config.yml` |
 
 `modding_api_reference_path` is absolute after setup. Missing
-ModdingAPI fields remain valid in legacy preferences and are added only when the
+ModdingAPI fields remain valid in legacy configuration and are added only when the
 user opts into local reference setup. Skipping local setup leaves both fields
 absent, preserving release-aware remote fallback.
 

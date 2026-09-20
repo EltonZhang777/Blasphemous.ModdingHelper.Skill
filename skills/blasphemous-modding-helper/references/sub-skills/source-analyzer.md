@@ -24,5 +24,5 @@ Before source analysis, agent MUST complete [Invocation preflight](../config/inv
 
 ## Completion criteria
 
-Agent MUST mark source analysis complete only when active preferences file and source path used are recorded, relevant source evidence has been checked, and every cited class or file path has been verified against selected source tree. If required source paths are missing or invalid, agent MUST report exact missing path and next setup or recovery action instead of claiming completion.
+Agent MUST mark source analysis complete only when active configuration file and source path used are recorded, relevant source evidence has been checked, and every cited class or file path has been verified against selected source tree. If required source paths are missing or invalid, agent MUST report exact missing path and next setup or recovery action instead of claiming completion.
 

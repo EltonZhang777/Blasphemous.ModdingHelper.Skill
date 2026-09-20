@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Report active preferences scope for the caller's Mod repository."""
+"""Report active configuration scope for the caller's Mod repository."""
 
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ EXIT_SETUP_REQUIRED = 10
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Report whether project or user preferences are active."
+        description="Report whether project or user configuration is active."
     )
     parser.add_argument(
         "--cwd",

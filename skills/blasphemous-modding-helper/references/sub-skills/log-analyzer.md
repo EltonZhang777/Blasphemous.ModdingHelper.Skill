@@ -31,7 +31,7 @@ When mod-test CLI reports missing Unity log directory or log:
 2. Agent MUST add `unity_log_dir: PATH` to active `config.yml`, or pass `--unity-log-dir PATH` for one-run override. active file is scope selected by [Invocation preflight](../config/invocation-preflight.md).
 3. Agent MUST re-run `logs SESSION_ID` or explicit startup-evidence wait.
 
-This step is complete only when CLI resolves Unity log or warning remains visible with exact missing path and preference file to update. CLI reads existing BepInEx and Unity logs in place; it does not create persistent log copies.
+This step is complete only when CLI resolves Unity log or warning remains visible with exact missing path and configuration file to update. CLI reads existing BepInEx and Unity logs in place; it does not create persistent log copies.
 
 `launched`, `ready`, and `mod_loaded` are startup states. They MUST NOT be used to verify visual, input, combat, menu, save, or other gameplay behavior. After startup evidence is collected, agent MUST ask player to operate game and report observed behavior in natural language; agent MUST treat that report as manual gameplay evidence.
 
@@ -60,9 +60,9 @@ stays bounded and does not persist a complete log copy.
 
 Agent MUST mark log analysis complete only when report contains all of these:
 
-1. Active preferences file and every log source inspected, or exact missing path and required preference-update handoff.
+1. Active configuration file and every log source inspected, or exact missing path and required configuration-update handoff.
 2. Expected pattern, relevant log evidence, and conclusion tied to that evidence. If BepInEx log is sufficient, agent MUST state that Unity-log read was not required; otherwise, Unity-log result MUST be included.
 3. Concrete next action: code/configuration change, another evidence request, tracked-session operation, or player Manual verification.
 
-Missing or unreadable evidence is not successful analysis. analysis is complete in that case only when warning names missing source, active preferences file, and next action needed to recover.
+Missing or unreadable evidence is not successful analysis. Analysis is complete in that case only when warning names missing source, active configuration file, and next action needed to recover.
 

@@ -269,8 +269,8 @@ def select_preference_context(state: CloneState) -> Optional[Path]:
         ):
             raise CloneError(
                 EXIT_USAGE,
-                f"preferences file scope does not match --scope {state.scope}",
-                "Use the preferences path belonging to the selected scope.",
+                f"configuration file scope does not match --scope {state.scope}",
+                "Use the configuration path belonging to the selected scope.",
             )
     return default_target
 
@@ -663,8 +663,8 @@ def capture_preferences(state: CloneState) -> None:
         except (OSError, UnicodeError) as error:
             raise CloneError(
                 EXIT_RUNTIME,
-                f"could not read preferences file: {state.preferences_file} ({error})",
-                "Fix the preferences path or permissions, then retry.",
+                f"could not read configuration file: {state.preferences_file} ({error})",
+                "Fix the configuration path or permissions, then retry.",
             ) from error
 
 
@@ -706,13 +706,13 @@ def rollback(state: CloneState) -> List[str]:
                 state.preferences_file,
                 state.preferences_after_identity,
             ):
-                raise OSError(f"preferences file was replaced: {state.preferences_file}")
+                raise OSError(f"configuration file was replaced: {state.preferences_file}")
             if state.preferences_existed:
                 atomic_write(state.preferences_file, state.preferences_content)
             elif path_exists(state.preferences_file):
                 state.preferences_file.unlink()
         except OSError as error:
-            errors.append(f"preferences restore: {error}")
+            errors.append(f"configuration restore: {error}")
     return errors
 
 

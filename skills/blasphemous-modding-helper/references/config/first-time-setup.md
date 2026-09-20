@@ -1,6 +1,6 @@
 ---
 name: first-time-setup
-description: First-time setup flow for blasphemous-modding-helper preferences
+description: First-time setup flow for blasphemous-modding-helper configuration
 ---
 
 # First-Time Setup
@@ -9,7 +9,7 @@ description: First-time setup flow for blasphemous-modding-helper preferences
 
 When no `config.yml` is found, this reference describes configuration setup flow.
 
-Shared [Invocation preflight](invocation-preflight.md) reference owns blocking gate, preference precedence, tracked-session stop exception, path recovery, and completion contract. This reference owns detailed setup questions, validation, and save operations after that gate selects missing-preferences state.
+Shared [Invocation preflight](invocation-preflight.md) reference owns blocking gate, configuration precedence, tracked-session stop exception, path recovery, and completion contract. This reference owns detailed setup questions, validation, and save operations after that gate selects missing-configuration state.
 
 Before executing command in this reference, agent MUST apply command-context contract in [Invocation preflight](invocation-preflight.md).
 
@@ -17,7 +17,7 @@ Agent MUST ask only questions in this setup flow, MUST save `config.yml`, and MU
 
 Before asking Q1, agent MUST complete the [Python runtime gate](python-runtime.md). Q1 remains the first user question. A failed runtime gate MUST stop setup, show its stable configuration diagnostic, and provide the retry action; it MUST NOT install packages or write `config.yml`.
 
-On success, agent MUST return validated preferences file to Invocation preflight completion check. On failure, agent MUST report error and retry path through that same contract.
+On success, agent MUST return the validated configuration file to Invocation preflight completion check. On failure, agent MUST report error and retry path through that same contract.
 
 ## Setup Flow
 
@@ -73,12 +73,12 @@ Agent MUST use AskUserQuestion with **ALL applicable** questions in **ONE** call
 
 ```yaml
 header: "Save"
-question: "Where to save preferences?"
+question: "Where to save configuration?"
 options:
   - label: "User (Recommended)"
-    description: "User scope; see preferences-schema.md#approved-local-reference-locations — available across projects"
+    description: "User scope; see the config schema at preferences-schema.md#approved-local-reference-locations — available across projects"
   - label: "Project"
-    description: "Project scope; see preferences-schema.md#approved-local-reference-locations — scoped to this repository"
+    description: "Project scope; see the config schema at preferences-schema.md#approved-local-reference-locations — scoped to this repository"
 ```
 
 Note: Agent MUST ask this first so the decompile branch knows its destination and can show the planned output before execution.
@@ -164,8 +164,8 @@ options:
 
 If user selects **Yes**, agent MUST use same scope selected in Q1.
 Agent MUST NOT select independent reference scope: agent MUST keep
-local reference and its preferences in same scope domain. approved paths are authoritative in
-[preferences-schema.md#approved-local-reference-locations](preferences-schema.md#approved-local-reference-locations).
+local reference and its configuration in same scope domain. approved paths are authoritative in
+[the config schema](preferences-schema.md#approved-local-reference-locations).
 
 ```yaml
 header: "reference selector"
@@ -199,7 +199,7 @@ Project and MUST use User when Q1 selected User. clone command refuses existing 
 tags and commits detached, creates tracking branch for explicit branches,
 writes normalized absolute path plus selector to selected
 `config.yml`, and writes sibling lock state described in
-[preferences-schema.md#sibling-lock-state](preferences-schema.md#sibling-lock-state).
+[the config schema](preferences-schema.md#sibling-lock-state).
 It does not replace existing checkout.
 
 ## Validate User Input
@@ -231,15 +231,15 @@ Validation criteria:
 
 ## Save Locations
 
-Agent MUST use approved preferences and local-reference paths in
-[preferences-schema.md#approved-local-reference-locations](preferences-schema.md#approved-local-reference-locations).
+Agent MUST use approved configuration and local-reference paths in
+[the config schema](preferences-schema.md#approved-local-reference-locations).
 
 ## Setup Workflow After User-questions
 
 1. Agent MUST create directory if needed.
 2. Agent MUST write or update `config.yml` with selected values, preserve unknown fields, include the default `check_period_days: 7` unless an existing valid value is retained, and add `modding_api_reference_path` and `modding_api_reference_selector` only when Q6 is enabled and clone succeeds.
 3. If Q6 was skipped, agent MUST leave both local reference fields absent.
-4. Agent MUST confirm: "Preferences saved to [path], you can edit it by yourself at any time."
+4. Agent MUST confirm: "Configuration saved to [path], you can edit it by yourself at any time."
 
 ## Setup completion boundary
 
@@ -251,7 +251,7 @@ Setup is complete only when all of the following are true:
 2. Every required path was validated; optional paths are either valid or were explicitly skipped.
 3. `config.yml` was written to the selected scope and can be read back.
 4. If Q6 clone succeeded, its normalized path, selector, and lock state were recorded. If Q6 was skipped, both local-reference fields remain absent.
-5. The agent confirmed the saved path and returns the validated preferences file to Invocation preflight.
+5. The agent confirmed the saved path and returns the validated configuration file to Invocation preflight.
 
 ### Setup incomplete
 
@@ -263,8 +263,8 @@ modding, or test operations; it MUST report the failure and its retry path.
 
 ## `config.yml` Template
 
-Agent MUST read [preferences-schema.md](preferences-schema.md) for detailed template restrictions.
+Agent MUST read the [config schema](preferences-schema.md) for detailed template restrictions.
 
-## Modifying Preferences Later
+## Modifying Configuration Later
 
 Users can edit `config.yml` directly or delete it to trigger setup again.

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Profile-aware entry point for the Blasphemous mod test workflow.
 
-This workflow validates the invocation environment, resolves preferences and
+This workflow validates the invocation environment, resolves configuration and
 a project, preflights a modding profile, builds or selects one package,
 deploys a validated artifact, tracks the profile-local game process, and
 collects current startup evidence from the existing game logs.
@@ -539,13 +539,13 @@ def _parse_preferences(path: Path) -> Dict[str, object]:
     except PreferenceError as error:
         raise CliError(
             EXIT_PROFILE,
-            "profile/preferences",
+            "profile/configuration",
             str(error),
         ) from error
 
 
 def load_preferences(cwd: Optional[Path] = None, home: Optional[Path] = None) -> Preferences:
-    """Load project preferences before user preferences without writing either."""
+    """Load project configuration before user configuration without writing either."""
 
     try:
         return load_shared_preferences(
@@ -560,7 +560,7 @@ def load_preferences(cwd: Optional[Path] = None, home: Optional[Path] = None) ->
                 "No config.yml found. Complete first-time setup before "
                 f"running the test CLI. {message[len('No config.yml found. '):]}"
             )
-        raise CliError(EXIT_PROFILE, "profile/preferences", message) from error
+        raise CliError(EXIT_PROFILE, "profile/configuration", message) from error
 
 
 def _unity_log_filenames(environment: str) -> Tuple[str, ...]:
@@ -3074,13 +3074,13 @@ def _require_directory(path: Path, label: str) -> None:
     if not path.exists():
         raise CliError(
             EXIT_PROFILE,
-            "profile/preferences",
+            "profile/configuration",
             f"{label} does not exist: {path}",
         )
     if not path.is_dir():
         raise CliError(
             EXIT_PROFILE,
-            "profile/preferences",
+            "profile/configuration",
             f"{label} is not a directory: {path}",
         )
 
@@ -3089,19 +3089,19 @@ def _require_file(path: Path, label: str) -> None:
     if not path.exists():
         raise CliError(
             EXIT_PROFILE,
-            "profile/preferences",
+            "profile/configuration",
             f"{label} does not exist: {path}",
         )
     if not path.is_file():
         raise CliError(
             EXIT_PROFILE,
-            "profile/preferences",
+            "profile/configuration",
             f"{label} is not a file: {path}",
         )
     if path.stat().st_size == 0:
         raise CliError(
             EXIT_PROFILE,
-            "profile/preferences",
+            "profile/configuration",
             f"{label} is empty: {path}",
         )
 
@@ -3135,19 +3135,19 @@ def _resolve_launcher(
         if not launcher.is_file():
             raise CliError(
                 EXIT_PROFILE,
-                "profile/preferences",
+                "profile/configuration",
                 f"The selected game launcher does not exist: {launcher}",
             )
         if launcher.stat().st_size == 0:
             raise CliError(
                 EXIT_PROFILE,
-                "profile/preferences",
+                "profile/configuration",
                 f"The selected game launcher is empty: {launcher}",
             )
         if adapter.requires_executable_bit and not os.access(launcher, os.X_OK):
             raise CliError(
                 EXIT_PROFILE,
-                "profile/preferences",
+                "profile/configuration",
                 f"The selected game launcher is not executable: {launcher}",
             )
         if not _is_within(launcher, profile):
@@ -3176,7 +3176,7 @@ def _resolve_launcher(
     candidate_text = ", ".join(str(candidate) for candidate in candidates)
     raise CliError(
         EXIT_PROFILE,
-        "profile/preferences",
+        "profile/configuration",
         f"No known game launcher was found in the modding profile. Checked: {candidate_text}. Pass --launcher PATH for a custom launcher.",
     )
 
@@ -3209,7 +3209,7 @@ def _resolve_context(args: argparse.Namespace, require_project: bool) -> Invocat
     except PreferenceError as error:
         raise CliError(
             EXIT_PROFILE,
-            "profile/preferences",
+            "profile/configuration",
             str(error),
         ) from error
     configured_profile = preferences.values["modding_profile_path"]
@@ -3423,7 +3423,7 @@ context for this invocation. Status is read-only.
 def _print_context(context: InvocationContext) -> None:
     print(f"Environment: {context.environment}")
     print(
-        f"Preferences: {context.preferences.scope} ({context.preferences.path})"
+        f"Configuration: {context.preferences.scope} ({context.preferences.path})"
     )
     if context.project:
         print(f"Project: {context.project}")
@@ -3779,7 +3779,7 @@ def main(
         return error.code
     except (OSError, UnicodeError) as error:
         print(
-            f"Error [profile/preferences]: Could not read or inspect the configured paths: {error}",
+            f"Error [profile/configuration]: Could not read or inspect the configured paths: {error}",
             file=sys.stderr,
         )
         return EXIT_PROFILE

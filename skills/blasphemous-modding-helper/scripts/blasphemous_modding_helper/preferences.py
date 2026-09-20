@@ -1,4 +1,4 @@
-"""Preference scope discovery and parsing shared by Skill entry points."""
+"""Configuration scope discovery and parsing shared by Skill entry points."""
 
 from __future__ import annotations
 
@@ -78,7 +78,7 @@ if yaml is not None:
 
 @dataclass(frozen=True)
 class PreferenceLocation:
-    """One selected preference file and its scope."""
+    """One selected configuration file and its scope."""
 
     scope: str
     path: Path
@@ -86,7 +86,7 @@ class PreferenceLocation:
 
 @dataclass(frozen=True)
 class Preferences:
-    """Parsed preferences with the scope that supplied them."""
+    """Parsed configuration with the scope that supplied it."""
 
     scope: str
     path: Path
@@ -249,7 +249,7 @@ def preference_scope(
     cwd: Optional[Path] = None,
     home: Optional[Path] = None,
 ) -> Optional[str]:
-    """Return selected scope or ``None`` when no preferences file exists."""
+    """Return selected scope or ``None`` when no configuration file exists."""
 
     location = find_preferences(cwd, home)
     return location.scope if location is not None else None
@@ -480,14 +480,14 @@ def load_preferences(
     *,
     required: Iterable[str] = (),
 ) -> Preferences:
-    """Select and parse project/user preferences without writing either file."""
+    """Select and parse project/user configuration without writing either file."""
 
     locations = preference_paths(cwd, home)
     for location in locations:
         if not location.path.exists():
             continue
         if not location.path.is_file():
-            raise PreferenceError(f"Preference path is not a file: {location.path}")
+            raise PreferenceError(f"Configuration path is not a file: {location.path}")
         return Preferences(
             location.scope,
             location.path,

@@ -1,20 +1,20 @@
 ---
 name: invocation-preflight
-description: Shared command context, preferences gate, recovery, and completion contract for blasphemous-modding-helper
+description: Shared command context, configuration gate, recovery, and completion contract for blasphemous-modding-helper
 ---
 
 # Invocation preflight
 
-This reference is the single source of truth for the shared preflight contract of every operational `blasphemous-modding-helper` invocation. It owns command context, preference scope selection, when first-time setup is required, path-failure recovery, the tracked-session stop exception, and preflight completion. Detailed setup questions, validation, save operations, and optional local checkout belong to [First-Time Setup](first-time-setup.md). The top-level [Skill](../../SKILL.md) remains the sole cross-branch router. Specialized references MUST link here and MUST add only their own requirements and evidence.
+This reference is the single source of truth for the shared preflight contract of every operational `blasphemous-modding-helper` invocation. It owns command context, configuration scope selection, when first-time setup is required, path-failure recovery, the tracked-session stop exception, and preflight completion. Detailed setup questions, validation, save operations, and optional local checkout belong to [First-Time Setup](first-time-setup.md). The top-level [Skill](../../SKILL.md) remains the sole cross-branch router. Specialized references MUST link here and MUST add only their own requirements and evidence.
 
-The read-only [localization lookup branch](../sub-skills/localization-lookup.md) is the documented preference exception. It reads the bundled localization index as text and does not run Skill scripts, inspect a Modding profile, or inspect source code. It confirms the index path and file readability, then follows its own completion criteria.
+The read-only [localization lookup branch](../sub-skills/localization-lookup.md) is the documented configuration exception. It reads the bundled localization index as text and does not run Skill scripts, inspect a Modding profile, or inspect source code. It confirms the index path and file readability, then follows its own completion criteria.
 
 ## Command context
 
 Every executable example in this Skill MUST use this context:
 
 1. Agent MUST set `SKILL_ROOT` in Bash or `$SkillRoot` in PowerShell to the absolute installed directory containing this `SKILL.md` and its `scripts/` directory. The value identifies the installed Skill and MUST NOT be inferred from, or replaced by, a checkout-relative path.
-2. Agent MUST keep caller's Mod repository as current working directory when invoking Skill scripts. Project-relative paths, `.csproj` discovery, and project-scoped preferences MUST resolve from that caller directory.
+2. Agent MUST keep caller's Mod repository as current working directory when invoking Skill scripts. Project-relative paths, `.csproj` discovery, and project-scoped configuration MUST resolve from that caller directory.
 3. Agent MUST invoke Skill runtime and test scripts through their explicit Python entry point:
    - Bash host: `"$PYTHON3" "$SKILL_ROOT/scripts/<script>.py" [arguments]`.
    - PowerShell host: `& $PYTHON3 (Join-Path $SkillRoot 'scripts\<script>.py') [arguments]`.
@@ -30,9 +30,9 @@ During first-time setup, agent MUST complete [Python Runtime](python-runtime.md)
 
 After setup succeeds, agent MUST reuse the validated interpreter context for normal branches. Agent MUST retry this gate only after a classified Python-environment failure. Ordinary Git, network, dotnet, game, profile, log, and Mod failures remain branch-owned runtime or domain failures and MUST NOT trigger Python reconfiguration.
 
-## Preferences gate
+## Configuration gate
 
-Agent MUST run preference check from caller's Mod repository with explicit Skill-root path:
+Agent MUST run the configuration check from caller's Mod repository with explicit Skill-root path:
 
 ```bash
 "$PYTHON3" "$SKILL_ROOT/scripts/check_preferences.py" --validate
@@ -51,7 +51,7 @@ workflow continues. Project scope MUST take precedence over user scope:
 - Project: `.skills/blasphemous-modding-helper/config.yml` under caller's current working directory.
 - User: `$HOME/.skills/blasphemous-modding-helper/config.yml`.
 
-When check finds file, agent MUST read, parse, and apply that selected file. complete field schema and approved local-reference locations are defined in [preferences-schema.md](preferences-schema.md). branch MAY require additional fields, but it MUST validate those fields after this shared gate selects active file.
+When check finds a file, agent MUST read, parse, and apply that selected file. Complete field schema and approved local-reference locations are defined in [the config schema](preferences-schema.md). A branch MAY require additional fields, but it MUST validate those fields after this shared gate selects the active file.
 
 The no-argument `check_preferences.py` mode remains available for callers that
 only need the legacy `project`, `user`, or empty scope output; it does not run
@@ -63,8 +63,8 @@ When check finds no file, agent MUST enter [First-Time Setup](first-time-setup.m
 
 [First-Time Setup](first-time-setup.md) owns setup questions, validation, scope save, optional local ModdingAPI checkout, and the setup-specific success or incomplete result. The shared gate above owns when setup is required and consumes that result; this section owns the common blocking and recovery contract:
 
-- Missing preferences MUST block every operational branch until setup succeeds. The read-only localization lookup branch does not require preferences and remains available when no preference file exists. Setup failure MUST be reported with its error and retry path.
-- Only preflight exception is `/blasphemous-modding-test stop SESSION_ID`. It MUST use only recorded session identity, MUST address only that tracked process tree, and MUST not read or edit preferences when normal context preflight is unavailable.
+- Missing configuration MUST block every operational branch until setup succeeds. The read-only localization lookup branch does not require configuration and remains available when no configuration file exists. Setup failure MUST be reported with its error and retry path.
+- Only preflight exception is `/blasphemous-modding-test stop SESSION_ID`. It MUST use only recorded session identity, MUST address only that tracked process tree, and MUST not read or edit configuration when normal context preflight is unavailable.
 - Source-code or modding path failure MUST use this exact handoff: "Some operations failed using the saved paths in `config.yml`. Would you like to re-run the first-time setup to update them?"
 - If user answers Yes, agent MUST delete active `config.yml` and return to [First-Time Setup](first-time-setup.md). If user answers No, agent MUST continue with current paths and report specific failure.
 
@@ -75,7 +75,7 @@ After this contract completes, agent MUST return to top-level Skill's workflow. 
 Shared preflight is complete only when all applicable conditions below hold:
 
 1. An operational branch has a ready command context, including installed Skill root, caller Mod repository, resolved Python interpreter, and supported native host; or the localization branch has a confirmed bundled index path and readable file.
-2. An operational branch has a selected and applied project or user preference file, or First-Time Setup has reported success. The localization branch has no preference requirement.
+2. An operational branch has a selected and applied project or user configuration file, or First-Time Setup has reported success. The localization branch has no configuration requirement.
 3. The selected branch has received its required context before mutating files, launching a process, or relying on source or log paths.
 4. For the tracked-session stop exception, the recorded process is stopped or confirmed gone and no unrelated process was touched.
-5. For declined path recovery, the specific failure and next action have been reported. Successful setup instead returns a validated preference file to the main workflow.
+5. For declined path recovery, the specific failure and next action have been reported. Successful setup instead returns a validated configuration file to the main workflow.

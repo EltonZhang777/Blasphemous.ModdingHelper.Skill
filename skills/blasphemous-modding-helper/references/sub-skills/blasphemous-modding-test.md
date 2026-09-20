@@ -13,7 +13,7 @@ Python CLI automates filesystem, build, process, and log operations. It does not
 3. The Python CLI is the only Skill entry point and MUST run on a native Windows, Linux, or macOS host. Bash or PowerShell may host the Python process, but they are not separate implementations. The CLI MUST reject Git Bash, Cygwin, WSL, Proton, Wine, and unsupported operating systems. Paths MUST remain quoted when they contain spaces.
 4. Agent MUST confirm that selected profile is disposable or mirror game installation. CLI operates on that profile's `Modding` root and launches its local game executable.
 
-Done when: agent can name active preferences file, project, profile, Python interpreter, and supported native host before any profile mutation is attempted.
+Done when: agent can name active configuration file, project, profile, Python interpreter, and supported native host before any profile mutation is attempted.
 
 ## CLI entry point
 
@@ -66,7 +66,7 @@ Common options are accepted by `run`, `clean`, `logs`, and `status`:
 | Option | Meaning |
 | --- | --- |
 | `--project PATH` | Select one `.csproj`; without it, `run` requires exactly one `.csproj` in the current directory. `clean`, `logs`, and `status` use it only to resolve ambiguity. |
-| `--profile PATH` | Override `modding_profile_path` for this invocation. The preferences file is still required by commands that load context. |
+| `--profile PATH` | Override `modding_profile_path` for this invocation. The configuration file is still required by commands that load context. |
 | `--launcher PATH` | Select a concrete launcher file for this invocation. It is a path, not a shell command. An explicit launcher emits a warning, especially when it is outside the profile. |
 | `--unity-log-dir PATH` | Override `unity_log_dir` for this invocation without editing `config.yml`. |
 
@@ -80,11 +80,11 @@ Common options are accepted by `run`, `clean`, `logs`, and `status`:
     [--startup-timeout SECONDS]
 ```
 
-`run` uses the selected project and profile context, with explicit common options overriding saved preferences for this invocation. `--artifact` switches to deploy-only selection; `--dry-run` validates and prints the plan without deployment or launch.
+`run` uses the selected project and profile context, with explicit common options overriding saved configuration for this invocation. `--artifact` switches to deploy-only selection; `--dry-run` validates and prints the plan without deployment or launch.
 
 Expected behavior, in order:
 
-1. CLI MUST validate native environment, preferences, project selection, and profile.
+1. CLI MUST validate native environment, configuration, project selection, and profile.
 2. With no `--artifact`, CLI MUST run equivalent of `dotnet build <project.csproj> --configuration <configuration>`. `Debug` is default. Agent MUST use `--configuration Release` only when user explicitly requests release build; Debug may contain test statements and test code blocks.
 3. CLI MUST read project's declared `<TargetName>` and validate complete package under `publish/<TargetName>`.
 4. CLI MUST refuse conflicting game instance before deployment. CLI MUST copy every safe file below package root to matching relative path below profile's `Modding` root, creating only missing subdirectories.
@@ -237,11 +237,11 @@ Default policy therefore restores old files but does not delete new files. If ol
 
 Completion criterion: requested session is `cleaned` or `already-cleaned`, every restored/removed/retained file is reported with its package-relative path and reason, protected files are reported with their protection reason and remain unchanged, and an already-exited tracked process is safely recorded as exited before cleanup.
 
-## Preferences and CLI overrides
+## Configuration and CLI overrides
 
-Shared [Invocation preflight](../config/invocation-preflight.md) owns preference scope selection, project-over-user precedence, first-time setup, path recovery, and tracked-session stop exception. After it selects active file, this CLI requires `modding_profile_path`.
+Shared [Invocation preflight](../config/invocation-preflight.md) owns configuration scope selection, project-over-user precedence, first-time setup, path recovery, and tracked-session stop exception. After it selects the active file, this CLI requires `modding_profile_path`.
 
-Explicit CLI options override selected preference for that invocation: `--profile`, `--project`, `--launcher`, and `--unity-log-dir`. CLI does not rewrite preferences; after missing-log handoff, agent writes user-supplied Unity log directory into active file.
+Explicit CLI options override selected configuration values for that invocation: `--profile`, `--project`, `--launcher`, and `--unity-log-dir`. CLI does not rewrite configuration; after missing-log handoff, agent writes user-supplied Unity log directory into the active file.
 
 `stop SESSION_ID` is this workflow's implementation of tracked-session recovery exception and uses only recorded session state plus host process check. `run`, `clean`, `logs`, and `status` require normal Invocation preflight and profile gate.
 
@@ -267,7 +267,7 @@ CLI prints `Error [category]` and returns stable categories. Route recovery by e
 | ---: | --- | --- | --- |
 | `0` | success | Operation completed. | Continue to the next workflow step. |
 | `2` | usage/configuration | Invalid arguments, ambiguous project, unsupported host/OS, or compatibility layer. | Correct the invocation and use the resolved Python entry point on a native Windows, Linux, or macOS host. |
-| `10` | profile/preferences | Missing/invalid preferences, missing profile directories, missing BepInEx core, or missing/invalid launcher preflight. | Complete first-time setup, verify `modding_profile_path`, `Modding`, `BepInEx/core/BepInEx.dll`, and launcher; use explicit path overrides only for the intended invocation. |
+| `10` | profile/configuration | Missing/invalid configuration, missing profile directories, missing BepInEx core, or missing/invalid launcher preflight. | Complete first-time setup, verify `modding_profile_path`, `Modding`, `BepInEx/core/BepInEx.dll`, and launcher; use explicit path overrides only for the intended invocation. |
 | `20` | build | `dotnet build` could not start, parse the project, or returned a failure. | Read the build output, fix the project/dependencies, and rerun. No old package is silently substituted. |
 | `30` | package artifact | Missing/empty package, unsafe directory/archive entry, missing `<TargetName>`, or explicit artifact is not a directory/zip. | Inspect `publish/<TargetName>`, pass the exact package directory with `--artifact`, or explicitly use a validated recovery zip. |
 | `40` | deployment | Destination preflight, copy, hash verification, or transaction rollback failed. | The agent MUST NOT manually delete profile files. If rollback succeeded, retry after fixing the cause. If rollback failed, retain the printed session ID, inspect the manifest/status, and resolve protected files with the user before any further deployment. |
