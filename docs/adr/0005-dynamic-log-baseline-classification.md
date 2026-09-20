@@ -11,4 +11,4 @@ Concrete warning fingerprints are not reliable diagnostic ownership evidence bec
 - Missing or stale pre-session evidence cannot produce a `baseline` label; the record remains `unknown`.
 - A pre-session prefix without a complete line boundary cannot produce a `baseline` label; the record remains dynamically classified.
 - Generic structured source and dynamic target alias checks remain valid; concrete warning text does not become a universal profile rule.
-- The core Skill must keep bounded evidence and must not persist a complete log copy.
+- During active Test sessions and current-log analysis, the core Skill must keep bounded evidence and must not persist a complete log copy. User-confirmed completed Test session snapshots are the narrow exception recorded in [ADR 0009](0009-user-confirmed-test-log-snapshots.md).
