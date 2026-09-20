@@ -72,6 +72,15 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
         )
 
     def run_module_cli(self, module, *arguments, session=None):
+        if (
+            arguments
+            and arguments[0] == "logs"
+            and "--help" not in arguments
+            and "--snapshot" not in arguments
+            and "--current" not in arguments
+        ):
+            # Existing fixture cases exercise live analysis; keep that intent explicit.
+            arguments = (*arguments, "--current")
         stdout = io.StringIO()
         stderr = io.StringIO()
         with mock.patch.object(module.Path, "cwd", return_value=self.root.resolve()):
@@ -624,7 +633,7 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
         self.assert_success(result)
         for example in (
             "blasphemous-modding-test run --project <PROJECT.csproj> --profile <PROFILE> --startup-timeout 60",
-            "blasphemous-modding-test logs SESSION_ID",
+            "blasphemous-modding-test logs SESSION_ID --current",
             "blasphemous-modding-test snapshot SESSION_ID",
             "blasphemous-modding-test stop SESSION_ID --force",
             "blasphemous-modding-test clean SESSION_ID",
@@ -828,6 +837,7 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
             ("stop", "SESSION_ID", "--launcher", "launcher"),
             ("stop", "SESSION_ID", "--unity-log-dir", "UNITY_LOGS"),
             ("run", "--full"),
+            ("logs", "SESSION_ID"),
             ("logs", "SESSION_ID", "--dry-run"),
             ("clean", "SESSION_ID", "--full"),
             ("status", "--remove-new-files"),

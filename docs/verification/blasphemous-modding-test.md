@@ -92,9 +92,9 @@ The agent does not run this gate automatically. Deployment changes an external p
 2. Run the documented `run` command with the exact project/profile paths and an explicit `--startup-timeout`.
 3. Record the printed test session ID, `launched`, `ready`, or `mod_loaded` state, warnings, and current BepInEx/Unity log paths.
 4. Ask the player to perform the scenario and provide a natural-language **Manual verification**: state, actions, expected behavior, observed behavior, and approximate failure time.
-5. Read the current logs with `logs SESSION_ID`; use `--full` only when bounded output is insufficient.
-6. After the player reports completion, run `snapshot SESSION_ID`. If the process is still running, request ordinary stop approval and repeat with `--stop-decision approve|decline`; after a failed ordinary stop, request separate `--force-stop-decision approve|decline`. Keep pending requests uncaptured; record any explicit current-capture condition.
-7. Stop the tracked session if needed, then run newest-first `clean`. Confirm overwritten files are restored and new files remain unless explicit removal was approved.
+5. Read the current logs with `logs SESSION_ID --current`; use `--full` only when bounded output is insufficient.
+6. After the player reports a clear result, bind it to exactly one session and run `snapshot SESSION_ID`. If the result or session is ambiguous, ask for clarification and do not capture. If the process is still running, request ordinary stop approval and repeat with `--stop-decision approve|decline`; after a failed ordinary stop, request separate `--force-stop-decision approve|decline`. Keep pending requests uncaptured; record any explicit current-capture condition.
+7. Stop the tracked session if it remains running, then run newest-first `clean`. Confirm overwritten files are restored and new files remain unless explicit removal was approved.
 
 Invocation template:
 
@@ -105,7 +105,7 @@ PowerShell:
 ```powershell
 $PYTHON3 = 'C:\path\to\python.exe'
 & $PYTHON3 (Join-Path $SkillRoot 'scripts\blasphemous_modding_test.py') run --project <PROJECT.csproj> --profile <PROFILE> --unity-log-dir <UNITY_LOG_DIR> --startup-timeout 60
-& $PYTHON3 (Join-Path $SkillRoot 'scripts\blasphemous_modding_test.py') logs <SESSION_ID>
+& $PYTHON3 (Join-Path $SkillRoot 'scripts\blasphemous_modding_test.py') logs <SESSION_ID> --current
 & $PYTHON3 (Join-Path $SkillRoot 'scripts\blasphemous_modding_test.py') stop <SESSION_ID>
 & $PYTHON3 (Join-Path $SkillRoot 'scripts\blasphemous_modding_test.py') clean <SESSION_ID>
 ```
@@ -115,7 +115,7 @@ Native Bash:
 ```bash
 PYTHON3=/path/to/python3
 "$PYTHON3" "$SKILL_ROOT/scripts/blasphemous_modding_test.py" run --project <PROJECT.csproj> --profile <PROFILE> --unity-log-dir <UNITY_LOG_DIR> --startup-timeout 60
-"$PYTHON3" "$SKILL_ROOT/scripts/blasphemous_modding_test.py" logs <SESSION_ID>
+"$PYTHON3" "$SKILL_ROOT/scripts/blasphemous_modding_test.py" logs <SESSION_ID> --current
 "$PYTHON3" "$SKILL_ROOT/scripts/blasphemous_modding_test.py" stop <SESSION_ID>
 "$PYTHON3" "$SKILL_ROOT/scripts/blasphemous_modding_test.py" clean <SESSION_ID>
 ```

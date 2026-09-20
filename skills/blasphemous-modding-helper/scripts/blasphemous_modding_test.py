@@ -4106,7 +4106,7 @@ def build_parser() -> argparse.ArgumentParser:
         formatter_class=HELP_FORMATTER,
         epilog="""Canonical workflow (run from the caller's Mod repository):
   blasphemous-modding-test run --project <PROJECT.csproj> --profile <PROFILE> --startup-timeout 60
-  blasphemous-modding-test logs SESSION_ID
+  blasphemous-modding-test logs SESSION_ID --current
   blasphemous-modding-test snapshot SESSION_ID
   blasphemous-modding-test stop SESSION_ID
   blasphemous-modding-test stop SESSION_ID --force
@@ -4215,18 +4215,20 @@ of unchanged files first created by the session.
 
     logs_parser = subparsers.add_parser(
         "logs",
-        help="Analyze current logs or one session's Test log snapshot.",
+        help="Analyze explicitly selected current logs or a Test log snapshot.",
         usage="%(prog)s SESSION_ID [OPTIONS]",
         description="""Analyze BepInEx and Unity startup evidence for SESSION_ID.
 
 Context: --project, --profile, --launcher, and --unity-log-dir override saved
-context for this invocation. --current reads live logs; --snapshot reads the
-session-bound Test log snapshot and never falls back to live logs. --full
-prints complete selected logs instead of the bounded tail.
+context for this invocation. Pass exactly one of --current or --snapshot.
+--current reads live logs; --snapshot reads the session-bound Test log snapshot
+and never falls back to live logs. --full prints complete selected logs instead
+of the bounded tail.
 """,
         formatter_class=HELP_FORMATTER,
-        epilog="""Example:
-  blasphemous-modding-test logs SESSION_ID
+        epilog="""Examples:
+  blasphemous-modding-test logs SESSION_ID --current
+  blasphemous-modding-test logs SESSION_ID --snapshot
 """,
     )
     logs_parser.add_argument(
@@ -4240,7 +4242,7 @@ prints complete selected logs instead of the bounded tail.
         action="store_true",
         help="Print complete log contents instead of the bounded tail.",
     )
-    logs_source_group = logs_parser.add_mutually_exclusive_group()
+    logs_source_group = logs_parser.add_mutually_exclusive_group(required=True)
     logs_source_group.add_argument(
         "--snapshot",
         action="store_true",

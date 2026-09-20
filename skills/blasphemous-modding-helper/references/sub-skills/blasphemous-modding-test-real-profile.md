@@ -55,14 +55,19 @@ Canonical flow for a normal build, startup evidence, tracked stop, safe cleanup,
 
 ```text
 <TEST_CLI> run --project <PROJECT.csproj> --profile <PROFILE> --startup-timeout 60
-<TEST_CLI> logs SESSION_ID
-<TEST_CLI> stop SESSION_ID
+<TEST_CLI> logs SESSION_ID --current
 <TEST_CLI> snapshot SESSION_ID
+<TEST_CLI> stop SESSION_ID
 <TEST_CLI> clean SESSION_ID
 <TEST_CLI> status
 ```
 
-If graceful stop does not finish, retry only the same tracked session with `<TEST_CLI> stop SESSION_ID --force`. `stop` does not accept project, profile, launcher, log-directory, artifact, build, or cleanup options.
+The snapshot command comes before the optional stop. If it reports a pending
+approval, repeat it with the requested decision flag; stop the tracked session
+after capture only when the game remains running. If graceful stop does not
+finish, retry only the same tracked session with `<TEST_CLI> stop SESSION_ID --force`.
+`stop` does not accept project, profile, launcher, log-directory, artifact,
+build, or cleanup options.
 
 Common options are accepted by `run`, `clean`, `logs`, `snapshot`, and `status`:
 
@@ -172,10 +177,14 @@ Completion criterion: tracked process is stopped or confirmed gone, and no unrel
 ### `logs`: read current startup evidence
 
 ```text
-<TEST_CLI> logs SESSION_ID [common options] [--full] [--current|--snapshot]
+<TEST_CLI> logs SESSION_ID [common options] [--full] (--current|--snapshot)
 ```
 
-`logs` uses the selected profile and log-directory context. `--project`, `--profile`, `--launcher`, and `--unity-log-dir` override saved values for this invocation; `--full` controls output size. `--current` explicitly reads the configured live sources. The bare command remains a compatibility alias for current analysis.
+`logs` uses the selected profile and log-directory context. `--project`,
+`--profile`, `--launcher`, and `--unity-log-dir` override saved values for this
+invocation; `--full` controls output size. Exactly one source flag is required:
+`--current` explicitly reads the configured live sources, while `--snapshot`
+reads the completed Test-session evidence. There is no implicit source mode.
 
 `--snapshot` analyzes the complete Test-session snapshot associated with
 `SESSION_ID`. It never falls back to live sources: a missing or incomplete
@@ -183,6 +192,11 @@ snapshot reports the affected source and tells the agent to rerun `snapshot`
 after recovery. Snapshot analysis prints the snapshot capture condition,
 process state, stop decision, and stop result, including a visible non-final
 condition for captures made while the game remained running.
+
+Before invoking `snapshot`, apply the shared Manual completion and session
+identity rules. A clear player result MUST be bound to exactly one
+`SESSION_ID`; an ambiguous result or session remains pending until the agent
+asks the user to identify it.
 
 CLI reads existing logs in place and stores only bounded evidence metadata in temporary session manifest. It does not create persistent log report or copy log contents. Default output is last 200 lines per source; `--full` prints complete current file. Evidence hits retain source label, concrete path, line number, match reason, kind, bounded text, and available `mod_id`/`mod_name` independently of the output tail, so early startup hits remain reportable without unbounded output.
 
@@ -299,7 +313,11 @@ After startup evidence is available, ask player to perform requested in-game sce
 - observed result, including visual, input, combat, menu, save, or other behavior;
 - any visible error or approximate time at which it occurred.
 
-Combine that Manual verification record with CLI state and two current logs when diagnosing test. No gameplay transcript, log copy, or generated test report is required by this workflow. Use existing [log analyzer](log-analyzer.md) for interpretation after test evidence is collected.
+Combine that Manual verification record with CLI state and the session snapshot
+when analyzing a completed test. Use `logs SESSION_ID --current` only when the
+user explicitly requests live diagnosis. No gameplay transcript or generated
+test report is required by this workflow. Use the existing [log analyzer](log-analyzer.md)
+for interpretation after test evidence is collected.
 
 ## Stable failures and recovery
 
@@ -314,7 +332,7 @@ CLI prints `Error [category]` and returns stable categories. Route recovery by e
 | `30` | package artifact | Missing/empty package, unsafe directory/archive entry, missing `<TargetName>`, or explicit artifact is not a directory/zip. | Inspect `publish/<TargetName>`, pass the exact package directory with `--artifact`, or explicitly use a validated recovery zip. |
 | `40` | deployment | Destination preflight, copy, hash verification, or transaction rollback failed. | The agent MUST NOT manually delete profile files. If rollback succeeded, retry after fixing the cause. If rollback failed, retain the printed session ID, inspect the manifest/status, and resolve protected files with the user before any further deployment. |
 | `50` | launch | A matching game is already running, launcher start failed, or process identity could not be safely tracked. | Stop only the known session if applicable, verify the profile-local launcher, then rerun. Never attach to or kill an untracked process. |
-| `60` | logs/readiness | Current BepInEx log missing/unreadable or startup timeout. | Keep the session alive; run `logs SESSION_ID`, configure `unity_log_dir`, inspect current BepInEx output, ask for the Manual verification description, then stop and clean when diagnosis is complete. |
+| `60` | logs/readiness | Current BepInEx log missing/unreadable or startup timeout. | Keep the session alive; run `logs SESSION_ID --current`, configure `unity_log_dir`, inspect current BepInEx output, ask for the Manual verification description, then stop and clean when diagnosis is complete. |
 | `70` | stop/clean | Unknown session/process state, running tracked process, newer session, changed file, or invalid rollback manifest. | Use `status`, stop the tracked process, clean newest-first, and preserve changed files. Retry only after the reported guard is resolved. |
 
 Deployment failures are transactional: partial copy is rolled back automatically when possible. failed rollback is hard stop with session identifier; it is not permission to remove whole `Modding` root. failure to archive previous sessions also attempts to roll back new deployment and reports whether that recovery succeeded.
@@ -333,5 +351,7 @@ Agent MUST use this checklist for complete implementation or Manual verification
 - [ ] `stop` is limited to tracked process tree and is idempotent for exited or missing session state.
 - [ ] `clean` is newest-first, restores only hash-compatible overwritten files, retains new files by default, and requires `--remove-new-files` for unchanged new-file removal.
 - [ ] Current BepInEx and configured Unity logs produce bounded output by default and full output only with `--full`; missing Unity configuration produces visible handoff warning.
+- [ ] `logs` requires explicit `--current` or `--snapshot`; completed-session analysis never uses an implicit live-log mode.
+- [ ] A snapshot is requested only after a clear completion result is bound to one session; ambiguous results or session identity remain unresolved.
 - [ ] Automated startup evidence is reported as `launched`, `ready`, `mod_loaded`, or `timeout`; Manual verification is collected from player in natural language.
 - [ ] Missing profile, build, artifact, launcher, log, timeout, deployment, and rollback conditions map to stable failure categories and recovery steps above.

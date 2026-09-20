@@ -29,7 +29,7 @@ When mod-test CLI reports missing Unity log directory or log:
 
 1. Agent MUST ask user for directory that contains current Unity log.
 2. Agent MUST add `unity_log_dir: PATH` to active `config.yml`, or pass `--unity-log-dir PATH` for one-run override. active file is scope selected by [Invocation preflight](../config/invocation-preflight.md).
-3. Agent MUST re-run `logs SESSION_ID` or explicit startup-evidence wait.
+3. Agent MUST re-run `logs SESSION_ID --current` or explicit startup-evidence wait.
 
 This step is complete only when CLI resolves Unity log or warning remains visible with exact missing path and configuration file to update. CLI reads existing BepInEx and Unity logs in place; it does not create persistent log copies.
 
@@ -82,8 +82,8 @@ For live diagnosis, agent MUST explicitly request current evidence:
 
 Current analysis continues to resolve `modding_profile_path` and
 `unity_log_dir` from the active configuration and keeps the existing bounded
-diagnostic ownership rules. The bare `logs SESSION_ID` form remains a
-compatibility alias for current analysis.
+diagnostic ownership rules. `--current` is required; the CLI has no implicit
+current-log alias.
 
 ## Completion criteria
 
