@@ -61,6 +61,14 @@ Route: scope gate; preserve the external source and do not load the Mod-owned C#
 
 Harmony branch MUST preserve this scope gate and requirement-level contract as its target and resolver rules evolve.
 
+## Completion criterion
+
+Agent MUST report the selected coding branch, ownership and scope decision,
+standards evidence, status, the blocked reason when applicable, and the next
+implementation or verification action. A coding request is complete only when
+the selected standards reference has been applied or the exact blocking scope
+condition has been reported.
+
 ## Route project architecture requests
 
 For a request about placing a new Mod-owned file or directory, the router MUST activate [Project architecture guidelines](project-architecture-guidelines.md) when either condition holds:
