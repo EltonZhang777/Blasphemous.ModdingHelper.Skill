@@ -7,6 +7,7 @@ SKILL_ROOT = (
     / "skills"
     / "blasphemous-modding-helper"
 )
+CONTEXT = Path(__file__).resolve().parents[1] / "CONTEXT.md"
 ROUTER = SKILL_ROOT / "references" / "sub-skills" / "coding-standards.md"
 HARMONY = (
     SKILL_ROOT
@@ -163,6 +164,23 @@ class ProjectArchitectureDocumentationTests(unittest.TestCase):
             "framework-managed discovery",
         ):
             self.assertIn(phrase, harmony)
+
+    def test_final_architecture_terminology_is_reusable(self):
+        context = CONTEXT.read_text(encoding="utf-8").casefold()
+        guide = GUIDE.read_text(encoding="utf-8").casefold()
+
+        for term in (
+            "project architecture guidelines",
+            "established architecture",
+            "architecture category",
+            "primary responsibility",
+            "patches",
+            "harmonypatches",
+            "events",
+            "harmony bridge",
+        ):
+            self.assertIn(term, context)
+            self.assertIn(term, guide)
 
 
 if __name__ == "__main__":

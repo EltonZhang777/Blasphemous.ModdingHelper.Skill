@@ -2,6 +2,10 @@
 
 This guide gives a small default shape for new Mod-owned files. It is a placement decision, not a project template or a migration plan.
 
+## Canonical terminology
+
+This route uses the final terms `Project architecture guidelines`, `Established architecture`, `Architecture category`, `primary responsibility`, `Patches`, `HarmonyPatches`, `Events`, and `Harmony bridge`. These terms describe placement and ownership only; they MUST NOT replace the detailed C#, ModdingAPI, or Harmony behavior references.
+
 ## Route decision
 
 The Coding Standards router activates this guide when the Caller Mod repository lacks stable directory, namespace, module, or feature boundaries, or when the user explicitly asks how to organize new files or directories.
