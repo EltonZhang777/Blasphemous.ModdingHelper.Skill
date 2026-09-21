@@ -47,8 +47,8 @@ result. Both is complete only after all required phases complete.
 
 Conflicting environment or evidence requirements return `ambiguous` or
 `unresolved`. Ambiguous requests execute no test or profile command. The final
-report includes route, per-phase command, evidence, status, blocked reason, and
-next action; Automated, startup, and **Manual verification** evidence remain
+report MUST include route, per-phase command, evidence, status, blocked reason,
+and next action; Automated, startup, and **Manual verification** evidence remain
 separate.
 
 Test doubles, mocks, and stubs remain compatible with the Automated xUnit route when the test does not require the real game process, profile, lifecycle, or player. A test that needs those runtime conditions belongs to the Real-profile route even when it references Unity or game-facing types.

@@ -13,7 +13,7 @@ Automated xUnit tests:
 
 Automated xUnit does not require `config.yml`, the Skill Python runtime,
 `modding_profile_path`, a launcher, Unity logs, BepInEx, a game process, or any
-Real-profile gate. Missing profile-only fields do not block this route.
+Real-profile gate. Missing profile-only fields MUST NOT block this route.
 
 If a test needs actual Unity lifecycle, scene state, BepInEx startup, a game process, a Modding profile, runtime logs, or player interaction, route it to the [Real-profile branch](blasphemous-modding-test-real-profile.md).
 
