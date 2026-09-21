@@ -88,6 +88,20 @@ class ModTestRoutingDocumentationTests(unittest.TestCase):
         ):
             self.assertIn(phrase, text)
 
+    def test_shared_entry_declares_one_of_four_route_results(self):
+        text = read(SHARED).casefold()
+
+        for phrase in (
+            "exactly one route result",
+            "real-profile",
+            "xunit",
+            "both",
+            "ambiguous",
+            "no-execution result",
+            "must not execute a",
+        ):
+            self.assertIn(phrase, text)
+
     def test_automated_branch_defines_xunit_consumer_boundary(self):
         text = read(AUTOMATED).casefold()
 
@@ -101,6 +115,8 @@ class ModTestRoutingDocumentationTests(unittest.TestCase):
             "must not build, deploy, launch",
             "not a deployable game plugin",
             "test mod",
+            "must not require",
+            "modding_profile_path",
         ):
             self.assertIn(phrase, text)
 

@@ -11,6 +11,10 @@ Automated xUnit tests:
 - MAY use mocks, stubs, and other test doubles; a simulated dependency does not become real-game evidence.
 - MUST NOT claim that a passing test, startup log, `mod_loaded`, or any other automated result proves gameplay behavior.
 
+After the shared preflight succeeds, Automated xUnit MUST NOT require
+`modding_profile_path`, a game executable, or any Real-profile gate. Missing
+profile-only fields do not block this route.
+
 If a test needs actual Unity lifecycle, scene state, BepInEx startup, a game process, a Modding profile, runtime logs, or player interaction, route it to the [Real-profile branch](blasphemous-modding-test-real-profile.md).
 
 ## Project convention

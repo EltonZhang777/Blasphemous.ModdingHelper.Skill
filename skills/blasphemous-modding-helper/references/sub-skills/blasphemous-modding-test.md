@@ -23,6 +23,13 @@ The branch documents own their workflows. The shared entry MUST NOT duplicate th
 | Explicitly requests both kinds of test | Run two ordered phases: Automated xUnit first when available, then Real-profile | Record each phase and its evidence independently; neither phase promotes the other. |
 | Leaves the required runtime conditions unclear | Ask the user to clarify before choosing a route | Agent MUST NOT silently choose a destructive, incomplete, or evidence-incompatible route. |
 
+## Route result contract
+
+The agent MUST return exactly one route result: `Real-profile`, `xUnit`, `both`, or
+`ambiguous`. `ambiguous` is a no-execution result: the agent MUST NOT execute a
+branch command until the user clarifies the required runtime conditions and
+evidence.
+
 Test doubles, mocks, and stubs remain compatible with the Automated xUnit route when the test does not require the real game process, profile, lifecycle, or player. A test that needs those runtime conditions belongs to the Real-profile route even when it references Unity or game-facing types.
 
 ## Common evidence and safety rules
