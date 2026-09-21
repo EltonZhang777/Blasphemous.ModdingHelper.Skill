@@ -227,6 +227,19 @@ class PreferencesValidationTests(unittest.TestCase):
                 self.assertIn("check_period_days", result.stdout)
                 self.assertEqual(self.config.read_bytes(), before)
 
+    def test_date_overflow_periods_fail_without_replacing_the_value(self):
+        now = datetime.now(timezone.utc).replace(microsecond=0)
+        for invalid in ("1000000000", "100000000000000000000000"):
+            with self.subTest(period=invalid):
+                self.write_config(self.valid_config(self.checked_at(now), period=invalid))
+                before = self.config.read_bytes()
+
+                result = self.run_validation()
+
+                self.assertEqual(result.returncode, 10, result.stdout)
+                self.assertIn("check_period_days", result.stdout)
+                self.assertEqual(self.config.read_bytes(), before)
+
     def test_invalid_yaml_and_future_metadata_route_to_setup(self):
         self.write_config("valid: value\nnot a mapping\n")
         before = self.config.read_bytes()

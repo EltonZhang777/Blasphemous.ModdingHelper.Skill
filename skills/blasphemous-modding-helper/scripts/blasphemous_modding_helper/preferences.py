@@ -339,6 +339,12 @@ def _normalize_check_period(values: Mapping[str, object]) -> Tuple[int, bool]:
         raise PreferenceValidationError(
             "check_period_days must remain positive after normalization."
         )
+    try:
+        timedelta(days=normalized)
+    except OverflowError as error:
+        raise PreferenceValidationError(
+            "check_period_days exceeds the supported date range."
+        ) from error
     return int(normalized), needs_write
 
 
