@@ -58,7 +58,8 @@ stays bounded and does not persist a complete log copy.
 
 ## Test-session analysis source
 
-For a completed Test session, agent MUST analyze the session-bound snapshot:
+For a completed Test session, agent MUST analyze the session-bound **Test log
+snapshot**:
 
 ```text
 <TEST_CLI> logs SESSION_ID --snapshot
@@ -74,7 +75,7 @@ session evidence but is not described as post-stop final output. A later
 recapture after process exit updates the same session snapshot and is the
 snapshot used by subsequent analysis.
 
-For live diagnosis, agent MUST explicitly request current evidence:
+For live diagnosis, agent MUST explicitly request **Current log** evidence:
 
 ```text
 <TEST_CLI> logs SESSION_ID --current
@@ -89,9 +90,10 @@ current-log alias.
 
 Agent MUST mark log analysis complete only when report contains all of these:
 
-1. Active configuration file and every log source inspected, or exact missing path and required configuration-update handoff.
-2. Expected pattern, relevant log evidence, and conclusion tied to that evidence. If BepInEx log is sufficient, agent MUST state that Unity-log read was not required; otherwise, Unity-log result MUST be included.
-3. Concrete next action: code/configuration change, another evidence request, tracked-session operation, or player Manual verification.
+1. `status`, completion evidence, and next action; include the exact blocked or failed reason when applicable.
+2. Active configuration file and every log source inspected, or exact missing path and required configuration-update handoff.
+3. Expected pattern, relevant log evidence, and conclusion tied to that evidence. If BepInEx log is sufficient, agent MUST state that Unity-log read was not required; otherwise, Unity-log result MUST be included.
+4. Concrete next action: code/configuration change, another evidence request, tracked-session operation, or player Manual verification.
 
 Missing or unreadable evidence is not successful analysis. Analysis is complete in that case only when warning names missing source, active configuration file, and next action needed to recover.
 

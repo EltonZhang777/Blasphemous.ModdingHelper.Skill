@@ -30,8 +30,8 @@ detailed rules:
 The localization row is the only configuration-free operational exception. Every
 other route MUST complete the shared entry gate before its specialized work, with
 the Automated xUnit branch's documented exception. A completion report MUST name
-the selected route, its authority, the evidence or result status, and the next
-document/action or exact blocker.
+the selected route and its authority, then report `status`, `completion evidence`,
+`blocked reason` when applicable, and the next document/action.
 
 ## Shared entry gate
 

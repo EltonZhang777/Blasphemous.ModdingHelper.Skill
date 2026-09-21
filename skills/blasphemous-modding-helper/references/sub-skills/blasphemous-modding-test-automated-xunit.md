@@ -51,7 +51,9 @@ the Real-profile CLI, and a Test Mod MUST NOT silently replace xUnit.
 Framework or command conflicts return `blocked` or `ambiguous`; the agent MUST
 NOT silently switch runners. Evidence records the selected project, runner
 output, test result, and exit status. The report status is exactly `passed`,
-`failed`, or `blocked`, and states that xUnit is not gameplay proof.
+`failed`, or `blocked`, and states that xUnit is not gameplay proof. Every
+report MUST name completion evidence, the blocked reason when applicable, and
+the next action.
 
 Agent MUST NOT build, deploy, launch, inspect startup logs, stop a game process,
 clean a profile, or collect player **Manual verification** in this branch.
@@ -60,4 +62,4 @@ For an explicit two-branch request, complete this branch first when it is availa
 
 ## Completion criterion
 
-The selected xUnit project runs through the standard test runner, references the main Mod project, and produces deterministic automated evidence without a real profile or game process. The report states that this evidence does not prove gameplay and names any separately required Real-profile or **Manual verification** phase.
+The selected xUnit project runs through the standard test runner, references the main Mod project, and produces deterministic automated evidence without a real profile or game process. The report states that this evidence does not prove gameplay, names completion evidence and next action, and names any separately required Real-profile or **Manual verification** phase.

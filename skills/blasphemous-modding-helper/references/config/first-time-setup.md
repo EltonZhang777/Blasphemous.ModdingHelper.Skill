@@ -65,9 +65,22 @@ flowchart TD
 - This means agent SHOULD attempt to translate questions' header, question, options, etc. agent SHOULD NEVER translate user input or any file, path, etc.
 - Agent SHOULD default to English only when user's input language is not available.
 
-Agent MUST use AskUserQuestion with **ALL applicable** questions in **ONE** call:
-- If Q2 is "Yes", agent MUST ask Q1 + Q2 + Q3 + Q4 + Q5 + Q6 in one call; Q4b and selector details are conditional inputs.
-- If Q2 is "No", agent MUST ask Q1 + Q2 + Q4 + Q5 + Q6 in one call; Q3 is auto-filled, and Q4b and selector details are conditional inputs.
+Agent MUST present setup questions in this order after the Python runtime gate:
+
+1. Q1, then Q2.
+2. Q3 only when Q2 is **Yes**; when Q2 is **No**, the decompiler branch auto-fills Q3 after it succeeds.
+3. Q4 after Q3 is supplied or auto-filled.
+4. Q4b only when Q4 is **Yes**.
+5. Q5, then Q6.
+6. Selector details only when Q6 is **Yes**, after the selector choice is known.
+
+Agent MUST use AskUserQuestion for each prompt batch and include all questions
+that are currently applicable. Conditional inputs MUST NOT be presented before
+their prerequisite answer is known: Q3 is omitted for the successful decompile
+branch, Q4b is omitted when Q4 is **No**, and selector details are omitted when
+Q6 is **Skip**. If the question interface cannot express a conditional input in
+the same call, agent MUST ask it in the next AskUserQuestion call before
+validation or cloning; the logical order remains unchanged.
 
 ### Q1: Save Location
 
@@ -216,6 +229,9 @@ Validation criteria:
   - Lightweight fail → retry Q3 only
   - Full fail (if provided) → retry Q4b only
   - Modding profile fail → retry Q5 only
+- Agent MUST retain every unrelated valid answer and successful branch result
+  when retrying. A failed path check MUST re-ask only its corresponding question;
+  it MUST NOT discard Q1, Q2, other valid paths, or a successful decompile.
 - Decompile branch: script exit code 0 validates lightweight automatically
 
 **Script failure handling** (Q2 = No, script exit code != 0):
@@ -228,6 +244,7 @@ Validation criteria:
 1. Agent MUST display clone command's terminal error report.
 2. Agent MUST NOT write or update `modding_api_reference_path` or `modding_api_reference_selector`.
 3. Agent MUST ask user whether to retry with corrected selector or path; selecting Skip leaves release-aware remote fallback enabled.
+4. Agent MUST retain Q1-Q5 and all validated paths while retrying or skipping the optional clone.
 
 ## Save Locations
 
@@ -252,6 +269,16 @@ Setup is complete only when all of the following are true:
 3. `config.yml` was written to the selected scope and can be read back.
 4. If Q6 clone succeeded, its normalized path, selector, and lock state were recorded. If Q6 was skipped, both local-reference fields remain absent.
 5. The agent confirmed the saved path and returns the validated configuration file to Invocation preflight.
+
+Every setup result MUST report:
+
+- `status`: `complete` when the boundary above is satisfied, otherwise `blocked`;
+- `completion evidence`: the resolved Python runtime fields, selected scope,
+  validated paths, clone result when applicable, and saved `config.yml` path;
+- `blocked reason`: the exact failed gate or unanswered decision when setup is
+  incomplete;
+- `next action`: the corresponding retry question, repair step, or downstream
+  handoff after setup is complete.
 
 ### Setup incomplete
 

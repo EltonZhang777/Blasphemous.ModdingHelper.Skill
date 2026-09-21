@@ -174,7 +174,7 @@ Command is idempotent:
 
 Completion criterion: tracked process is stopped or confirmed gone, and no unrelated process was terminated.
 
-### `logs`: read current startup evidence
+### `logs`: read Current log or Test log snapshot
 
 ```text
 <TEST_CLI> logs SESSION_ID [common options] [--full] (--current|--snapshot)
@@ -183,8 +183,9 @@ Completion criterion: tracked process is stopped or confirmed gone, and no unrel
 `logs` uses the selected profile and log-directory context. `--project`,
 `--profile`, `--launcher`, and `--unity-log-dir` override saved values for this
 invocation; `--full` controls output size. Exactly one source flag is required:
-`--current` explicitly reads the configured live sources, while `--snapshot`
-reads the completed Test-session evidence. There is no implicit source mode.
+`--current` explicitly reads the configured live sources, called **Current log**
+evidence. `--snapshot` reads the complete **Test log snapshot** associated with
+the completed Test session. There is no implicit source mode.
 
 `--snapshot` analyzes the complete Test-session snapshot associated with
 `SESSION_ID`. It never falls back to live sources: a missing or incomplete
@@ -240,6 +241,12 @@ or `pending-manual`:
   the report includes the concrete next action.
 - `pending-manual`: startup evidence exists, but the player's Manual
   verification is still required.
+
+Every Real-profile test or verification report MUST include `status`,
+`completion evidence`, the blocked or failed reason when applicable, and
+`next action`. Completion evidence MUST identify the Test session and keep
+Current log, Test log snapshot, startup evidence, and Manual verification
+separate.
 
 `mod_loaded` remains startup evidence only and never changes into gameplay
 success without a separate Manual verification record.

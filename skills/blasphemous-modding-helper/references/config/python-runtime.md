@@ -7,6 +7,12 @@ description: Python interpreter, dependency, diagnostic, and command-boundary co
 
 This reference owns the Python runtime gate shared by future Skill entry points. It is the single source of truth for interpreter selection, dependency validation, configuration diagnostics, and direct external command execution.
 
+The final configuration vocabulary is fixed: the active file is `config.yml`;
+`last_checked_time` and `last_checked_version` are validation metadata;
+`check_period_days` is the validation period; and `last_checked_version` comes
+from the installed Skill version source, [`version.yml`](../../version.yml).
+These names MUST be used in setup and validation reports.
+
 ## First-time setup gate
 
 Before asking the first-time setup questions, the agent MUST resolve a Python interpreter and run the public preflight entry point from the installed Skill root:
@@ -50,4 +56,4 @@ After a successful first-time setup gate, normal Skill branches MUST reuse the r
 
 Future Python entry points SHOULD import the shared runtime package and use its direct command helper. Commands are argument sequences, paths are separate arguments, and `shell=False` is mandatory. Nonzero exit codes, missing external tools, and timeouts are returned as `CommandResult` values or raised as `CommandExecutionError` when the caller explicitly requires success; they are not Python-environment failures.
 
-Completion criterion: setup has a validated Python 3.9+ interpreter, a validated dependency manifest, and either a successful result report or the stable configuration diagnostic with a retry action.
+Completion criterion: setup has a validated Python 3.9+ interpreter, a validated dependency manifest, and either a successful result report or the stable configuration diagnostic with a retry action. The result report MUST name the completion evidence, the blocked reason when validation fails, and the next action.
