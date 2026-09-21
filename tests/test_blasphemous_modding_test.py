@@ -1054,6 +1054,84 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
         self.assertEqual(snapshot["sources"]["unity"]["status"], "copied")
         self.assertEqual(targets["unity"].read_bytes(), b"second-unity")
 
+    def test_snapshot_atomic_replacement_failure_preserves_old_target(self):
+        (
+            module,
+            session,
+            deployment,
+            profile_preflight,
+            _process,
+            _identity,
+        ) = self.create_launched_session()
+        unity_log_dir = self.root / "unity-logs"
+        unity_log_dir.mkdir()
+        self.write_project_preferences(profile_preflight.profile, unity_log_dir)
+        bepinex = profile_preflight.bepinex_root / "LogOutput.log"
+        unity = unity_log_dir / "output_log.txt"
+        bepinex.write_bytes(b"first-bepinex")
+        unity.write_bytes(b"first-unity")
+        session.process_adapter.is_alive.return_value = False
+        environment = {
+            "Windows": "Windows",
+            "Linux": "Linux",
+            "Darwin": "macOS",
+        }[platform.system()]
+        preferences = module.load_preferences(cwd=self.root, home=self.home)
+        first = session.snapshot(
+            deployment.session_id,
+            profile_preflight,
+            preferences,
+            environment,
+        )
+        targets = {
+            source.name: source.target_path
+            for source in first.sources
+        }
+        bepinex.write_bytes(b"second-bepinex")
+        unity.write_bytes(b"second-unity")
+        original_replace = module.os.replace
+
+        def fail_bepinex_replacement(source, destination):
+            if Path(destination) == targets["bepinex"]:
+                raise OSError("simulated atomic replacement failure")
+            original_replace(source, destination)
+
+        with mock.patch.object(
+            module.os,
+            "replace",
+            side_effect=fail_bepinex_replacement,
+        ):
+            result = session.snapshot(
+                deployment.session_id,
+                profile_preflight,
+                preferences,
+                environment,
+            )
+
+        self.assertEqual(result.status, "incomplete")
+        self.assertEqual(targets["bepinex"].read_bytes(), b"first-bepinex")
+        self.assertEqual(targets["unity"].read_bytes(), b"second-unity")
+        self.assertFalse(
+            any(
+                path.name.startswith(".bepinex.log.")
+                for path in targets["bepinex"].parent.iterdir()
+            )
+        )
+        manifest = json.loads(deployment.state_path.read_text(encoding="utf-8"))
+        self.assertEqual(manifest["snapshot"]["status"], "incomplete")
+        self.assertEqual(manifest["snapshot"]["sources"]["bepinex"]["status"], "failed")
+        self.assertIn("previous", manifest["snapshot"]["sources"]["bepinex"])
+
+        analysis = self.run_module_cli(
+            module,
+            "logs",
+            deployment.session_id,
+            "--snapshot",
+            session=session,
+        )
+        self.assertEqual(analysis.returncode, module.EXIT_LOGS)
+        self.assertIn("incomplete", analysis.stderr)
+
     def test_snapshot_reports_missing_source_without_deleting_successful_copy(self):
         (
             module,
