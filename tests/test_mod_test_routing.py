@@ -174,6 +174,31 @@ class ModTestRoutingDocumentationTests(unittest.TestCase):
             self.assertIn(phrase, real)
         self.assertNotIn("<test_cli> run", shared)
 
+    def test_real_profile_contract_covers_gate_prerequisites_and_states(self):
+        text = read(REAL_PROFILE).casefold()
+
+        for phrase in (
+            "preferences_scope",
+            "preferences_file",
+            "validation status",
+            "python 3.9+",
+            "skill root",
+            "caller mod repository",
+            "modding_profile_path",
+            "`modding` root",
+            "bepinex",
+            "launcher",
+            "build, artifact, deployment, launch, startup, and process evidence",
+            "session/process boundary",
+            "cannot cross session identity",
+            "complete",
+            "failed",
+            "blocked",
+            "pending-manual",
+            "next action",
+        ):
+            self.assertIn(phrase, text)
+
     def test_skill_python_tests_remain_outside_caller_xunit_rule(self):
         text = read(SHARED).casefold()
 

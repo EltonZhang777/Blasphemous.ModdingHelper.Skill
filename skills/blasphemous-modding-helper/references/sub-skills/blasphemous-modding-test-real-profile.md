@@ -227,6 +227,23 @@ Startup states are deliberately narrower than gameplay results:
 
 Completion criterion: agent reports state, current/stale/missing status of both sources, relevant warnings, and bounded or full log output requested by user.
 
+## Report status and evidence boundary
+
+Reports keep build, artifact, deployment, launch, startup, and process evidence
+separate. The overall status is exactly one of `complete`, `failed`, `blocked`,
+or `pending-manual`:
+
+- `complete`: the requested automated and startup operations finished and any
+  required Manual verification is recorded.
+- `failed`: the operation ran and returned a failure that needs repair.
+- `blocked`: a gate, profile, session, or safety condition prevented execution;
+  the report includes the concrete next action.
+- `pending-manual`: startup evidence exists, but the player's Manual
+  verification is still required.
+
+`mod_loaded` remains startup evidence only and never changes into gameplay
+success without a separate Manual verification record.
+
 ### `snapshot`: preserve completed-session logs
 
 ```text
@@ -297,9 +314,20 @@ Completion criterion: requested session is `cleaned` or `already-cleaned`, every
 
 Shared [Invocation preflight](../config/invocation-preflight.md) owns configuration scope selection, project-over-user precedence, first-time setup, path recovery, and tracked-session stop exception. After it selects active file, this CLI requires `modding_profile_path`.
 
+The shared gate result is the input to this branch: consume `PREFERENCES_SCOPE`,
+`PREFERENCES_FILE`, and the validation status before loading profile context;
+this branch MUST NOT rediscover configuration independently. The installed Skill root
+and caller Mod repository are explicit command context, and the selected
+Python 3.9+ interpreter is reused for every CLI operation.
+
 Explicit CLI options override selected configuration for that invocation: `--profile`, `--project`, `--launcher`, and `--unity-log-dir`. CLI does not rewrite configuration; after missing-log handoff, agent writes user-supplied Unity log directory into active file.
 
 `stop SESSION_ID` is this workflow's implementation of tracked-session recovery exception and uses only recorded session state plus host process check. `run`, `clean`, `logs`, and `status` require normal Invocation preflight and profile gate.
+
+The session/process boundary is strict: each `SESSION_ID` binds one lifecycle,
+profile, deployment manifest, and tracked process tree. A command with another
+session ID cannot cross session identity, attach to its process, or use its
+rollback state.
 
 ## Automated evidence versus Manual verification
 
