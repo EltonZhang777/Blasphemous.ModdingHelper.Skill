@@ -1543,6 +1543,34 @@ def request_test_log_snapshot(
     )
 
     if not running:
+        if flow_state == "awaiting_stop":
+            if force_stop_decision is not None:
+                raise CliError(
+                    EXIT_LOGS,
+                    "logs/snapshot",
+                    "Record the ordinary stop decision before requesting a force-stop decision.",
+                )
+            if stop_decision is None:
+                return _snapshot_pending_result(
+                    session_id,
+                    state_path,
+                    "stop",
+                    f"Session {session_id} exited while awaiting the ordinary stop decision; pass --stop-decision approve or decline. No logs were captured.",
+                )
+        if flow_state == "awaiting_force_stop":
+            if stop_decision is not None:
+                raise CliError(
+                    EXIT_LOGS,
+                    "logs/snapshot",
+                    "The normal stop decision was already recorded; pass --force-stop-decision.",
+                )
+            if force_stop_decision is None:
+                return _snapshot_pending_result(
+                    session_id,
+                    state_path,
+                    "force_stop",
+                    f"Session {session_id} exited while awaiting the force-stop decision; pass --force-stop-decision approve or decline. No logs were captured.",
+                )
         if force_stop_decision is not None and flow_state != "awaiting_force_stop":
             raise CliError(
                 EXIT_LOGS,

@@ -1135,6 +1135,67 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
         self.assertEqual(manifest["snapshot_flow"]["state"], "awaiting_stop")
         session.process_adapter.terminate_tree.assert_not_called()
 
+    def test_snapshot_stays_pending_when_process_exits_before_stop_decision(self):
+        module, session, deployment, profile_preflight, _process, _identity = self.create_launched_session()
+        preferences, environment = self.prepare_running_snapshot_context(module, profile_preflight)
+        session.process_adapter.is_alive.return_value = True
+
+        pending = session.snapshot(
+            deployment.session_id,
+            profile_preflight,
+            preferences,
+            environment,
+        )
+        self.assertEqual(pending.status, "pending")
+        self.assertEqual(pending.awaiting, "stop")
+
+        session.process_adapter.is_alive.return_value = False
+        still_pending = session.snapshot(
+            deployment.session_id,
+            profile_preflight,
+            preferences,
+            environment,
+        )
+
+        self.assertEqual(still_pending.status, "pending")
+        self.assertEqual(still_pending.awaiting, "stop")
+        manifest = json.loads(deployment.state_path.read_text(encoding="utf-8"))
+        self.assertNotIn("snapshot", manifest)
+        self.assertEqual(manifest["snapshot_flow"]["state"], "awaiting_stop")
+
+    def test_snapshot_stays_pending_when_process_exits_before_force_decision(self):
+        module, session, deployment, profile_preflight, _process, _identity = self.create_launched_session()
+        preferences, environment = self.prepare_running_snapshot_context(module, profile_preflight)
+        session.process_adapter.is_alive.return_value = True
+        session.process_adapter.wait_for_exit.return_value = False
+
+        pending = session.snapshot(
+            deployment.session_id,
+            profile_preflight,
+            preferences,
+            environment,
+            stop_decision="approve",
+        )
+        self.assertEqual(pending.status, "pending")
+        self.assertEqual(pending.awaiting, "force_stop")
+
+        session.process_adapter.is_alive.return_value = False
+        still_pending = session.snapshot(
+            deployment.session_id,
+            profile_preflight,
+            preferences,
+            environment,
+        )
+
+        self.assertEqual(still_pending.status, "pending")
+        self.assertEqual(still_pending.awaiting, "force_stop")
+        manifest = json.loads(deployment.state_path.read_text(encoding="utf-8"))
+        self.assertNotIn("snapshot", manifest)
+        self.assertEqual(
+            manifest["snapshot_flow"]["state"],
+            "awaiting_force_stop",
+        )
+
     def prepare_running_snapshot_context(self, module, profile_preflight):
         unity_log_dir = self.root / "unity-logs"
         unity_log_dir.mkdir()
