@@ -174,7 +174,7 @@ Command is idempotent:
 
 Completion criterion: tracked process is stopped or confirmed gone, and no unrelated process was terminated.
 
-### `logs`: read current startup evidence
+### `logs`: read Current log or Test log snapshot
 
 ```text
 <TEST_CLI> logs SESSION_ID [common options] [--full] (--current|--snapshot)
@@ -183,8 +183,9 @@ Completion criterion: tracked process is stopped or confirmed gone, and no unrel
 `logs` uses the selected profile and log-directory context. `--project`,
 `--profile`, `--launcher`, and `--unity-log-dir` override saved values for this
 invocation; `--full` controls output size. Exactly one source flag is required:
-`--current` explicitly reads the configured live sources, while `--snapshot`
-reads the completed Test-session evidence. There is no implicit source mode.
+`--current` explicitly reads the configured live sources, called **Current log**
+evidence. `--snapshot` reads the complete **Test log snapshot** associated with
+the completed Test session. There is no implicit source mode.
 
 `--snapshot` analyzes the complete Test-session snapshot associated with
 `SESSION_ID`. It never falls back to live sources: a missing or incomplete
@@ -226,6 +227,29 @@ Startup states are deliberately narrower than gameplay results:
 | `timeout` | `--startup-timeout` expired before `mod_loaded`; the session and process remain for diagnosis. |
 
 Completion criterion: agent reports state, current/stale/missing status of both sources, relevant warnings, and bounded or full log output requested by user.
+
+## Report status and evidence boundary
+
+Reports keep build, artifact, deployment, launch, startup, and process evidence
+separate. The overall status is exactly one of `complete`, `failed`, `blocked`,
+or `pending-manual`:
+
+- `complete`: the requested automated and startup operations finished and any
+  required Manual verification is recorded.
+- `failed`: the operation ran and returned a failure that needs repair.
+- `blocked`: a gate, profile, session, or safety condition prevented execution;
+  the report includes the concrete next action.
+- `pending-manual`: startup evidence exists, but the player's Manual
+  verification is still required.
+
+Every Real-profile test or verification report MUST include `status`,
+`completion evidence`, the blocked or failed reason when applicable, and
+`next action`. Completion evidence MUST identify the Test session and keep
+Current log, Test log snapshot, startup evidence, and Manual verification
+separate.
+
+`mod_loaded` remains startup evidence only and never changes into gameplay
+success without a separate Manual verification record.
 
 ### `snapshot`: preserve completed-session logs
 
@@ -297,9 +321,20 @@ Completion criterion: requested session is `cleaned` or `already-cleaned`, every
 
 Shared [Invocation preflight](../config/invocation-preflight.md) owns configuration scope selection, project-over-user precedence, first-time setup, path recovery, and tracked-session stop exception. After it selects active file, this CLI requires `modding_profile_path`.
 
+The shared gate result is the input to this branch: consume `PREFERENCES_SCOPE`,
+`PREFERENCES_FILE`, and the validation status before loading profile context;
+this branch MUST NOT rediscover configuration independently. The installed Skill root
+and caller Mod repository are explicit command context, and the selected
+Python 3.9+ interpreter is reused for every CLI operation.
+
 Explicit CLI options override selected configuration for that invocation: `--profile`, `--project`, `--launcher`, and `--unity-log-dir`. CLI does not rewrite configuration; after missing-log handoff, agent writes user-supplied Unity log directory into active file.
 
 `stop SESSION_ID` is this workflow's implementation of tracked-session recovery exception and uses only recorded session state plus host process check. `run`, `clean`, `logs`, and `status` require normal Invocation preflight and profile gate.
+
+The session/process boundary is strict: each `SESSION_ID` binds one lifecycle,
+profile, deployment manifest, and tracked process tree. A command with another
+session ID cannot cross session identity, attach to its process, or use its
+rollback state.
 
 ## Automated evidence versus Manual verification
 

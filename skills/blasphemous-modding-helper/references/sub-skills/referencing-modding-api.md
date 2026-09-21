@@ -277,3 +277,10 @@ matrix job. Ignored local Markdown artifacts MAY produce a separate warning,
 but MUST NOT make repository-owned documentation validation fail; live network
 check is optional and MUST be reported as not run when it was not requested or
 unavailable.
+
+## Completion criterion
+
+Agent MUST report the selected ModdingAPI reference and topic, the resolved
+reference evidence, status, the blocked reason when applicable, and the next
+source or code action. If the request did not ask for lifecycle mutation, the
+report MUST state that no checkout mutation was performed.

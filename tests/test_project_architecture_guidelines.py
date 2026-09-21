@@ -7,7 +7,14 @@ SKILL_ROOT = (
     / "skills"
     / "blasphemous-modding-helper"
 )
+CONTEXT = Path(__file__).resolve().parents[1] / "CONTEXT.md"
 ROUTER = SKILL_ROOT / "references" / "sub-skills" / "coding-standards.md"
+HARMONY = (
+    SKILL_ROOT
+    / "references"
+    / "coding-standards"
+    / "coding-standards-harmony-patching.md"
+)
 GUIDE = (
     SKILL_ROOT
     / "references"
@@ -49,6 +56,30 @@ class ProjectArchitectureDocumentationTests(unittest.TestCase):
             self.assertIn(target, route_text)
         self.assertIn("scope gate", route_text)
 
+    def test_route_contract_covers_activation_scope_and_result(self):
+        router = ROUTER.read_text(encoding="utf-8").casefold()
+        guide = GUIDE.read_text(encoding="utf-8").casefold()
+
+        for phrase in (
+            "no established directory, namespace, module, or feature boundaries",
+            "explicitly asks how to organize or place new files or directories",
+            "ordinary request in a project with established or feature-oriented structure",
+            "must not impose the default role categories",
+        ):
+            self.assertIn(phrase, router)
+        for phrase in (
+            "new files and directories in mod-owned code",
+            "decompiled game code, dependency code, upstream code, generated output, and build output",
+            "must not move, rename, or restructure existing files",
+            "activation status",
+            "activation reason",
+            "preserved boundary",
+            "primary responsibility",
+            "suggested directory",
+            "suggested namespace",
+        ):
+            self.assertIn(phrase, guide)
+
     def test_guide_covers_categories_and_primary_responsibility(self):
         guide = GUIDE.read_text(encoding="utf-8")
         categories = {
@@ -79,6 +110,23 @@ class ProjectArchitectureDocumentationTests(unittest.TestCase):
         ):
             self.assertIn(phrase, guide_lower)
 
+    def test_guide_covers_placement_precedence_and_category_boundaries(self):
+        guide = GUIDE.read_text(encoding="utf-8").casefold()
+
+        for phrase in (
+            "project root is limited to entrypoints, startup orchestration, and project-level public types",
+            "configuration, serialized settings, and persistence data models",
+            "reusable mod-owned runtime or domain objects, state, registries",
+            "extension methods and support types tightly coupled",
+            "mod console command classes and command-specific behavior",
+            "established feature-oriented structure takes precedence",
+            "must not move, rename, or restructure existing files",
+            "generic utils, helpers, or managers buckets",
+            "documented gap",
+            "does not redefine naming, compiler compatibility, lifecycle behavior, patch target resolution, or patch discovery",
+        ):
+            self.assertIn(phrase, guide)
+
     def test_guide_preserves_existing_structure_and_boundaries(self):
         guide = GUIDE.read_text(encoding="utf-8").casefold()
 
@@ -96,6 +144,43 @@ class ProjectArchitectureDocumentationTests(unittest.TestCase):
             "https://github.com/EltonZhang777/Blasphemous.InventorySorting",
         ):
             self.assertIn(repository.casefold(), guide)
+
+    def test_patch_and_event_ownership_matches_harmony_reference(self):
+        guide = GUIDE.read_text(encoding="utf-8").casefold()
+        harmony = HARMONY.read_text(encoding="utf-8").casefold()
+
+        for phrase in (
+            "patches is the default harmony category",
+            "projects that already use harmonypatches may keep that name",
+            "harmonypatches is justified for a project that genuinely separates multiple patch mechanisms",
+            "a harmony bridge that raises an event remains here",
+            "event definitions, handlers, and subscription orchestration",
+        ):
+            self.assertIn(phrase, guide)
+        for phrase in (
+            "new mod-owned patch files must live under mod root's `patches/` directory by default",
+            "established `harmonypatches/` boundary",
+            "must not require a rename or migration",
+            "framework-managed discovery",
+        ):
+            self.assertIn(phrase, harmony)
+
+    def test_final_architecture_terminology_is_reusable(self):
+        context = CONTEXT.read_text(encoding="utf-8").casefold()
+        guide = GUIDE.read_text(encoding="utf-8").casefold()
+
+        for term in (
+            "project architecture guidelines",
+            "established architecture",
+            "architecture category",
+            "primary responsibility",
+            "patches",
+            "harmonypatches",
+            "events",
+            "harmony bridge",
+        ):
+            self.assertIn(term, context)
+            self.assertIn(term, guide)
 
 
 if __name__ == "__main__":

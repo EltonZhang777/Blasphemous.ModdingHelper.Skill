@@ -33,6 +33,9 @@ jobs:
       with:
         node-version: "18"
 
+    - name: Validate Skill Python runtime and dependencies
+      run: python skills/blasphemous-modding-helper/scripts/check_python_environment.py --python python --requirements skills/blasphemous-modding-helper/requirements.txt
+
     # The acceptance runner includes the Node installer and wrapper contracts.
     - name: Run acceptance surface (Bash)
       if: matrix.shell_name == 'bash'

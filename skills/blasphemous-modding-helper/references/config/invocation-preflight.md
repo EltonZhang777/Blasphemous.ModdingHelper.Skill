@@ -24,6 +24,25 @@ Every executable example in this Skill MUST use this context:
 
 Command context is ready when installed Skill root, caller Mod repository, resolved Python interpreter, and supported native host are known before a command is executed.
 
+## Native Python shell template
+
+PowerShell and Bash are host syntaxes for the same native Python entry point;
+they are not separate implementations. Every executable example MUST preserve
+this parity:
+
+| Context | Canonical invocation |
+| --- | --- |
+| Bash | `"$PYTHON3" "$SKILL_ROOT/scripts/<script>.py" [arguments]` |
+| PowerShell | `& $PYTHON3 (Join-Path $SkillRoot 'scripts\<script>.py') [arguments]` |
+
+Both forms MUST use the resolved `PYTHON3`, an absolute installed Skill root,
+the caller's Mod repository as working directory, and the same script and
+argument values. Paths remain separate quoted arguments; host-specific slash
+syntax is the only permitted textual difference. Examples in branch references
+inherit this contract and MUST NOT call a legacy shell/JavaScript entry point,
+MUST NOT use a checkout-relative Skill path, and MUST NOT change the working
+directory implicitly.
+
 ## Python runtime gate
 
 During first-time setup, agent MUST complete [Python Runtime](python-runtime.md) before asking setup questions. The gate resolves an explicit interpreter, `PYTHON3`, or the host interpreter in that order; accepts Python 3.9 or newer; validates the Skill dependency manifest; and never installs packages automatically.
@@ -46,7 +65,9 @@ Validation mode emits structured `PREFERENCES_*` fields with a stable status of
 `skipped`, `passed`, `normalized`, or `failed`. A `failed` result includes an
 actionable reason, marks `PREFERENCES_SETUP=required`, and MUST enter
 [First-Time Setup](first-time-setup.md) before any downstream operational
-workflow continues. Project scope MUST take precedence over user scope:
+workflow continues. Downstream branches MUST consume the selected validation result
+and `PREFERENCES_SCOPE`/`PREFERENCES_FILE`; they MUST NOT rediscover or
+revalidate configuration independently. Project scope MUST take precedence over user scope:
 
 - Project: `.skills/blasphemous-modding-helper/config.yml` under caller's current working directory.
 - User: `$HOME/.skills/blasphemous-modding-helper/config.yml`.
@@ -79,3 +100,4 @@ Shared preflight is complete only when all applicable conditions below hold:
 3. The selected branch has received its required context before mutating files, launching a process, or relying on source or log paths.
 4. For the tracked-session stop exception, the recorded process is stopped or confirmed gone and no unrelated process was touched.
 5. For declined path recovery, the specific failure and next action have been reported. Successful setup instead returns a validated configuration file to the main workflow.
+6. The result report names the selected route or gate status, completion evidence, the blocked reason when applicable, and the next document or action.

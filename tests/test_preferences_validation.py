@@ -18,6 +18,7 @@ sys.path.insert(0, str(SCRIPT_ROOT))
 from blasphemous_modding_helper.preferences import (  # noqa: E402
     parse_preferences,
     read_skill_version,
+    PreferenceValidationError,
     validate_preferences,
 )
 
@@ -226,6 +227,19 @@ class PreferencesValidationTests(unittest.TestCase):
                 self.assertIn("check_period_days", result.stdout)
                 self.assertEqual(self.config.read_bytes(), before)
 
+    def test_date_overflow_periods_fail_without_replacing_the_value(self):
+        now = datetime.now(timezone.utc).replace(microsecond=0)
+        for invalid in ("1000000000", "100000000000000000000000"):
+            with self.subTest(period=invalid):
+                self.write_config(self.valid_config(self.checked_at(now), period=invalid))
+                before = self.config.read_bytes()
+
+                result = self.run_validation()
+
+                self.assertEqual(result.returncode, 10, result.stdout)
+                self.assertIn("check_period_days", result.stdout)
+                self.assertEqual(self.config.read_bytes(), before)
+
     def test_invalid_yaml_and_future_metadata_route_to_setup(self):
         self.write_config("valid: value\nnot a mapping\n")
         before = self.config.read_bytes()
@@ -233,7 +247,11 @@ class PreferencesValidationTests(unittest.TestCase):
         result = self.run_validation()
 
         self.assertEqual(result.returncode, 10)
-        self.assertIn("PREFERENCES_VALIDATION_STATUS=failed", result.stdout)
+        fields = self.fields(result)
+        self.assertEqual(fields["PREFERENCES_VALIDATION_STATUS"], "failed")
+        self.assertEqual(fields["PREFERENCES_SETUP"], "required")
+        self.assertIn(str(self.config), fields["PREFERENCES_FILE"])
+        self.assertIn("Invalid config.yml", fields["PREFERENCES_VALIDATION_REASON"])
         self.assertEqual(self.config.read_bytes(), before)
 
         future = datetime.now(timezone.utc) + timedelta(days=1)
@@ -268,6 +286,18 @@ class PreferencesValidationTests(unittest.TestCase):
         fields = self.fields(result)
         self.assertEqual(fields["PREFERENCES_SCOPE"], "project")
         self.assertIn(str(self.config), fields["PREFERENCES_FILE"])
+
+    def test_validation_failure_retains_the_selected_scope(self):
+        self.write_config("check_period_days: 0\n")
+        user_config = self.home / ".skills" / "blasphemous-modding-helper" / "config.yml"
+        user_config.parent.mkdir(parents=True, exist_ok=True)
+        user_config.write_text("modding_profile_path: user-profile\n", encoding="utf-8")
+
+        with self.assertRaises(PreferenceValidationError) as failure:
+            validate_preferences(cwd=self.root, home=self.home)
+
+        self.assertEqual(failure.exception.location.scope, "project")
+        self.assertEqual(failure.exception.location.path, self.config.resolve())
 
 
 if __name__ == "__main__":

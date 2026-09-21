@@ -30,9 +30,9 @@ modding_api_reference_selector: latest
 | `unity_log_dir` | string | Optional | Directory containing the current Unity log. Windows normally contains `output_log.txt`; native Linux/macOS profiles normally contain `Player.log`. The test CLI reports a recovery handoff when this field or its log is missing. |
 | `modding_api_reference_path` | string, optional | N/A | Normalized absolute path to a local ModdingAPI reference checkout. When absent, the agent uses the release-aware remote fallback. |
 | `modding_api_reference_selector` | string, optional | `latest` when a local path is configured | Selector used for the local checkout: `latest`, `tag:REF`, `branch:REF`, or `commit:SHA`. `main` is not an implicit selector. |
-| `check_period_days` | positive number, optional | `7` | Freshness period for shared configuration validation. Positive floating-point values are rounded down and stored as positive integers; invalid values enter first-time setup. |
+| `check_period_days` | positive number, optional | `7` | Validation period (freshness window) for shared configuration validation. Positive floating-point values are rounded down and stored as positive integers; invalid values enter first-time setup. |
 
-## Freshness validation metadata
+## Validation metadata and period
 
 The shared `check_preferences.py --validate` configuration gate manages only these fields:
 
@@ -42,8 +42,10 @@ last_checked_version: 2.0.0
 check_period_days: 7
 ```
 
-`last_checked_time` is UTC ISO 8601 metadata and `last_checked_version` is the
-exact version from the installed Skill's `version.yml`. Missing, malformed, or
+`last_checked_time` and `last_checked_version` are validation metadata.
+`check_period_days` is the validation period. `last_checked_time` is UTC ISO
+8601 metadata and `last_checked_version` is the exact Skill version from the
+installed Skill's [`version.yml`](../../version.yml). Missing, malformed, or
 future metadata triggers validation. A current configuration within its period
 returns `skipped` without writing. Successful validation returns `passed` or
 `normalized`, writes the managed metadata, and preserves unrelated fields,

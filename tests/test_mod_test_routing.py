@@ -75,6 +75,12 @@ class ModTestRoutingDocumentationTests(unittest.TestCase):
             )
         )
 
+    def test_shared_entry_leaves_xunit_free_of_real_profile_gate(self):
+        text = read(SHARED).casefold()
+
+        self.assertIn("caller-owned automated xunit", text)
+        self.assertIn("before branch-specific gates", text)
+
     def test_shared_entry_keeps_ambiguity_and_evidence_separate(self):
         text = read(SHARED).casefold()
 
@@ -85,6 +91,41 @@ class ModTestRoutingDocumentationTests(unittest.TestCase):
             "manual verification",
             "mod_loaded",
             "must not be reported as gameplay verification",
+        ):
+            self.assertIn(phrase, text)
+
+    def test_shared_entry_declares_one_of_four_route_results(self):
+        text = read(SHARED).casefold()
+
+        for phrase in (
+            "exactly one route result",
+            "real-profile",
+            "xunit",
+            "both",
+            "ambiguous",
+            "no-execution result",
+            "must not execute a",
+        ):
+            self.assertIn(phrase, text)
+
+    def test_shared_entry_defines_both_phase_and_report_contract(self):
+        text = read(SHARED).casefold()
+
+        for phrase in (
+            "xunit phase first",
+            "real-profile phase second",
+            "does not wait for real-profile configuration",
+            "own branch gate independently",
+            "independent commands",
+            "independent evidence",
+            "independent statuses",
+            "does not fabricate",
+            "both is complete only after",
+            "all required phases complete",
+            "ambiguous requests execute no",
+            "per-phase command",
+            "blocked reason",
+            "next action",
         ):
             self.assertIn(phrase, text)
 
@@ -101,6 +142,26 @@ class ModTestRoutingDocumentationTests(unittest.TestCase):
             "must not build, deploy, launch",
             "not a deployable game plugin",
             "test mod",
+            "does not require",
+            "modding_profile_path",
+            "config.yml",
+            "python",
+            "launcher",
+            "unity logs",
+            "bepinex",
+            "game process",
+            "dotnet test",
+            "may compile the",
+            "dotnet run",
+            "hand-written runner",
+            "real-profile cli",
+            "delegates to the standard xunit runner",
+            "passed",
+            "failed",
+            "blocked",
+            "runner",
+            "exit status",
+            "not gameplay proof",
         ):
             self.assertIn(phrase, text)
 
@@ -133,6 +194,31 @@ class ModTestRoutingDocumentationTests(unittest.TestCase):
         ):
             self.assertIn(phrase, real)
         self.assertNotIn("<test_cli> run", shared)
+
+    def test_real_profile_contract_covers_gate_prerequisites_and_states(self):
+        text = read(REAL_PROFILE).casefold()
+
+        for phrase in (
+            "preferences_scope",
+            "preferences_file",
+            "validation status",
+            "python 3.9+",
+            "skill root",
+            "caller mod repository",
+            "modding_profile_path",
+            "`modding` root",
+            "bepinex",
+            "launcher",
+            "build, artifact, deployment, launch, startup, and process evidence",
+            "session/process boundary",
+            "cannot cross session identity",
+            "complete",
+            "failed",
+            "blocked",
+            "pending-manual",
+            "next action",
+        ):
+            self.assertIn(phrase, text)
 
     def test_skill_python_tests_remain_outside_caller_xunit_rule(self):
         text = read(SHARED).casefold()

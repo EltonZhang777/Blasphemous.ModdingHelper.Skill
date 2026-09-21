@@ -9,7 +9,6 @@ from typing import Optional, Sequence
 
 from blasphemous_modding_helper.preferences import (
     PreferenceError,
-    find_preferences,
     preference_scope,
     validate_preferences,
 )
@@ -44,8 +43,8 @@ def _safe_field(value: object) -> str:
     return str(value).replace("\r", " ").replace("\n", " ")
 
 
-def _print_validation_failure(args, error: PreferenceError) -> int:
-    location = find_preferences(args.cwd, args.home)
+def _print_validation_failure(error: PreferenceError) -> int:
+    location = getattr(error, "location", None)
     print(f"PREFERENCES_SCOPE={location.scope if location else ''}")
     print(f"PREFERENCES_FILE={location.path if location else ''}")
     print("PREFERENCES_VALIDATION_STATUS=failed")
@@ -60,7 +59,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         try:
             result = validate_preferences(cwd=args.cwd, home=args.home)
         except PreferenceError as error:
-            return _print_validation_failure(args, error)
+            return _print_validation_failure(error)
         print(f"PREFERENCES_SCOPE={result.scope}")
         print(f"PREFERENCES_FILE={result.path}")
         print(f"PREFERENCES_VALIDATION_STATUS={result.status}")

@@ -97,6 +97,17 @@ class PreferencesAndDecompilerCliTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0)
         self.assertEqual(result.stdout, "")
 
+    def test_scope_only_output_does_not_write_freshness_metadata(self):
+        config = self.root / ".skills" / "blasphemous-modding-helper" / "config.yml"
+        self.write_config(config)
+        before = config.read_bytes()
+
+        result = self.run_preferences("--cwd", str(self.root), "--home", str(self.home))
+
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(result.stdout, "project\n")
+        self.assertEqual(config.read_bytes(), before)
+
     def test_config_parser_preserves_yaml_scalar_types_and_comments(self):
         config = self.root / "config.yml"
         config.write_text(

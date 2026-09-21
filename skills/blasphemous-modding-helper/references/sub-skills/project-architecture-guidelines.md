@@ -2,18 +2,26 @@
 
 This guide gives a small default shape for new Mod-owned files. It is a placement decision, not a project template or a migration plan.
 
+## Canonical terminology
+
+This route uses the final terms `Project architecture guidelines`, `Established architecture`, `Architecture category`, `primary responsibility`, `Patches`, `HarmonyPatches`, `Events`, and `Harmony bridge`. These terms describe placement and ownership only; they MUST NOT replace the detailed C#, ModdingAPI, or Harmony behavior references.
+
 ## Route decision
 
 The Coding Standards router activates this guide when the Caller Mod repository lacks stable directory, namespace, module, or feature boundaries, or when the user explicitly asks how to organize new files or directories.
 
 When a project already has stable or feature-oriented structure and the user has not asked for organization, the ordinary Mod task keeps its existing route and receives no unsolicited layout rewrite. When the user explicitly asks for organization, this guide activates for the decision, but the established structure still takes precedence.
 
-When this guide is active, report the route result with:
+The agent MUST report every architecture placement decision with this route-result contract:
 
-1. The reason the guide activated or stayed inactive.
-2. The existing structure that was preserved, if any.
-3. The new file's primary responsibility.
-4. The proposed directory and namespace.
+| Field | Required result |
+| --- | --- |
+| Activation status | State `activated` for an unstructured repository or an explicit organization request; state `inactive` for ordinary work in an established architecture. |
+| Activation reason | Explain the request signal that activated the guide, or why the established architecture kept the guide inactive. |
+| Preserved boundary | Name the existing directory, namespace, module, or feature boundary that remains authoritative, or state that none was identified. |
+| Primary responsibility | Name the one responsibility that determines placement; for an inactive route, state that the architecture guide did not assign it. |
+| Suggested directory | Give the new directory or state that the established path is preserved. |
+| Suggested namespace | Mirror the suggested directory by default, or name the established namespace exception. |
 
 ## Scope and precedence
 
@@ -49,7 +57,7 @@ The project root is limited to entrypoints, startup orchestration, and project-l
 | Events | Event definitions, handlers, and subscription orchestration | Event consumers and event ownership belong here; the Patch bridge that emits an event remains in Patches. |
 | Commands | Mod console command classes and command-specific behavior | Command concerns stay separate from general components and services. |
 
-The guide MUST NOT prescribe generic Utils, Helpers, or Managers buckets. A new semantic category is justified only when a stable responsibility does not fit the existing categories; the proposal MUST name that responsibility and explain why the existing categories are insufficient.
+The guide MUST NOT prescribe generic Utils, Helpers, or Managers buckets. A new semantic category is justified only when a stable responsibility and a documented gap show that the existing categories are insufficient; the proposal MUST name the responsibility, document the gap, and explain why the existing categories do not fit.
 
 ## Existing naming and structure
 

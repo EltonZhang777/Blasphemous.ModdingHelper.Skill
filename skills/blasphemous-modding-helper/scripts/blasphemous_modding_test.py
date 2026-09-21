@@ -1543,6 +1543,34 @@ def request_test_log_snapshot(
     )
 
     if not running:
+        if flow_state == "awaiting_stop":
+            if force_stop_decision is not None:
+                raise CliError(
+                    EXIT_LOGS,
+                    "logs/snapshot",
+                    "Record the ordinary stop decision before requesting a force-stop decision.",
+                )
+            if stop_decision is None:
+                return _snapshot_pending_result(
+                    session_id,
+                    state_path,
+                    "stop",
+                    f"Session {session_id} exited while awaiting the ordinary stop decision; pass --stop-decision approve or decline. No logs were captured.",
+                )
+        if flow_state == "awaiting_force_stop":
+            if stop_decision is not None:
+                raise CliError(
+                    EXIT_LOGS,
+                    "logs/snapshot",
+                    "The normal stop decision was already recorded; pass --force-stop-decision.",
+                )
+            if force_stop_decision is None:
+                return _snapshot_pending_result(
+                    session_id,
+                    state_path,
+                    "force_stop",
+                    f"Session {session_id} exited while awaiting the force-stop decision; pass --force-stop-decision approve or decline. No logs were captured.",
+                )
         if force_stop_decision is not None and flow_state != "awaiting_force_stop":
             raise CliError(
                 EXIT_LOGS,
@@ -2235,6 +2263,34 @@ def _snapshot_analysis_sources(
         ):
             details.append(f"{name}=missing target")
             continue
+        expected_byte_count = value.get("byte_count")
+        expected_sha256 = value.get("sha256")
+        if (
+            not isinstance(expected_byte_count, int)
+            or isinstance(expected_byte_count, bool)
+            or expected_byte_count < 0
+        ):
+            details.append(f"{name}=invalid byte_count")
+            continue
+        if not isinstance(expected_sha256, str) or len(expected_sha256) != 64:
+            details.append(f"{name}=invalid sha256")
+            continue
+        try:
+            actual_byte_count = target.stat().st_size
+        except OSError:
+            details.append(f"{name}=unreadable target")
+            continue
+        if actual_byte_count != expected_byte_count:
+            details.append(f"{name}=byte_count mismatch")
+            continue
+        try:
+            actual_sha256 = _sha256(target)
+        except OSError:
+            details.append(f"{name}=unreadable target")
+            continue
+        if actual_sha256.casefold() != expected_sha256.casefold():
+            details.append(f"{name}=sha256 mismatch")
+            continue
         paths.append(target)
     if len(paths) != 2:
         raise CliError(
@@ -2458,11 +2514,24 @@ def capture_test_log_snapshot(
                 f"Session {session_id} is not in an exited state; snapshot capture requires the tracked process tree to be exited.",
             )
 
-    unity_path, unity_warning = resolve_unity_log_path(
-        preferences,
-        environment,
-        explicit_directory=explicit_unity_log_dir,
+    selected_log_sources = process_value.get("log_sources")
+    if not isinstance(selected_log_sources, dict):
+        selected_log_sources = {}
+    selected_bepinex = selected_log_sources.get("bepinex")
+    bepinex_path = (
+        Path(str(selected_bepinex))
+        if isinstance(selected_bepinex, str) and selected_bepinex.strip()
+        else profile.bepinex_root / "LogOutput.log"
     )
+    selected_unity = selected_log_sources.get("unity")
+    if isinstance(selected_unity, str) and selected_unity.strip():
+        unity_path, unity_warning = Path(selected_unity), None
+    else:
+        unity_path, unity_warning = resolve_unity_log_path(
+            preferences,
+            environment,
+            explicit_directory=explicit_unity_log_dir,
+        )
     snapshot_path = state_path.parent / "snapshots"
     previous_snapshot = manifest.get("snapshot")
     previous_sources = (
@@ -2474,7 +2543,7 @@ def capture_test_log_snapshot(
         previous_sources = {}
 
     source_specs = (
-        ("bepinex", profile.bepinex_root / "LogOutput.log", None, "bepinex.log"),
+        ("bepinex", bepinex_path, None, "bepinex.log"),
         ("unity", unity_path, unity_warning, "unity.log"),
     )
     captured_at = datetime.now(timezone.utc).isoformat()
@@ -2865,6 +2934,12 @@ def launch_session(
         log_paths
         or (profile.bepinex_root / "LogOutput.log",)
     )
+    selected_log_sources = None
+    if len(tracked_log_paths) > 1:
+        selected_log_sources = {
+            "bepinex": str(Path(tracked_log_paths[0]).resolve(strict=False)),
+            "unity": str(Path(tracked_log_paths[1]).resolve(strict=False)),
+        }
     started_at_epoch_ns = time.time_ns()
     log_baseline = _capture_log_baselines(tracked_log_paths)
     try:
@@ -3030,6 +3105,8 @@ def launch_session(
             for child in tracked_children
         ],
     }
+    if selected_log_sources is not None:
+        process_state["log_sources"] = selected_log_sources
     try:
         _update_process_state(deployment.state_path, process_state)
         _update_evidence_state(

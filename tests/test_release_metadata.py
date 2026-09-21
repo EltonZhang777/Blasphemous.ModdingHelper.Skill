@@ -32,6 +32,10 @@ class ReleaseMetadataTests(unittest.TestCase):
         self.assertFalse(
             (REPOSITORY_ROOT / "ci" / "update-version" / "version.yml").exists()
         )
+        requirements = (
+            REPOSITORY_ROOT / "skills" / "blasphemous-modding-helper" / "requirements.txt"
+        ).read_text(encoding="utf-8")
+        self.assertRegex(requirements, r"(?m)^\s*PyYAML\s*>=\s*6\.0\s*(?:#.*)?$")
         version_text = VERSION_SOURCE.read_text(encoding="utf-8")
         version = re.search(r"^version:\s*([^\s#]+)\s*$", version_text, re.MULTILINE)
         self.assertIsNotNone(version)
@@ -51,6 +55,22 @@ class ReleaseMetadataTests(unittest.TestCase):
                     self.assertEqual(manifest["skills"]["blasphemous-modding-helper"]["version"], expected)
                     for entry in manifest["references"].values():
                         self.assertEqual(entry["version"], expected)
+
+    def test_release_matrix_validates_runtime_before_acceptance(self):
+        workflow = (
+            REPOSITORY_ROOT / ".github" / "workflows" / "build.yml"
+        ).read_text(encoding="utf-8")
+        preflight = workflow.index("check_python_environment.py")
+        acceptance = workflow.index("test_modding_api_acceptance.py")
+        self.assertLess(preflight, acceptance)
+        self.assertIn(
+            "skills/blasphemous-modding-helper/requirements.txt",
+            workflow[preflight:acceptance],
+        )
+        self.assertIn(
+            "zip -r publish/${{ env.PROJECT_NAME }}.zip skills/${{ env.PROJECT_NAME }}",
+            workflow,
+        )
 
     def test_lock_and_readme_cover_routed_reference_branches(self):
         lock = json.loads(

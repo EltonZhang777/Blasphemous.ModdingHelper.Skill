@@ -297,6 +297,12 @@ def run_documentation_smoke() -> None:
         "First-Time Setup reference": read_file(
             SKILL_ROOT / "references" / "config" / "first-time-setup.md"
         ),
+        "config schema": read_file(
+            SKILL_ROOT / "references" / "config" / "preferences-schema.md"
+        ),
+        "Python runtime reference": read_file(
+            SKILL_ROOT / "references" / "config" / "python-runtime.md"
+        ),
         "ModdingAPI route": read_file(
             SKILL_ROOT / "references" / "sub-skills" / "referencing-modding-api.md"
         ),
@@ -316,6 +322,8 @@ def run_documentation_smoke() -> None:
     top_level = documents["top-level Skill"]
     preflight = documents["Invocation preflight reference"]
     setup = documents["First-Time Setup reference"]
+    config_schema = documents["config schema"]
+    python_runtime = documents["Python runtime reference"]
     referencing = documents["ModdingAPI route"]
     source = documents["source route"]
     logs = documents["log route"]
@@ -359,6 +367,7 @@ def run_documentation_smoke() -> None:
         "Project scope MUST take precedence over user scope",
         "check_preferences.py",
         "/blasphemous-modding-test stop SESSION_ID",
+        "Downstream branches MUST consume the selected validation result",
     ):
         assert_contains(
             preflight,
@@ -377,6 +386,24 @@ def run_documentation_smoke() -> None:
         "### Setup incomplete",
     ):
         assert_contains(setup, heading, "First-Time Setup reference")
+    for contract_text in (
+        "last_checked_time",
+        "last_checked_version",
+        "check_period_days",
+        "skipped",
+        "passed",
+        "normalized",
+        "failed",
+        "leaves the file unchanged",
+    ):
+        assert_contains(config_schema, contract_text, "config schema")
+    for contract_text in (
+        "Python 3.9 or newer",
+        "requirements.txt",
+        "PyYAML",
+        "MUST NOT install or upgrade packages",
+    ):
+        assert_contains(python_runtime, contract_text, "Python runtime reference")
 
     for label, document in (
         ("source route", source),

@@ -19,7 +19,7 @@ If target signature, attribute overload, or resolver result is missing or confli
 
 ## Patch files and classes
 
-New Mod-owned Patch files MUST live under Mod root's `Patches/` directory. file name MUST use one of these aggregation forms:
+New Mod-owned Patch files MUST live under Mod root's `Patches/` directory by default. In a project with an established `HarmonyPatches/` boundary, related new Patch files MAY remain there; the agent MUST NOT require a rename or migration. A project SHOULD use `HarmonyPatches/` only when it intentionally separates patch mechanisms. This placement exception MUST NOT change framework-managed discovery. file name MUST use one of these aggregation forms:
 
 | Grouping | File name | Use |
 | --- | --- | --- |
