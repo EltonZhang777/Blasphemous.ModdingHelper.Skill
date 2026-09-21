@@ -8,6 +8,12 @@ SKILL_ROOT = (
     / "blasphemous-modding-helper"
 )
 ROUTER = SKILL_ROOT / "references" / "sub-skills" / "coding-standards.md"
+HARMONY = (
+    SKILL_ROOT
+    / "references"
+    / "coding-standards"
+    / "coding-standards-harmony-patching.md"
+)
 GUIDE = (
     SKILL_ROOT
     / "references"
@@ -137,6 +143,26 @@ class ProjectArchitectureDocumentationTests(unittest.TestCase):
             "https://github.com/EltonZhang777/Blasphemous.InventorySorting",
         ):
             self.assertIn(repository.casefold(), guide)
+
+    def test_patch_and_event_ownership_matches_harmony_reference(self):
+        guide = GUIDE.read_text(encoding="utf-8").casefold()
+        harmony = HARMONY.read_text(encoding="utf-8").casefold()
+
+        for phrase in (
+            "patches is the default harmony category",
+            "projects that already use harmonypatches may keep that name",
+            "harmonypatches is justified for a project that genuinely separates multiple patch mechanisms",
+            "a harmony bridge that raises an event remains here",
+            "event definitions, handlers, and subscription orchestration",
+        ):
+            self.assertIn(phrase, guide)
+        for phrase in (
+            "new mod-owned patch files must live under mod root's `patches/` directory by default",
+            "established `harmonypatches/` boundary",
+            "must not require a rename or migration",
+            "framework-managed discovery",
+        ):
+            self.assertIn(phrase, harmony)
 
 
 if __name__ == "__main__":
