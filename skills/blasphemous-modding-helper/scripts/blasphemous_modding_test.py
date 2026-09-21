@@ -2263,6 +2263,34 @@ def _snapshot_analysis_sources(
         ):
             details.append(f"{name}=missing target")
             continue
+        expected_byte_count = value.get("byte_count")
+        expected_sha256 = value.get("sha256")
+        if (
+            not isinstance(expected_byte_count, int)
+            or isinstance(expected_byte_count, bool)
+            or expected_byte_count < 0
+        ):
+            details.append(f"{name}=invalid byte_count")
+            continue
+        if not isinstance(expected_sha256, str) or len(expected_sha256) != 64:
+            details.append(f"{name}=invalid sha256")
+            continue
+        try:
+            actual_byte_count = target.stat().st_size
+        except OSError:
+            details.append(f"{name}=unreadable target")
+            continue
+        if actual_byte_count != expected_byte_count:
+            details.append(f"{name}=byte_count mismatch")
+            continue
+        try:
+            actual_sha256 = _sha256(target)
+        except OSError:
+            details.append(f"{name}=unreadable target")
+            continue
+        if actual_sha256.casefold() != expected_sha256.casefold():
+            details.append(f"{name}=sha256 mismatch")
+            continue
         paths.append(target)
     if len(paths) != 2:
         raise CliError(

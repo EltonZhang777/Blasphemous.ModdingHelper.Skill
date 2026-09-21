@@ -1557,6 +1557,67 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
         self.assertNotIn("later-current-bepinex", result.stdout)
         self.assertIn("snapshots", result.stdout)
 
+    def test_snapshot_analysis_rejects_modified_target_without_current_fallback(self):
+        module, session, deployment, profile_preflight, _process, _identity = self.create_launched_session()
+        preferences, environment = self.prepare_running_snapshot_context(module, profile_preflight)
+        session.process_adapter.is_alive.return_value = False
+        snapshot = session.snapshot(
+            deployment.session_id,
+            profile_preflight,
+            preferences,
+            environment,
+        )
+        self.assertEqual(snapshot.status, "complete")
+        bepinex_target = next(
+            source.target_path for source in snapshot.sources if source.name == "bepinex"
+        )
+        original = bepinex_target.read_bytes()
+        bepinex_target.write_bytes(bytes((original[0] ^ 1,)) + original[1:])
+        (profile_preflight.bepinex_root / "LogOutput.log").write_bytes(b"later-current")
+
+        result = self.run_module_cli(
+            module,
+            "logs",
+            deployment.session_id,
+            "--snapshot",
+            session=session,
+        )
+
+        self.assertEqual(result.returncode, module.EXIT_LOGS)
+        self.assertIn("bepinex=sha256 mismatch", result.stderr)
+        self.assertIn("rerun snapshot", result.stderr)
+        self.assertNotIn("later-current", result.stdout)
+
+    def test_snapshot_analysis_rejects_manifest_byte_count_mismatch(self):
+        module, session, deployment, profile_preflight, _process, _identity = self.create_launched_session()
+        preferences, environment = self.prepare_running_snapshot_context(module, profile_preflight)
+        session.process_adapter.is_alive.return_value = False
+        snapshot = session.snapshot(
+            deployment.session_id,
+            profile_preflight,
+            preferences,
+            environment,
+        )
+        self.assertEqual(snapshot.status, "complete")
+        manifest = json.loads(deployment.state_path.read_text(encoding="utf-8"))
+        manifest["snapshot"]["sources"]["unity"]["byte_count"] += 1
+        deployment.state_path.write_text(
+            json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+
+        result = self.run_module_cli(
+            module,
+            "logs",
+            deployment.session_id,
+            "--snapshot",
+            session=session,
+        )
+
+        self.assertEqual(result.returncode, module.EXIT_LOGS)
+        self.assertIn("unity=byte_count mismatch", result.stderr)
+        self.assertIn("rerun snapshot", result.stderr)
+
     def test_snapshot_analysis_reports_missing_snapshot_without_current_fallback(self):
         module, session, deployment, profile_preflight, _process, _identity = self.create_launched_session()
         self.prepare_running_snapshot_context(module, profile_preflight)
