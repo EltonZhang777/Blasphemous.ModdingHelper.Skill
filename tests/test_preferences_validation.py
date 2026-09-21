@@ -247,7 +247,11 @@ class PreferencesValidationTests(unittest.TestCase):
         result = self.run_validation()
 
         self.assertEqual(result.returncode, 10)
-        self.assertIn("PREFERENCES_VALIDATION_STATUS=failed", result.stdout)
+        fields = self.fields(result)
+        self.assertEqual(fields["PREFERENCES_VALIDATION_STATUS"], "failed")
+        self.assertEqual(fields["PREFERENCES_SETUP"], "required")
+        self.assertIn(str(self.config), fields["PREFERENCES_FILE"])
+        self.assertIn("Invalid config.yml", fields["PREFERENCES_VALIDATION_REASON"])
         self.assertEqual(self.config.read_bytes(), before)
 
         future = datetime.now(timezone.utc) + timedelta(days=1)

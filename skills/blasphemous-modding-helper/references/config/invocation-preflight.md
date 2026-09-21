@@ -46,7 +46,9 @@ Validation mode emits structured `PREFERENCES_*` fields with a stable status of
 `skipped`, `passed`, `normalized`, or `failed`. A `failed` result includes an
 actionable reason, marks `PREFERENCES_SETUP=required`, and MUST enter
 [First-Time Setup](first-time-setup.md) before any downstream operational
-workflow continues. Project scope MUST take precedence over user scope:
+workflow continues. Downstream branches MUST consume the selected validation result
+and `PREFERENCES_SCOPE`/`PREFERENCES_FILE`; they MUST NOT rediscover or
+revalidate configuration independently. Project scope MUST take precedence over user scope:
 
 - Project: `.skills/blasphemous-modding-helper/config.yml` under caller's current working directory.
 - User: `$HOME/.skills/blasphemous-modding-helper/config.yml`.
