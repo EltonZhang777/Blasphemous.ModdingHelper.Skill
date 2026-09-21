@@ -256,6 +256,7 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
         prelaunch_bepinex_log=None,
         project_kwargs=None,
         tracked_child_pids=(),
+        launch_unity_log_dir=None,
     ):
         module = self.load_cli_module()
         profile = self.create_profile()
@@ -315,7 +316,18 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
             cwd=self.root,
         ) as plan:
             deployment = session.deploy(plan, profile_preflight)
-        session.launch(deployment, profile_preflight)
+        launch_log_paths = None
+        if launch_unity_log_dir is not None:
+            launch_unity_log_dir.mkdir(parents=True, exist_ok=True)
+            launch_log_paths = (
+                profile_preflight.bepinex_root / "LogOutput.log",
+                launch_unity_log_dir / "output_log.txt",
+            )
+        session.launch(
+            deployment,
+            profile_preflight,
+            log_paths=launch_log_paths,
+        )
         return module, session, deployment, profile_preflight, process, identity
 
     def live_process_double(self, module, launcher, pid=4321):
@@ -935,6 +947,53 @@ class BlasphemousModdingTestCliTests(unittest.TestCase):
         session.clean(deployment.session_id)
         for target in targets:
             self.assertTrue(target.is_file())
+
+    def test_snapshot_uses_log_sources_selected_when_session_launched(self):
+        unity_log_dir = self.root / "unity-logs-selected"
+        changed_unity_log_dir = self.root / "unity-logs-changed"
+        (
+            module,
+            session,
+            deployment,
+            profile_preflight,
+            _process,
+            _identity,
+        ) = self.create_launched_session(
+            launch_unity_log_dir=unity_log_dir,
+        )
+        changed_unity_log_dir.mkdir()
+        self.write_project_preferences(
+            profile_preflight.profile,
+            changed_unity_log_dir,
+        )
+        (profile_preflight.bepinex_root / "LogOutput.log").write_bytes(b"bepinex")
+        (unity_log_dir / "output_log.txt").write_bytes(b"selected-unity")
+        (changed_unity_log_dir / "output_log.txt").write_bytes(b"changed-unity")
+        session.process_adapter.is_alive.return_value = False
+        environment = {
+            "Windows": "Windows",
+            "Linux": "Linux",
+            "Darwin": "macOS",
+        }[platform.system()]
+
+        result = session.snapshot(
+            deployment.session_id,
+            profile_preflight,
+            module.load_preferences(cwd=self.root, home=self.home),
+            environment,
+        )
+
+        self.assertEqual(result.status, "complete")
+        manifest = json.loads(deployment.state_path.read_text(encoding="utf-8"))
+        self.assertEqual(
+            manifest["process"]["log_sources"]["unity"],
+            str((unity_log_dir / "output_log.txt").resolve()),
+        )
+        unity_source = next(
+            source for source in result.sources if source.name == "unity"
+        )
+        self.assertEqual(unity_source.source_path, unity_log_dir / "output_log.txt")
+        self.assertEqual(unity_source.target_path.read_bytes(), b"selected-unity")
 
     def test_snapshot_replaces_sources_and_preserves_previous_copy_on_failure(self):
         (

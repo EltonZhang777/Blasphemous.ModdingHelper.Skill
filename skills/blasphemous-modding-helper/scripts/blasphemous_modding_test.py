@@ -2458,11 +2458,24 @@ def capture_test_log_snapshot(
                 f"Session {session_id} is not in an exited state; snapshot capture requires the tracked process tree to be exited.",
             )
 
-    unity_path, unity_warning = resolve_unity_log_path(
-        preferences,
-        environment,
-        explicit_directory=explicit_unity_log_dir,
+    selected_log_sources = process_value.get("log_sources")
+    if not isinstance(selected_log_sources, dict):
+        selected_log_sources = {}
+    selected_bepinex = selected_log_sources.get("bepinex")
+    bepinex_path = (
+        Path(str(selected_bepinex))
+        if isinstance(selected_bepinex, str) and selected_bepinex.strip()
+        else profile.bepinex_root / "LogOutput.log"
     )
+    selected_unity = selected_log_sources.get("unity")
+    if isinstance(selected_unity, str) and selected_unity.strip():
+        unity_path, unity_warning = Path(selected_unity), None
+    else:
+        unity_path, unity_warning = resolve_unity_log_path(
+            preferences,
+            environment,
+            explicit_directory=explicit_unity_log_dir,
+        )
     snapshot_path = state_path.parent / "snapshots"
     previous_snapshot = manifest.get("snapshot")
     previous_sources = (
@@ -2474,7 +2487,7 @@ def capture_test_log_snapshot(
         previous_sources = {}
 
     source_specs = (
-        ("bepinex", profile.bepinex_root / "LogOutput.log", None, "bepinex.log"),
+        ("bepinex", bepinex_path, None, "bepinex.log"),
         ("unity", unity_path, unity_warning, "unity.log"),
     )
     captured_at = datetime.now(timezone.utc).isoformat()
@@ -2865,6 +2878,12 @@ def launch_session(
         log_paths
         or (profile.bepinex_root / "LogOutput.log",)
     )
+    selected_log_sources = None
+    if len(tracked_log_paths) > 1:
+        selected_log_sources = {
+            "bepinex": str(Path(tracked_log_paths[0]).resolve(strict=False)),
+            "unity": str(Path(tracked_log_paths[1]).resolve(strict=False)),
+        }
     started_at_epoch_ns = time.time_ns()
     log_baseline = _capture_log_baselines(tracked_log_paths)
     try:
@@ -3030,6 +3049,8 @@ def launch_session(
             for child in tracked_children
         ],
     }
+    if selected_log_sources is not None:
+        process_state["log_sources"] = selected_log_sources
     try:
         _update_process_state(deployment.state_path, process_state)
         _update_evidence_state(
