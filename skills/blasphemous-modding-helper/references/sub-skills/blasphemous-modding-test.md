@@ -9,10 +9,15 @@ The branch documents own their workflows. The shared entry MUST NOT duplicate th
 
 ## Shared entry conditions
 
-1. Agent MUST complete the shared [Invocation preflight](../config/invocation-preflight.md) before choosing a test branch.
+1. Agent MUST classify the request through this entry before choosing a test branch. Real-profile and other Skill-owned operations MUST complete the shared [Invocation preflight](../config/invocation-preflight.md); caller-owned Automated xUnit classification and execution do not wait for that gate.
 2. Agent MUST identify whether the request needs a real or mirror **Modding profile**, a game process, runtime startup, BepInEx or Unity logs, actual Unity lifecycle or scene state, or player actions.
 3. Agent MUST preserve the distinction between caller Mod repositories, the Skill repository, Mod-owned code, generated output, and external game artifacts.
 4. Agent MUST keep automated evidence separate from **Manual verification**. A test runner result or startup log is not a player observation.
+
+Classification happens before branch-specific gates. A caller-owned Automated
+xUnit request does not invoke Skill scripts or require the Skill's configuration
+or Python runtime; the Real-profile branch owns its own preflight and profile
+requirements.
 
 ## Route decision table
 

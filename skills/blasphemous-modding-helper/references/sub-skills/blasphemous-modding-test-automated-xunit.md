@@ -11,9 +11,9 @@ Automated xUnit tests:
 - MAY use mocks, stubs, and other test doubles; a simulated dependency does not become real-game evidence.
 - MUST NOT claim that a passing test, startup log, `mod_loaded`, or any other automated result proves gameplay behavior.
 
-After the shared preflight succeeds, Automated xUnit MUST NOT require
-`modding_profile_path`, a game executable, or any Real-profile gate. Missing
-profile-only fields do not block this route.
+Automated xUnit does not require `config.yml`, the Skill Python runtime,
+`modding_profile_path`, a launcher, Unity logs, BepInEx, a game process, or any
+Real-profile gate. Missing profile-only fields do not block this route.
 
 If a test needs actual Unity lifecycle, scene state, BepInEx startup, a game process, a Modding profile, runtime logs, or player interaction, route it to the [Real-profile branch](blasphemous-modding-test-real-profile.md).
 
@@ -43,7 +43,18 @@ These shapes are contrasting prior art, not templates for repository-wide restru
 
 ## Execution and evidence
 
-Run the repository's normal .NET test command for the selected `<ModRepoName>.Tests` project and report its runner result as Automated xUnit evidence. Agent MUST NOT build, deploy, launch, inspect startup logs, stop a game process, clean a profile, or collect player **Manual verification** in this branch.
+The standard command is `dotnet test <ModRepoName>.Tests`; it may compile the
+test project as part of the standard test runner. A wrapper is valid only when
+it delegates to the standard xUnit runner. `dotnet run`, a hand-written runner,
+the Real-profile CLI, and a Test Mod MUST NOT silently replace xUnit.
+
+Framework or command conflicts return `blocked` or `ambiguous`; the agent MUST
+NOT silently switch runners. Evidence records the selected project, runner
+output, test result, and exit status. The report status is exactly `passed`,
+`failed`, or `blocked`, and states that xUnit is not gameplay proof.
+
+Agent MUST NOT build, deploy, launch, inspect startup logs, stop a game process,
+clean a profile, or collect player **Manual verification** in this branch.
 
 For an explicit two-branch request, complete this branch first when it is available, then hand off to the [Real-profile branch](blasphemous-modding-test-real-profile.md). Keep the two phase results and their next actions separate.
 

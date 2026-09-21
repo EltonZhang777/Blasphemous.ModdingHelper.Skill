@@ -75,6 +75,12 @@ class ModTestRoutingDocumentationTests(unittest.TestCase):
             )
         )
 
+    def test_shared_entry_leaves_xunit_free_of_real_profile_gate(self):
+        text = read(SHARED).casefold()
+
+        self.assertIn("caller-owned automated xunit", text)
+        self.assertIn("before branch-specific gates", text)
+
     def test_shared_entry_keeps_ambiguity_and_evidence_separate(self):
         text = read(SHARED).casefold()
 
@@ -115,8 +121,26 @@ class ModTestRoutingDocumentationTests(unittest.TestCase):
             "must not build, deploy, launch",
             "not a deployable game plugin",
             "test mod",
-            "must not require",
+            "does not require",
             "modding_profile_path",
+            "config.yml",
+            "python",
+            "launcher",
+            "unity logs",
+            "bepinex",
+            "game process",
+            "dotnet test",
+            "may compile the",
+            "dotnet run",
+            "hand-written runner",
+            "real-profile cli",
+            "delegates to the standard xunit runner",
+            "passed",
+            "failed",
+            "blocked",
+            "runner",
+            "exit status",
+            "not gameplay proof",
         ):
             self.assertIn(phrase, text)
 
