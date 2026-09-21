@@ -18,6 +18,7 @@ sys.path.insert(0, str(SCRIPT_ROOT))
 from blasphemous_modding_helper.preferences import (  # noqa: E402
     parse_preferences,
     read_skill_version,
+    PreferenceValidationError,
     validate_preferences,
 )
 
@@ -268,6 +269,18 @@ class PreferencesValidationTests(unittest.TestCase):
         fields = self.fields(result)
         self.assertEqual(fields["PREFERENCES_SCOPE"], "project")
         self.assertIn(str(self.config), fields["PREFERENCES_FILE"])
+
+    def test_validation_failure_retains_the_selected_scope(self):
+        self.write_config("check_period_days: 0\n")
+        user_config = self.home / ".skills" / "blasphemous-modding-helper" / "config.yml"
+        user_config.parent.mkdir(parents=True, exist_ok=True)
+        user_config.write_text("modding_profile_path: user-profile\n", encoding="utf-8")
+
+        with self.assertRaises(PreferenceValidationError) as failure:
+            validate_preferences(cwd=self.root, home=self.home)
+
+        self.assertEqual(failure.exception.location.scope, "project")
+        self.assertEqual(failure.exception.location.path, self.config.resolve())
 
 
 if __name__ == "__main__":

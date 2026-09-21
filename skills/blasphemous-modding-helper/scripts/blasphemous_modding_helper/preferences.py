@@ -52,6 +52,14 @@ class PreferenceError(Exception):
 class PreferenceValidationError(PreferenceError):
     """A configuration that requires first-time setup recovery."""
 
+    def __init__(
+        self,
+        message: str,
+        location: Optional["PreferenceLocation"] = None,
+    ):
+        super().__init__(message)
+        self.location = location
+
 
 if yaml is not None:
     class _UniqueKeyLoader(yaml.SafeLoader):
@@ -425,10 +433,20 @@ def validate_preferences(
             "No config.yml found. Complete first-time setup before continuing."
         )
     if not location.path.is_file():
-        raise PreferenceValidationError(f"Configuration path is not a file: {location.path}")
-    _, text, values = _read_config(location.path)
-    current_version = read_skill_version(version_path)
-    period_days, period_needs_write = _normalize_check_period(values)
+        raise PreferenceValidationError(
+            f"Configuration path is not a file: {location.path}",
+            location,
+        )
+    try:
+        _, text, values = _read_config(location.path)
+        current_version = read_skill_version(version_path)
+        period_days, period_needs_write = _normalize_check_period(values)
+    except PreferenceValidationError as error:
+        if error.location is not None:
+            raise
+        raise PreferenceValidationError(str(error), location) from error
+    except PreferenceError as error:
+        raise PreferenceValidationError(str(error), location) from error
     period_missing = _CHECK_PERIOD_FIELD not in values
     current_time = _utc_now(now)
     trigger = _validation_trigger(
