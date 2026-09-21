@@ -8,12 +8,16 @@ The Coding Standards router activates this guide when the Caller Mod repository 
 
 When a project already has stable or feature-oriented structure and the user has not asked for organization, the ordinary Mod task keeps its existing route and receives no unsolicited layout rewrite. When the user explicitly asks for organization, this guide activates for the decision, but the established structure still takes precedence.
 
-When this guide is active, report the route result with:
+The agent MUST report every architecture placement decision with this route-result contract:
 
-1. The reason the guide activated or stayed inactive.
-2. The existing structure that was preserved, if any.
-3. The new file's primary responsibility.
-4. The proposed directory and namespace.
+| Field | Required result |
+| --- | --- |
+| Activation status | State `activated` for an unstructured repository or an explicit organization request; state `inactive` for ordinary work in an established architecture. |
+| Activation reason | Explain the request signal that activated the guide, or why the established architecture kept the guide inactive. |
+| Preserved boundary | Name the existing directory, namespace, module, or feature boundary that remains authoritative, or state that none was identified. |
+| Primary responsibility | Name the one responsibility that determines placement; for an inactive route, state that the architecture guide did not assign it. |
+| Suggested directory | Give the new directory or state that the established path is preserved. |
+| Suggested namespace | Mirror the suggested directory by default, or name the established namespace exception. |
 
 ## Scope and precedence
 

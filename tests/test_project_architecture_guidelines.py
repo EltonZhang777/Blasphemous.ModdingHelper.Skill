@@ -49,6 +49,30 @@ class ProjectArchitectureDocumentationTests(unittest.TestCase):
             self.assertIn(target, route_text)
         self.assertIn("scope gate", route_text)
 
+    def test_route_contract_covers_activation_scope_and_result(self):
+        router = ROUTER.read_text(encoding="utf-8").casefold()
+        guide = GUIDE.read_text(encoding="utf-8").casefold()
+
+        for phrase in (
+            "no established directory, namespace, module, or feature boundaries",
+            "explicitly asks how to organize or place new files or directories",
+            "ordinary request in a project with established or feature-oriented structure",
+            "must not impose the default role categories",
+        ):
+            self.assertIn(phrase, router)
+        for phrase in (
+            "new files and directories in mod-owned code",
+            "decompiled game code, dependency code, upstream code, generated output, and build output",
+            "must not move, rename, or restructure existing files",
+            "activation status",
+            "activation reason",
+            "preserved boundary",
+            "primary responsibility",
+            "suggested directory",
+            "suggested namespace",
+        ):
+            self.assertIn(phrase, guide)
+
     def test_guide_covers_categories_and_primary_responsibility(self):
         guide = GUIDE.read_text(encoding="utf-8")
         categories = {
