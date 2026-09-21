@@ -53,7 +53,7 @@ The project root is limited to entrypoints, startup orchestration, and project-l
 | Events | Event definitions, handlers, and subscription orchestration | Event consumers and event ownership belong here; the Patch bridge that emits an event remains in Patches. |
 | Commands | Mod console command classes and command-specific behavior | Command concerns stay separate from general components and services. |
 
-The guide MUST NOT prescribe generic Utils, Helpers, or Managers buckets. A new semantic category is justified only when a stable responsibility does not fit the existing categories; the proposal MUST name that responsibility and explain why the existing categories are insufficient.
+The guide MUST NOT prescribe generic Utils, Helpers, or Managers buckets. A new semantic category is justified only when a stable responsibility and a documented gap show that the existing categories are insufficient; the proposal MUST name the responsibility, document the gap, and explain why the existing categories do not fit.
 
 ## Existing naming and structure
 

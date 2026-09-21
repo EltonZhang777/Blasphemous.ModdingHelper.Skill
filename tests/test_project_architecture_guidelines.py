@@ -103,6 +103,23 @@ class ProjectArchitectureDocumentationTests(unittest.TestCase):
         ):
             self.assertIn(phrase, guide_lower)
 
+    def test_guide_covers_placement_precedence_and_category_boundaries(self):
+        guide = GUIDE.read_text(encoding="utf-8").casefold()
+
+        for phrase in (
+            "project root is limited to entrypoints, startup orchestration, and project-level public types",
+            "configuration, serialized settings, and persistence data models",
+            "reusable mod-owned runtime or domain objects, state, registries",
+            "extension methods and support types tightly coupled",
+            "mod console command classes and command-specific behavior",
+            "established feature-oriented structure takes precedence",
+            "must not move, rename, or restructure existing files",
+            "generic utils, helpers, or managers buckets",
+            "documented gap",
+            "does not redefine naming, compiler compatibility, lifecycle behavior, patch target resolution, or patch discovery",
+        ):
+            self.assertIn(phrase, guide)
+
     def test_guide_preserves_existing_structure_and_boundaries(self):
         guide = GUIDE.read_text(encoding="utf-8").casefold()
 
