@@ -108,6 +108,27 @@ class ModTestRoutingDocumentationTests(unittest.TestCase):
         ):
             self.assertIn(phrase, text)
 
+    def test_shared_entry_defines_both_phase_and_report_contract(self):
+        text = read(SHARED).casefold()
+
+        for phrase in (
+            "xunit phase first",
+            "real-profile phase second",
+            "does not wait for real-profile configuration",
+            "own branch gate independently",
+            "independent commands",
+            "independent evidence",
+            "independent statuses",
+            "does not fabricate",
+            "both is complete only after",
+            "all required phases complete",
+            "ambiguous requests execute no",
+            "per-phase command",
+            "blocked reason",
+            "next action",
+        ):
+            self.assertIn(phrase, text)
+
     def test_automated_branch_defines_xunit_consumer_boundary(self):
         text = read(AUTOMATED).casefold()
 

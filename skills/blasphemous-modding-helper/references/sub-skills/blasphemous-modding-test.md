@@ -35,6 +35,22 @@ The agent MUST return exactly one route result: `Real-profile`, `xUnit`, `both`,
 branch command until the user clarifies the required runtime conditions and
 evidence.
 
+## Both-phase and final report contract
+
+For a `both` result, the xUnit phase first runs; the Real-profile phase second
+runs. The xUnit phase does not wait for Real-profile configuration; the
+Real-profile phase runs its own branch gate independently.
+
+Each phase records independent commands, independent evidence, and independent statuses.
+A failure or block in one phase does not fabricate the other phase
+result. Both is complete only after all required phases complete.
+
+Conflicting environment or evidence requirements return `ambiguous` or
+`unresolved`. Ambiguous requests execute no test or profile command. The final
+report includes route, per-phase command, evidence, status, blocked reason, and
+next action; Automated, startup, and **Manual verification** evidence remain
+separate.
+
 Test doubles, mocks, and stubs remain compatible with the Automated xUnit route when the test does not require the real game process, profile, lifecycle, or player. A test that needs those runtime conditions belongs to the Real-profile route even when it references Unity or game-facing types.
 
 ## Common evidence and safety rules
