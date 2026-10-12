@@ -62,6 +62,8 @@ Agent MUST complete the shared entry gate before selecting an operational specia
 
 Agent MUST apply the Request routing rules above and route every applicable branch to its owning reference before gathering evidence.
 
+Where useful to clarify the request, agent SHOULD identify the desired observable outcome and evidence relevant to the selected route, especially for Mod feature requests with a visible or persistent result. Route-specific completion criteria and evidence boundaries remain authoritative.
+
 **Done when**: user question is classified into one or more applicable branches (localization lookup, source code analysis, log analysis, mod testing, or general modding question), and every applicable specialized branch has been routed to its authoritative workflow reference or analysis task.
 
 ### Step 3: Use Tools to Gather Information
