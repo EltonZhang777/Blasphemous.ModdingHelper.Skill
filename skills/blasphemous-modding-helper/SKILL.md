@@ -82,6 +82,8 @@ Tools' `.md` files SHOULD contain all path specifications required for task. Age
 
 Agent MUST use gathered information to solve user question.
 
+If repeating the same approach yields no new evidence, Agent MUST pause, summarize what was checked and learned, identify remaining unknowns, then change approach or request the specific user action or information needed to proceed.
+
 **Done when**: answer is complete and agent has verified every source-code class, file path, and log location cited in answer against actual files.
 
 ### Step 5: Path Failure Recovery
