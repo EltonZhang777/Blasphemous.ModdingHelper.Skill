@@ -36,7 +36,7 @@ The main agent MUST retain ownership of route selection, entry-gate decisions, c
 
 ## Child task boundaries
 
-A child task MUST read only within the parent-provided scope and MUST treat the shared workspace as read-only. It MUST NOT create a worktree or branch, modify repository or caller files, change configuration, write logs or generated data, change the selected authority or evidence mode, or write to an external service.
+A child task MUST read only within the parent-provided scope and MUST treat the shared workspace as read-only. It MUST NOT create a worktree or branch, modify repository or caller files, change configuration, write logs or generated data, change the selected authority or evidence mode, or write to an external service. Every child task MUST NOT modify any source tree, source file, or game-code copy, whether inside or outside the shared workspace; this includes every path named in `references/config/first-time-setup.md`: `lightweight_source_code_path` (including decompiler output at `<skill-root>/source_code/`), optional `full_source_code_path`, and the Steam game installation used for source acquisition.
 
 A child task MUST NOT broaden the question, change the route or resolved scope, make a decision for the user, contact the user for clarification, publish results, or create another child task. If the provided scope is insufficient or a source is missing or unreadable, it MUST return the exact gap and the question or recovery action for the main agent; it MUST NOT guess or silently switch sources or modes.
 

@@ -110,6 +110,10 @@ class DocumentationConsistencyTests(unittest.TestCase):
             "shared workspace as read-only",
             "must not create a worktree or branch",
             "modify repository or caller files",
+            "must not modify any source tree, source file, or game-code copy",
+            "whether inside or outside the shared workspace",
+            "every path named in",
+            "references/config/first-time-setup.md",
             "main agent must retain ownership",
             "configuration and reference lifecycle changes",
             "code or document edits",
@@ -121,6 +125,16 @@ class DocumentationConsistencyTests(unittest.TestCase):
             "this contract does not require a particular model, harness, ide, shell, provider, or vendor api",
         ):
             self.assertIn(phrase, contract)
+
+        setup = normalized(SKILL_ROOT / "references/config/first-time-setup.md")
+        for source_copy in (
+            "lightweight_source_code_path",
+            "full_source_code_path",
+            "<skill-root>/source_code/",
+            "steam game installation",
+        ):
+            self.assertIn(source_copy, setup)
+            self.assertIn(source_copy, contract)
 
     def test_delegation_branches_preserve_their_evidence_boundaries(self):
         source = normalized(SKILL_ROOT / DELEGATION_ROUTES[0][0])
