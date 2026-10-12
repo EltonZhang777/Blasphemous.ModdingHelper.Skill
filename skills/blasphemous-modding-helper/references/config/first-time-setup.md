@@ -108,7 +108,7 @@ options:
     description: "I already have decompiled source code, I will provide paths"
 ```
 
-- When user selects **No**, that choice authorizes source acquisition. Before running the script, agent MUST show the resolved Steam game installation path, the `Assembly-CSharp.dll` and `Assembly-CSharp-firstpass.dll` files that will be removed, the Steam restoration step, the output path, and the required Steam, .NET, and `ilspycmd` tools.
+- When user selects **No**, that choice authorizes source acquisition. Before running the script, agent MUST show the resolved Steam game installation path, the `Assembly-CSharp.dll` and `Assembly-CSharp-firstpass.dll` files that will be removed, the Steam restoration step, the output path, and the required Steam, .NET, and `ilspycmd` tools (see [Dependencies](invocation-preflight.md#dependencies) for `ilspycmd` scope and missing-tool handling).
   - The Steam game installation MUST be resolved separately from `modding_profile_path`; the decompile branch MUST NOT substitute the Modding profile as its source-acquisition path.
   - Agent MUST validate the selected game path before the destructive step and stop when the path or required tools are invalid.
   - Agent MUST then run the decompile script synchronously:
@@ -175,7 +175,7 @@ options:
     description: "Leave local reference fields absent and use the release-aware remote fallback"
 ```
 
-If user selects **Yes**, agent MUST use same scope selected in Q1.
+If user selects **Yes**, agent MUST use same scope selected in Q1. See [Dependencies](invocation-preflight.md#dependencies) for Git's scope and missing-dependency handling for this optional checkout.
 Agent MUST NOT select independent reference scope: agent MUST keep
 local reference and its configuration in same scope domain. approved paths are authoritative in
 [the config schema](preferences-schema.md#approved-local-reference-locations).

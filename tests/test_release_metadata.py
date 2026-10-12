@@ -27,7 +27,7 @@ ROUTED_REFERENCES = {
 
 
 class ReleaseMetadataTests(unittest.TestCase):
-    def test_public_manifests_share_the_version_source(self):
+    def test_public_manifests_and_dependency_inventory_match_sources(self):
         self.assertTrue(VERSION_SOURCE.is_file())
         self.assertFalse(
             (REPOSITORY_ROOT / "ci" / "update-version" / "version.yml").exists()
@@ -35,7 +35,44 @@ class ReleaseMetadataTests(unittest.TestCase):
         requirements = (
             REPOSITORY_ROOT / "skills" / "blasphemous-modding-helper" / "requirements.txt"
         ).read_text(encoding="utf-8")
+        preflight = (
+            REPOSITORY_ROOT
+            / "skills"
+            / "blasphemous-modding-helper"
+            / "references"
+            / "config"
+            / "invocation-preflight.md"
+        ).read_text(encoding="utf-8")
+        dependencies_match = re.search(
+            r"(?ms)^## Dependencies\s*\n(.*?)(?=^## |\Z)", preflight
+        )
+        self.assertIsNotNone(dependencies_match)
+        dependencies = dependencies_match.group(1)
+        dependency_rows = [
+            [cell.strip() for cell in line.strip("|").split("|")]
+            for line in dependencies.splitlines()
+            if line.startswith("| ")
+            and not line.startswith(("| Dependency |", "| --- |"))
+        ]
+        self.assertEqual(
+            {row[0] for row in dependency_rows},
+            {"`PyYAML>=6.0`", "`ilspycmd`", "BepInEx", "ModdingAPI", "Git"},
+        )
+        expected_columns = {
+            "`PyYAML>=6.0`": 4,
+            "`ilspycmd`": 3,
+            "BepInEx": 3,
+            "ModdingAPI": 3,
+            "Git": 3,
+        }
+        for row in dependency_rows:
+            self.assertEqual(len(row), expected_columns[row[0]], row[0])
+            self.assertTrue(all(row[1:]), row[0])
+        self.assertNotRegex(dependencies, r"(?m)^\| \x60?(?:Python|Steam|\.NET)\x60?(?:\s|\|)")
         self.assertRegex(requirements, r"(?m)^\s*PyYAML\s*>=\s*6\.0\s*(?:#.*)?$")
+        declared_packages = re.findall(r"(?m)^\s*([A-Za-z][A-Za-z0-9_.-]*)", requirements)
+        self.assertEqual([name.casefold() for name in declared_packages], ["pyyaml"])
+        self.assertIn("`PyYAML>=6.0`", dependencies)
         version_text = VERSION_SOURCE.read_text(encoding="utf-8")
         version = re.search(r"^version:\s*([^\s#]+)\s*$", version_text, re.MULTILINE)
         self.assertIsNotNone(version)
@@ -51,6 +88,10 @@ class ReleaseMetadataTests(unittest.TestCase):
             with self.subTest(manifest=manifest_path.name):
                 manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
                 self.assertEqual(manifest["version"], expected)
+                if manifest_path.name == "package.json":
+                    self.assertEqual(manifest["engines"]["node"], ">=18")
+                    self.assertIn("Node.js `>=18`", dependencies)
+                    self.assertIn("installation-time requirement", dependencies.casefold())
                 if manifest_path.name == "skills-lock.json":
                     self.assertEqual(manifest["skills"]["blasphemous-modding-helper"]["version"], expected)
                     for entry in manifest["references"].values():

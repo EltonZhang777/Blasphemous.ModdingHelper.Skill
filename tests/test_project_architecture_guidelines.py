@@ -7,7 +7,7 @@ SKILL_ROOT = (
     / "skills"
     / "blasphemous-modding-helper"
 )
-CONTEXT = Path(__file__).resolve().parents[1] / "CONTEXT.md"
+GLOSSARY = Path(__file__).resolve().parents[1] / "GLOSSARY.md"
 ROUTER = SKILL_ROOT / "references" / "sub-skills" / "coding-standards.md"
 HARMONY = (
     SKILL_ROOT
@@ -166,7 +166,7 @@ class ProjectArchitectureDocumentationTests(unittest.TestCase):
             self.assertIn(phrase, harmony)
 
     def test_final_architecture_terminology_is_reusable(self):
-        context = CONTEXT.read_text(encoding="utf-8").casefold()
+        context = GLOSSARY.read_text(encoding="utf-8").casefold()
         guide = GUIDE.read_text(encoding="utf-8").casefold()
 
         for term in (

@@ -18,6 +18,8 @@ Before executing command in this reference, agent MUST apply command-context con
 
 Optional fields, normalized-path rule, and approved user/project scope
 locations are defined in the [config schema](../config/preferences-schema.md).
+The [Dependencies](../config/invocation-preflight.md#dependencies) section summarizes when this reference applies and the absent-local-checkout fallback.
+
 Explicit local-checkout setup flow is in
 [first-time-setup.md#q6-local-moddingapi-reference](../config/first-time-setup.md#q6-local-moddingapi-reference).
 

@@ -96,9 +96,9 @@ Prompt the AI in natural language with clear objectives.
 ## 📋 Requirements
 
 - Any AI coding tool that supports skills (Claude Code, Gemini CLI, Codex CLI, Cursor, etc.)
-- Python 3.9 or newer for cross-platform Skill scripts; setup does not install Python packages automatically
-- A decompiled C# solution of Blasphemous' source code
-- A modded Blasphemous profile with BepInEx and ModdingAPI installed (use the [Mod Installer](https://github.com/BrandenEK/Blasphemous.Modding.Installer) for easy management)
+- Python 3.9 or newer for cross-platform Skill scripts
+- See [Dependencies](skills/blasphemous-modding-helper/references/config/invocation-preflight.md#dependencies) for the post-install package and conditional workflow dependencies
+- Use the [Mod Installer](https://github.com/BrandenEK/Blasphemous.Modding.Installer) to manage game profiles when needed
 
 ---
 

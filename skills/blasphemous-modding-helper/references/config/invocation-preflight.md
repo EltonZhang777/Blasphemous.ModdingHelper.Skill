@@ -91,6 +91,31 @@ When check finds no file, agent MUST enter [First-Time Setup](first-time-setup.m
 
 After this contract completes, agent MUST return to top-level Skill's workflow. top-level document selects applicable source, log, mod-test, or general-modding branch; each branch then adds only its own path, environment, or evidence requirements.
 
+## Dependencies
+
+The entries below record the declared post-install package and dependencies that apply only to specific workflows, including their current scope and missing-dependency handling.
+
+### Post-install package
+
+| Dependency | Scope | Declaration and check | Missing dependency behavior |
+| --- | --- | --- | --- |
+| `PyYAML>=6.0` | Python workflows that load `config.yml` through the shared configuration gate. The read-only localization route and caller-owned Automated xUnit branch are exceptions. | Declared in [`requirements.txt`](../../requirements.txt) and validated by the [Python Runtime](python-runtime.md) gate. | Missing or incompatible packages produce configuration exit code `78` with a stable diagnostic and manual repair action. The gate never installs or upgrades Python packages. |
+
+### Conditional workflow dependencies
+
+| Dependency | Applies to | Existing handling when missing or unavailable |
+| --- | --- | --- |
+| `ilspycmd` | Automatic source decompilation during First-Time Setup. | The existing decompiler searches `PATH` and the .NET global-tools directory, then runs `dotnet tool install --global ilspycmd` when the tool is absent. If installation fails or the executable remains unavailable, it returns a `decompile/tools` diagnostic with a manual install or `PATH` recovery action. |
+| BepInEx | Real-profile Mod Test and workflows that inspect BepInEx logs. | Real-profile preflight requires `BepInEx/core/BepInEx.dll`; absence is a profile/configuration failure (exit code `10`). A missing or unreadable current BepInEx log, or a startup timeout, is a logs/readiness failure (exit code `60`); a missing Unity log instead warns and requires user handoff. See [Real-profile testing](../sub-skills/blasphemous-modding-test-real-profile.md) for preflight behavior and [Log Analyzer](../sub-skills/log-analyzer.md) for source precedence and recovery. |
+| ModdingAPI | Mod projects that use the framework, or tasks that need its API documentation/source. It is not a package required by every Skill workflow. | A local reference checkout is optional. If its configuration fields are absent, the [ModdingAPI reference route](../sub-skills/referencing-modding-api.md) uses the release-aware remote fallback; a failed resolution reports its recovery diagnostic. |
+| Git | Optional local ModdingAPI checkout, or resolving an explicit `tag:` or `branch:` selector. | Missing Git during explicit tag/branch resolution returns a runtime diagnostic suggesting Git installation or an exact commit selector. Local clone/update failures return a runtime diagnostic to check Git installation, network access, selector, and target path. |
+
+### Installation-time requirement
+
+Node.js `>=18` is required only to run the package installer, including `bin/install.js`. If it is unavailable, the agent MUST follow the [manual install flow](https://github.com/EltonZhang777/Blasphemous.ModdingHelper.Skill/blob/main/README.md#manual-install). Node.js is not a post-install Skill runtime requirement.
+
+The `ilspycmd` global-tool installation above is existing decompiler behavior; this inventory adds no installer or runtime behavior.
+
 ## Completion criteria
 
 Shared preflight is complete only when all applicable conditions below hold:
