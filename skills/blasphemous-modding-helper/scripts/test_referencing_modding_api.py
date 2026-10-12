@@ -340,7 +340,10 @@ def run_documentation_smoke() -> None:
         "references/config/invocation-preflight.md",
         "top-level Skill",
     )
-    if top_level.count("references/config/invocation-preflight.md") != 1:
+    shared_gate_heading = "## Shared entry gate"
+    assert_contains(top_level, shared_gate_heading, "top-level Skill")
+    shared_gate = top_level.split(shared_gate_heading, 1)[1].split("\n## ", 1)[0]
+    if shared_gate.count("references/config/invocation-preflight.md") != 1:
         raise DocumentationTestFailure(
             "top-level Skill must expose one shared preflight entry pointer"
         )
