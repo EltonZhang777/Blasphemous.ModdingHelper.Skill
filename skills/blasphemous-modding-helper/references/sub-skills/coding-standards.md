@@ -30,6 +30,16 @@ This router applies only to code that Mod author can maintain in root of Caller 
 
 When request directly copies code from excluded source, agent MUST preserve direct copy as-is. Mechanical namespace or path changes MAY be made when they are required for compilation. If copied code receives substantive new behavior or structural rewrite, new or changed code MUST follow selected standards.
 
+## Mod-owned game API access
+
+For Mod-owned code only:
+
+- The original game source cannot be redistributed directly for copyright reasons.
+- Blasphemous.GameLibs makes members public, while many members in the original source are not public.
+- Some references may compile but fail at runtime with `Access Denied` or inaccessible errors.
+- Use of the original game API MUST follow access levels in the original source.
+- Non-public members MUST be accessed using Harmony.
+
 ## Route C# and runtime Unity tasks
 
 C# task includes generating, modifying, reviewing, or refactoring Mod-owned C#; it also includes runtime `MonoBehaviour` work even when request is described as Unity task. For every applicable C# task, agent MUST read [C# and runtime Unity standards](../coding-standards/coding-standards-csharp-unity.md).

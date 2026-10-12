@@ -10,6 +10,8 @@ When task directly copies excluded code, agent MUST preserve that direct copy as
 
 ## Compatibility and authority
 
+The canonical guidance for Mod-owned game API access is in the [Mod-owned game API access reminder](../sub-skills/coding-standards.md#mod-owned-game-api-access).
+
 Caller's actual compiler target, project references, and referenced game or ModdingAPI assemblies MUST determine whether syntax, BCL APIs, Unity APIs, and member signatures are legal. Unity `2017.4.40f1` baseline and this reference provide defaults; they MUST NOT override verified project or API constraint.
 
 Agent MUST inspect narrowest authoritative source for compatibility question:
