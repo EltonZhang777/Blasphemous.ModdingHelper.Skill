@@ -16,7 +16,7 @@ logs, and session state. It does not modify a real game profile or claim
 gameplay verification. The broader maintainer gate is:
 
 ```text
-<python3> skills/blasphemous-modding-helper/scripts/test_modding_api_acceptance.py
+<python3> tests/test_modding_api_acceptance.py
 ```
 
 These commands verify functionality without requiring a clean worktree. Append
@@ -67,7 +67,7 @@ Repository runner:
 Maintainer acceptance runner:
 
 ```text
-<python3> skills/blasphemous-modding-helper/scripts/test_modding_api_acceptance.py
+<python3> tests/test_modding_api_acceptance.py
 ```
 
 Both runners accept an explicit Python 3 executable through `--python`; the

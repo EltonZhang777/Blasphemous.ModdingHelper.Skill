@@ -223,15 +223,17 @@ identical resolver fields, exit codes, and fixture checks.
 
 ## Cross-platform acceptance gate
 
-Agent MUST run the deterministic Python acceptance gate before publishing
-changes to the reference workflow:
+Maintainers MUST run this repository-only deterministic Python acceptance gate
+from the root of the `Blasphemous.ModdingHelper.Skill` checkout before
+publishing changes to this reference workflow. Caller Mod repositories MUST NOT
+be required to contain or run these repository-only scripts:
 
 ```bash
-"$PYTHON3" "$SKILL_ROOT/scripts/test_modding_api_acceptance.py"
+"$PYTHON3" "tests/test_modding_api_acceptance.py"
 ```
 
 ```powershell
-& $PYTHON3 (Join-Path $SkillRoot 'scripts\test_modding_api_acceptance.py')
+& $PYTHON3 'tests\test_modding_api_acceptance.py'
 ```
 
 Gate runs resolver, clone, lifecycle, and documentation suites through the
@@ -247,24 +249,25 @@ checkout.
 Final verification invocation may require a clean worktree:
 
 ```bash
-"$PYTHON3" "$SKILL_ROOT/scripts/test_modding_api_acceptance.py" --require-clean
+"$PYTHON3" "tests/test_modding_api_acceptance.py" --require-clean
 ```
 
 ```powershell
-& $PYTHON3 (Join-Path $SkillRoot 'scripts\test_modding_api_acceptance.py') --require-clean
+& $PYTHON3 'tests\test_modding_api_acceptance.py' --require-clean
 ```
 
-Live network check is separate and manual. It resolves the actual latest
-non-draft, non-prerelease Release through the Python entry point, compares the
+Maintainers MAY run the separate, manual repository-only live network check when network access is
+available. When they do, they MUST run it from the Skill repository root. The check resolves the actual
+latest non-draft, non-prerelease Release through the Python entry point, compares the
 resolved tag and commit, and verifies tag-specific documentation and source
 URLs:
 
 ```bash
-"$PYTHON3" "$SKILL_ROOT/scripts/test_modding_api_live.py"
+"$PYTHON3" "tests/test_modding_api_live.py"
 ```
 
 ```powershell
-& $PYTHON3 (Join-Path $SkillRoot 'scripts\test_modding_api_live.py')
+& $PYTHON3 'tests\test_modding_api_live.py'
 ```
 
 Agent MAY run live check only when network access is available. failure MUST NOT be
