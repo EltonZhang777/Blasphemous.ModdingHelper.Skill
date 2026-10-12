@@ -4,6 +4,16 @@ The user-facing activation path is the top-level `blasphemous-modding-helper` Sk
 
 Agent MUST use this read-only branch for a natural-language request to identify, explain, compare, or translate a Blasphemous 1 term, name, UI phrase, or textual reference. Agent MUST NOT require `config.yml`, a Modding profile, a source-code path, or a Python runtime for this branch.
 
+## Read-only lookup delegation
+
+This route follows the shared [Read-only evidence delegation](../read-only-evidence-delegation.md) contract and keeps its configuration-free exception. The main agent owns language and index selection, evidence synthesis, and any decision to escalate to source analysis.
+
+- The main agent MAY delegate a full-language comparison, broad index search, or ambiguous multi-candidate lookup only when its evidence slice is read-only, clearly bounded, independently verifiable, and large enough to justify context isolation. A small targeted lookup SHOULD stay with the main agent.
+- Before delegating, the main agent MUST complete Procedure steps 1–3: identify the instruction and requested languages, select the core or all-language index, and confirm its path, readability, and header. The child task MUST receive the exact question and search terms, the selected index's resolved path and identity (core or all-language), requested language columns, and the resolved path to `references/localization/semantic-aliases.md`; these are its only evidence sources. The child MUST NOT choose a different index or language scope.
+- For every candidate, the child MUST preserve the exact localization key and requested-language TSV values, including tags, placeholders, punctuation, and variants. It MUST report all plausible candidates and ambiguity, and apply the existing semantic-alias matching, context, confidence, and confirmation rules. Alias results MUST preserve the original wording, language, type, relevant context, confidence, note, and evidence keys.
+- The child MUST keep TSV results labeled as `Localization evidence`; localization wording MUST NOT establish runtime behavior, mechanics, values, or code relationships. The child MUST NOT perform or initiate source analysis. If the result needs gameplay evidence or remains an unresolved code-like identifier or explicit source reference, the child MUST return that gap to the main agent, which retains the source-route decision and its preflight.
+- The child handoff MUST satisfy the shared contract with exact keys and values, the selected index and language scope, alias evidence, candidates, ambiguity, and missing evidence. The main agent SHOULD verify reported rows and aliases against those selected authorities before using them.
+
 ## Procedure
 
 1. Agent MUST identify the user's instruction language, requested source language, requested target language, and whether the user asks for a full comparison. Agent MUST use the instruction language for the explanation, keep source values in their original languages, and keep translated output separate from the explanation.

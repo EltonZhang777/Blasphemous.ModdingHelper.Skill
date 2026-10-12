@@ -37,6 +37,16 @@ part of every remote URL and every local-reference decision.
 
 Reference selection is complete when active `config.yml` scope has been read and agent has recorded one resolved route: validated local checkout with its selector/lock state, or release-aware remote resolver output required for browsing.
 
+## Read-only lookup delegation
+
+This route follows the shared [Read-only evidence delegation](../read-only-evidence-delegation.md) contract. The main agent retains command-context and configuration gates, reference selection and lifecycle, evidence synthesis, and any code or source-analysis work.
+
+- The main agent MAY delegate a lookup only when it is read-only, bounded to one clear question and the selected reference pages, independently verifiable, and broad enough to justify context isolation. A small lookup on a known topic page SHOULD stay with the main agent. Reference lifecycle work and code changes MUST stay with the main agent.
+- Before delegation, the main agent MUST complete the command-context and configuration gates above and resolve the selected local checkout or release-aware remote reference. The child task MUST receive the exact question, permitted scope, and selected authority identity: for a remote reference, the selector, resolved release/tag or version, commit, and resolver-provided documentation/source URLs; for a local checkout, its absolute path, configured selector and available lock identity, and checkout HEAD. The child MUST NOT select or resolve another reference.
+- The child MUST begin with that reference's `docs/development/main.md` and follow only linked topic pages directly required by the question. Version-sensitive claims MUST identify the selected reference and the precise page or source location that supports them. When a coding question requires signature or behavior verification, the main agent retains the existing assembly/source check.
+- The child MUST NOT clone, fetch, update, check out, replace, or otherwise manage the selected reference or its lock state. If the supplied authority is missing, unreadable, or insufficient, the child MUST return the exact gap and the next action for the main agent.
+- The child handoff MUST satisfy the shared contract, including concise claim evidence, precise locations, the selected reference identity, and any ambiguity or missing evidence. The main agent SHOULD verify reported claims against the selected authority before using them.
+
 ## Stable API topic routing
 
 Agent MUST use this table as first route for ordinary ModdingAPI work. Agent MUST open the
