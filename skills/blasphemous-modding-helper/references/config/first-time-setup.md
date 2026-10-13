@@ -67,7 +67,10 @@ flowchart TD
     CloneError -->|Complete clone/config; cleanup error| CleanupWarning["Preserve state; report cleanup warning"]
     CleanupWarning --> Validate
     CloneError -->|No committed checkout/config state| PreflightRecovery["Follow next_step; resolve or wait, then recheck"]
-    PreflightRecovery --> RetryChoice{"Retry or Skip?"}
+    PreflightRecovery --> RecheckState{"State after recheck?"}
+    RecheckState -->|Complete checkout, lock, config| Validate
+    RecheckState -->|Partial or uncertain state| Stop
+    RecheckState -->|No committed state| RetryChoice{"Retry or Skip?"}
     RetryChoice -->|Selector| Selector
     RetryChoice -->|Approved path| RetryPath["Ask for approved target path in Q1 scope"]
     RetryPath --> ResolveTarget["Resolve target issue with user; confirm fresh and writable"]
@@ -217,8 +220,8 @@ Validation criteria:
 
 1. Agent MUST display the clone command's terminal error report.
 2. Agent MUST inspect the checkout, sibling lock, and selected `config.yml` before treating the operation as failed. If the report says `clone completed but cleanup failed` and the checkout, lock, and config agree on the selected path and selector, agent MUST preserve that state, continue setup validation, and report the cleanup warning; it MUST NOT retry or remove artifacts automatically.
-3. If rollback failed or the checkout, lock, or config state is incomplete or uncertain, agent MUST stop automatic retry and Skip handling and ask the user to inspect or reconcile the state. Agent MUST NOT manually write, overwrite, or remove reference fields or checkout data.
-4. If no checkout or config state was committed, including a failure before the clone transaction begins or a clean rollback, agent MUST follow the report's `next_step` and recheck state before offering retry or Skip. If another clone may still be running, agent MUST wait for it to finish before checking state; it MUST ask the user to resolve a confirmed stale clone lock and MUST NOT remove it automatically. Only after the issue is resolved and no state is committed, agent MUST ask in ordinary text and in the user's input language whether to retry with a corrected selector, an approved target path, or Skip. Agent MUST request only the correction needed for the retry; for a target path, it MUST follow the path requirements above. Agent SHOULD recommend Retry when the error is correctable; Skip leaves the release-aware remote fallback enabled because no local reference state was committed.
+3. If rollback failed or the checkout, lock, or config state is incomplete or uncertain at any check, agent MUST stop automatic recovery and ask the user to inspect or reconcile the state. Agent MUST NOT manually write, overwrite, or remove reference fields or checkout data.
+4. If no checkout or config state was committed, including a failure before the clone transaction begins or a clean rollback, agent MUST follow the report's `next_step` and recheck state before offering retry or Skip. If another clone may still be running, agent MUST wait for it to finish before checking state. If recheck finds a complete checkout, lock, and config with the selected path and selector, agent MUST preserve that state and continue setup validation; if recheck finds an incomplete or uncertain state, agent MUST follow step 3. Agent MUST ask the user to resolve a confirmed stale clone lock and MUST NOT remove it automatically. Only after the issue is resolved and recheck confirms no committed state, agent MUST ask in ordinary text and in the user's input language whether to retry with a corrected selector, an approved target path, or Skip. Agent MUST request only the correction needed for the retry; for a target path, it MUST follow the path requirements above. Agent SHOULD recommend Retry when the error is correctable; Skip leaves the release-aware remote fallback enabled because no local reference state was committed.
 5. Agent MUST retain Q1-Q5 and all validated paths while retrying or skipping the optional clone.
 
 ## Save Locations
