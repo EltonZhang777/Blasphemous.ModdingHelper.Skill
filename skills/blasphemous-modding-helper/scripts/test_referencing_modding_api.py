@@ -340,9 +340,26 @@ def run_documentation_smoke() -> None:
         "references/config/invocation-preflight.md",
         "top-level Skill",
     )
-    if top_level.count("references/config/invocation-preflight.md") != 1:
+    canonical_preflight_path = "references/config/invocation-preflight.md"
+    preflight_link_targets = {
+        target
+        for label, target in re.findall(r"\[([^\]]+)\]\(([^)]+)\)", top_level)
+        if "preflight" in label.lower() or "invocation-preflight" in target.lower()
+    }
+    shared_gate = re.search(
+        r"(?ms)^## Shared entry gate\s+(.*?)(?=^## |\Z)", top_level
+    )
+    shared_gate_links = (
+        re.findall(r"\[Invocation preflight\]\(([^)]+)\)", shared_gate.group(1))
+        if shared_gate is not None
+        else []
+    )
+    if (
+        preflight_link_targets != {canonical_preflight_path}
+        or shared_gate_links != [canonical_preflight_path]
+    ):
         raise DocumentationTestFailure(
-            "top-level Skill must expose one shared preflight entry pointer"
+            "top-level Skill must keep one canonical preflight entry; route shortcuts must target it"
         )
     assert_not_contains(top_level, "## Skill command context", "top-level Skill")
     assert_not_contains(
