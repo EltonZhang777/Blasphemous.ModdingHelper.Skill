@@ -63,9 +63,16 @@ flowchart TD
     CloneChoice -->|Skip| Validate["Validate all paths"]
     Clone --> CloneResult{"Clone succeeded?"}
     CloneResult -->|Yes| Record["Record normalized path and selector"]
-    CloneResult -->|No| CloneError["Show terminal error; leave local reference fields absent"]
-    CloneError -->|Retry| Selector
-    CloneError -->|Skip| Validate
+    CloneResult -->|No| CloneError["Show terminal error; inspect checkout, lock, and config"]
+    CloneError -->|Complete clone/config; cleanup error| CleanupWarning["Preserve state; report cleanup warning"]
+    CleanupWarning --> Validate
+    CloneError -->|Clean rollback; no state written| RetryChoice{"Retry or Skip?"}
+    RetryChoice -->|Selector| Selector
+    RetryChoice -->|Approved path| RetryPath["Ask for approved target path in Q1 scope"]
+    RetryPath --> ResolveTarget["Resolve target issue with user; confirm fresh and writable"]
+    ResolveTarget --> Clone
+    RetryChoice -->|Skip| Validate
+    CloneError -->|Partial or uncertain state| Stop["Stop automatic retry; ask user to inspect"]
     Record --> Validate
 
     Validate -->|Failure: lightweight| Q3
@@ -177,6 +184,8 @@ Agent MUST run the matching fresh-clone command from the caller's Mod repository
 
 Agent MUST use `--scope project` / `-Scope project` when Q1 selected Project and MUST use User when Q1 selected User. The clone command refuses an existing target, uses shallow history by default, checks out tags and commits detached, creates a tracking branch for explicit branches, writes the normalized absolute path plus selector to the selected `config.yml`, and writes the sibling lock state described in [the config schema](preferences-schema.md#sibling-lock-state). It does not replace an existing checkout.
 
+For a retry that changes the checkout path, agent MUST request the approved local reference path for Q1 from the config schema and MUST NOT use an alternate location. Agent MUST pass it with `--target-path PATH` (`-TargetPath PATH` in PowerShell); `--scope` MUST still match Q1 so the same configuration scope is used. Agent MUST disclose that the command may create missing parent directories but will not replace an existing target or sibling lock, and MUST rerun the existing fresh-target and writable-parent checks. If no valid approved target is available, agent MUST offer Skip or ask the user to resolve the approved target; it MUST NOT bypass the scope rule.
+
 ## Validate User Input
 
 Agent MUST validate whether user-input paths exist and are valid using command-line tools.
@@ -199,16 +208,17 @@ Validation criteria:
 **Script failure handling** (Q2 = No, script exit code != 0):
 
 1. Agent MUST display the script's error output to the user.
-2. Agent MUST ask in ordinary text, using the user's input language: "Decompilation failed. Would you like to provide source paths manually instead?"
+2. Agent MUST ask in ordinary text and in the user's input language whether they want to provide source paths manually or abort setup.
    - **Yes:** Agent SHOULD recommend this when the user can provide an existing source path; agent MUST continue at Q3.
    - **No:** Agent MUST abort setup and instruct the user to resolve the error and retry.
 
 **Local reference failure handling** (Q6 = Yes, clone exit code != 0):
 
 1. Agent MUST display the clone command's terminal error report.
-2. Agent MUST NOT write or update `modding_api_reference_path` or `modding_api_reference_selector`.
-3. Agent MUST ask in ordinary text, using the user's input language, whether to retry with a corrected selector or path, or Skip. Agent SHOULD recommend Retry when the error is correctable; selecting Skip leaves the release-aware remote fallback enabled.
-4. Agent MUST retain Q1-Q5 and all validated paths while retrying or skipping the optional clone.
+2. Agent MUST inspect the checkout, sibling lock, and selected `config.yml` before treating the operation as failed. If the report says `clone completed but cleanup failed` and the checkout, lock, and config agree on the selected path and selector, agent MUST preserve that state, continue setup validation, and report the cleanup warning; it MUST NOT retry or remove artifacts automatically.
+3. If rollback failed or the checkout, lock, or config state is incomplete or uncertain, agent MUST stop automatic retry and Skip handling and ask the user to inspect or reconcile the state. Agent MUST NOT manually write, overwrite, or remove reference fields or checkout data.
+4. Only after a clean rollback with no committed checkout/config state, agent MUST ask in ordinary text and in the user's input language whether to retry with a corrected selector, an approved target path, or Skip. Agent MUST request only the correction needed for the retry; for a target path, it MUST follow the path requirements above. Agent SHOULD recommend Retry when the error is correctable; Skip leaves the release-aware remote fallback enabled because no local reference state was committed.
+5. Agent MUST retain Q1-Q5 and all validated paths while retrying or skipping the optional clone.
 
 ## Save Locations
 
