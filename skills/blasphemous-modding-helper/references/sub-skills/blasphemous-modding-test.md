@@ -41,10 +41,10 @@ requirements.
 
 | Signal / condition | Destination | Boundary / next action |
 | --- | --- | --- |
-| Needs a real or mirror Modding profile, game process, runtime startup/lifecycle, BepInEx or Unity logs, or player actions | [Real-profile branch](blasphemous-modding-test-real-profile.md) | Branch owns build/package/deploy/launch/log/stop/cleanup; keep startup evidence separate from player **Manual verification**. |
-| Is deterministic and can run without a game process, Modding profile, runtime startup/lifecycle, startup logs, or player action | [Automated xUnit branch](blasphemous-modding-test-automated-xunit.md) | Use the standard xUnit/.NET runner; its output is automated evidence, not gameplay proof. |
-| Explicitly requests both kinds of test | Automated xUnit first when available, then Real-profile | Keep each phase's status and evidence separate; neither phase promotes the other. |
-| Runtime or evidence conditions are unclear or conflicting | Ask the user to clarify before routing | Run no branch command until clarified. |
+| Needs a real or mirror Modding profile, game process, runtime startup/lifecycle, BepInEx or Unity logs, or player actions | [Real-profile branch](blasphemous-modding-test-real-profile.md) | The branch MUST own build/package/deploy/launch/log/stop/cleanup; Agent MUST keep startup evidence separate from player **Manual verification**. |
+| Is deterministic and can run without a game process, Modding profile, runtime startup/lifecycle, startup logs, or player action | [Automated xUnit branch](blasphemous-modding-test-automated-xunit.md) | Agent MUST use the standard xUnit/.NET runner; its output MUST remain automated evidence and MUST NOT be reported as gameplay proof. |
+| Explicitly requests both kinds of test | Both branch owners | Agent MUST run Automated xUnit first when available, then Real-profile; Agent MUST keep each phase's status and evidence separate. |
+| Runtime or evidence conditions are unclear or conflicting | Ambiguous result | Agent MUST ask the user to clarify before routing and MUST run no branch command until clarified. |
 
 ## Route result contract
 

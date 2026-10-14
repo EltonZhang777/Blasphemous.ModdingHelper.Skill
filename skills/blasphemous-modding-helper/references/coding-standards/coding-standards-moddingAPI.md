@@ -34,9 +34,9 @@ index.
 
 | Request signal / condition | Route destination | Boundary / next action |
 | --- | --- | --- |
-| Stable responsibility: setup/package, lifecycle/execution, persistence, logging, config/files, input/localization, or modules/services | Selected release's `docs/development/main.md`, then the relevant linked topic | Use the index's current page list and labels; read only the needed topic and keep API facts under the caller's referenced assembly and matching source. |
-| Advanced / archived service topics: commands, items, levels, or penitences | Selected release's `docs/development/main.md`, then the named service page | Load only on demand, follow the selected release's label, treat active-development behavior as version-sensitive, and verify service facts against the API authority. |
-| Unlisted or newly added topic | Selected release's `docs/development/main.md` | Use the index's actual page list and labels, then follow only the exact linked page; Agent MUST NOT copy the upstream documentation tree. |
+| Stable responsibilities: project setup/package, project templates/export layout/resource folders, Mod callbacks plus ModServiceProvider/service registration, manager/event order, persistence interfaces and global/slot reset/load/save/storage, logging/ModLog, ConfigHandler/FileHandler/resource loading, input/keybindings/lifecycle, localization/translations/language changes, and modules/services | selected reference's `docs/development/main.md` | Agent MUST use the index's current page list and labels, follow the relevant linked topic, and keep API facts under the caller's referenced assembly and matching source. |
+| Advanced / archived responsibilities: ModCommand/command registration, item registration/effects, level modification/active-development, and penitence registration/images/effects | selected reference's `docs/development/main.md` | Agent MUST load only on demand, follow the selected reference's current labels, treat active-development behavior as version-sensitive, and verify service facts against the API authority. |
+| Unknown, unlisted, or newly added topic | selected reference's `docs/development/main.md` | Agent MUST use the index's actual page list and labels, follow only the exact linked page, and MUST NOT copy the upstream documentation tree. |
 
 ## BlasMod lifecycle
 

@@ -422,13 +422,29 @@ def run_documentation_smoke() -> None:
     assert_contains(mod_test, "Completion criterion", "mod-test route")
 
     for heading in (
+        "## Reference and topic routing",
         "## Routing contract",
-        "## Stable API topic routing",
         "## Advanced and archived topics",
         "## Game-source separation",
         "## Documentation smoke check",
     ):
         assert_contains(referencing, heading, "ModdingAPI reference sub-skill")
+    for stable_row in (
+        "Stable topic: Project setup and package shape",
+        "Stable topic: Mod class, registration, and lifecycle",
+        "Stable topic: Initialization and callback order",
+        "Stable topic: Persistent data and save compatibility",
+        "Stable topic: ModLog methods and severity",
+        "Stable topic: Mod configuration",
+        "Stable topic: File utilities and Mod-owned files",
+        "Stable topic: Input and keybindings",
+        "Stable topic: Localization and translations",
+    ):
+        assert_contains(
+            referencing,
+            f"| {stable_row} |",
+            "ModdingAPI reference canonical route table",
+        )
     for page in (
         "docs/development/main.md",
         "docs/development/setup.md",

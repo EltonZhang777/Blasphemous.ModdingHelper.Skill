@@ -22,39 +22,121 @@ ROUTE_DOCUMENTS = (
     "references/sub-skills/referencing-modding-api.md",
 )
 
+APPROVED_CANONICAL_OWNERS = frozenset(
+    {
+        "SKILL.md",
+        "references/config/invocation-preflight.md",
+        "references/sub-skills/coding-standards.md",
+        "references/sub-skills/blasphemous-modding-test.md",
+        "references/sub-skills/referencing-modding-api.md",
+        "references/coding-standards/coding-standards-moddingAPI.md",
+        "references/source-code-navigation/MAIN.md",
+    }
+)
+
 ROUTING_CONTRACTS = (
-    ("SKILL.md", "## Request routing", "## Shared entry gate", "source;ModdingAPI", "source-analyzer.md;referencing-modding-api.md"),
-    ("references/config/invocation-preflight.md", "# Invocation preflight", "## Command context", "Operational;setup", "source-analyzer.md;referencing-modding-api.md"),
-    ("references/sub-skills/coding-standards.md", "## Route map", "## Coding specifications", "ModdingAPI;Harmony", "coding-standards-moddingAPI.md;coding-standards-harmony-patching.md"),
-    ("references/sub-skills/blasphemous-modding-test.md", "## Route decision table", "## Route result contract", "real;deterministic", "blasphemous-modding-test-real-profile.md;blasphemous-modding-test-automated-xunit.md"),
-    ("references/sub-skills/referencing-modding-api.md", "## Reference and topic routing", "## Stable API topic routing", "Decompiled;dependency", "../source-code-navigation/MAIN.md;source-analyzer.md"),
+    (
+        "SKILL.md",
+        "## Request routing",
+        "## Shared entry gate",
+        "Natural-language identify;Find or explain decompiled game source;"
+        "Diagnose BepInEx or Unity logs;Test a Mod;both;ambiguous;Generate, "
+        "modify, review, or refactor Mod-owned C#;Need ModdingAPI documentation",
+        "references/sub-skills/localization-lookup.md;references/sub-skills/"
+        "source-analyzer.md;references/sub-skills/log-analyzer.md;references/"
+        "sub-skills/blasphemous-modding-test.md;references/sub-skills/"
+        "coding-standards.md;references/sub-skills/referencing-modding-api.md",
+    ),
+    (
+        "references/config/invocation-preflight.md",
+        "# Invocation preflight",
+        "## Command context",
+        "Localization lookup;Operational branches;First-time setup and Python "
+        "validation;Configuration result;Tracked-session stop;Path recovery;"
+        "Preflight completion",
+        "../sub-skills/localization-lookup.md;../sub-skills/source-analyzer.md;"
+        "../sub-skills/log-analyzer.md;../sub-skills/blasphemous-modding-test.md;"
+        "../sub-skills/coding-standards.md;../sub-skills/referencing-modding-api.md;"
+        "python-runtime.md;first-time-setup.md;../../SKILL.md",
+    ),
+    (
+        "references/sub-skills/coding-standards.md",
+        "## Route map",
+        "## Coding specifications",
+        "New file or directory placement;Mod-owned C# conventions;ModdingAPI "
+        "APIs;Harmony targets;Decompiled, upstream, dependency/vendor;generated;"
+        "directly copied",
+        "project-architecture-guidelines.md;../coding-standards/"
+        "coding-standards-csharp-unity.md;../coding-standards/"
+        "coding-standards-moddingAPI.md;../coding-standards/"
+        "coding-standards-harmony-patching.md;Scope gate",
+    ),
+    (
+        "references/sub-skills/blasphemous-modding-test.md",
+        "## Route decision table",
+        "## Route result contract",
+        "Needs a real or mirror Modding profile;Is deterministic and can run "
+        "without a game process;Explicitly requests both kinds of test;Runtime "
+        "or evidence conditions are unclear or conflicting",
+        "blasphemous-modding-test-real-profile.md;blasphemous-modding-test-"
+        "automated-xunit.md;Both branch owners;Ambiguous result",
+    ),
+    (
+        "references/sub-skills/referencing-modding-api.md",
+        "## Reference and topic routing",
+        "## Advanced and archived topics",
+        "Configured local reference;Release-aware remote fallback;Decompiled "
+        "Blasphemous game class;Stable topic: Project setup and package shape;"
+        "Stable topic: Mod class, registration, and lifecycle;Stable topic: "
+        "Initialization and callback order;Stable topic: Persistent data and save "
+        "compatibility;Stable topic: ModLog methods and severity;Stable topic: "
+        "Mod configuration;Stable topic: File utilities and Mod-owned files;"
+        "Stable topic: Input and keybindings;Stable topic: Localization and "
+        "translations;Advanced / archived topic: Console commands;Advanced / "
+        "archived topic: Custom items;Advanced / archived topic: Level "
+        "modifications;Advanced / archived topic: Custom penitences",
+        "<modding_api_reference_path>/docs/development/main.md;<MODDING_API_DOCS_URL>/"
+        "development/main.md;../source-code-navigation/MAIN.md;source-analyzer.md;"
+        "docs/development/main.md;docs/development/setup.md;docs/development/mod.md;"
+        "docs/development/execution.md;docs/development/persistence.md;"
+        "docs/development/logging.md;docs/development/config.md;docs/development/"
+        "files.md;docs/development/input.md;docs/development/localization.md;"
+        "docs/development/console.md;docs/development/items.md;docs/development/"
+        "levels.md;docs/development/penitence.md",
+    ),
     (
         "references/coding-standards/coding-standards-moddingAPI.md",
         "## ModdingAPI development-document index",
         "## BlasMod lifecycle",
-        "setup;package;lifecycle;execution;persistence;logging;config;files;input;localization;modules/services;Advanced;commands;items;levels;penitences;Unlisted",
+        "project templates;export layout;resource folders;Mod callbacks;"
+        "ModServiceProvider;service registration;manager/event order;persistence "
+        "interfaces;global/slot reset;load/save/storage;logging;ModLog;ConfigHandler;"
+        "FileHandler;resource loading;input/keybindings/lifecycle;localization/"
+        "translations;language changes;modules/services;ModCommand;command "
+        "registration;item registration;effects;level modification;active-"
+        "development;penitence registration;images;Unknown, unlisted, or newly "
+        "added topic",
         "docs/development/main.md",
     ),
-    ("references/source-code-navigation/MAIN.md", "## Navigation Routes", "## Quick Access for Mod Development", "Core;Localization", "core.md;player.md;enemy.md;bosses.md;ui.md;items.md;level.md;tools.md;localization.md"),
-)
-
-NON_OWNER_ROUTE_DOCUMENTS = (
-    "references/coding-standards/coding-standards.md",
-    "references/sub-skills/project-architecture-guidelines.md",
-    "references/sub-skills/localization-lookup.md",
-    "references/sub-skills/source-analyzer.md",
-    "references/sub-skills/log-analyzer.md",
-    "references/sub-skills/blasphemous-modding-test-automated-xunit.md",
-    "references/sub-skills/blasphemous-modding-test-real-profile.md",
-    "references/coding-standards/coding-standards-csharp-unity.md",
-    "references/coding-standards/coding-standards-harmony-patching.md",
-) + tuple(
-    f"references/source-code-navigation/{name}.md"
-    for name in ("core", "player", "enemy", "bosses", "ui", "items", "level", "tools", "localization")
+    (
+        "references/source-code-navigation/MAIN.md",
+        "## Navigation Routes",
+        "## Quick Access for Mod Development",
+        "**Core.**;**Player.**;**Enemy.**;**Bosses.**;**UI.**;**Items.**;"
+        "**Level.**;**Tools.**;**Localization.**",
+        "core.md;player.md;enemy.md;bosses.md;ui.md;items.md;level.md;tools.md;"
+        "localization.md;Assembly-CSharp/",
+    ),
 )
 
 
 TABLE_SEPARATOR = re.compile(r":?-{3,}:?")
+RFC2119_KEYWORDS = re.compile(r"\b(?:MUST|SHOULD|MAY)\b")
+DESTINATION_COMMAND_WORDS = re.compile(
+    r"\b(?:read|use|route|load|follow|ask|complete|resolve|consume|apply|stop|"
+    r"inspect|verify|run|keep|select|choose|supply|return|classify)\b",
+    re.IGNORECASE,
+)
 
 
 def markdown_table_cells(line):
@@ -240,6 +322,17 @@ class DocumentationConsistencyTests(unittest.TestCase):
             self.assertIn("next action", text, relative)
 
     def test_canonical_routing_tables_have_one_owner_per_document(self):
+        contract_owners = frozenset(contract[0] for contract in ROUTING_CONTRACTS)
+        self.assertEqual(contract_owners, APPROVED_CANONICAL_OWNERS)
+        self.assertEqual(len(APPROVED_CANONICAL_OWNERS), 7)
+
+        discovered_owners = {
+            path.relative_to(SKILL_ROOT).as_posix()
+            for path in SKILL_ROOT.rglob("*.md")
+            if canonical_route_tables(read(path))
+        }
+        self.assertEqual(discovered_owners, APPROVED_CANONICAL_OWNERS)
+
         for relative, route_section, detail_section, signals, destinations in ROUTING_CONTRACTS:
             with self.subTest(document=relative):
                 document_text = read(SKILL_ROOT / relative)
@@ -256,9 +349,21 @@ class DocumentationConsistencyTests(unittest.TestCase):
                 for token in signals.split(";") + destinations.split(";"):
                     self.assertIn(token.casefold(), normalized, f"{relative}: {token}")
 
-        for relative in NON_OWNER_ROUTE_DOCUMENTS:
-            with self.subTest(excluded_document=relative):
-                self.assertEqual([], canonical_route_tables(read(SKILL_ROOT / relative)), relative)
+                rows = table_text.splitlines()[2:]
+                self.assertTrue(rows, relative)
+                for row in rows:
+                    cells = markdown_table_cells(row)
+                    self.assertEqual(len(cells), 3, f"{relative}: {row}")
+                    self.assertNotRegex(
+                        cells[1],
+                        DESTINATION_COMMAND_WORDS,
+                        f"{relative}: actions belong in the boundary cell",
+                    )
+                    self.assertRegex(
+                        cells[2],
+                        RFC2119_KEYWORDS,
+                        f"{relative}: boundary cell must use RFC 2119 wording",
+                    )
 
 
 if __name__ == "__main__":
