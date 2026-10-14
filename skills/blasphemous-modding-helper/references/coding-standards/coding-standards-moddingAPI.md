@@ -21,33 +21,24 @@ For lifecycle and service questions, current upstream source entry points are
 `Blasphemous.ModdingAPI/ModServiceProvider.cs`. Agent MUST open these paths through
 the release-aware `MODDING_API_SOURCE_URL` emitted by [Referencing ModdingAPI](../sub-skills/referencing-modding-api.md); caller's referenced assembly and matching source remain authoritative.
 
-Routed development documents are responsibility index, not second API encyclopedia. Agent MUST read only documents relevant to task and MUST verify their claims against higher-priority authorities above.
+Routed development documents are a responsibility index, not a second API encyclopedia. Agent MUST read only documents relevant to the task and MUST verify their claims against higher-priority authorities above.
 
-## ModdingAPI development-document route table
+## ModdingAPI development-document index
 
-Every document currently under upstream docs/development directory is listed here. The
-paths resolve below `MODDING_API_DOCS_URL` emitted by the resolver; they are not fixed
-branch links. task signal in second column MUST cause agent to read the named document
-when task reaches that responsibility.
+The selected reference's `docs/development/main.md` owns the page list and its
+current stable or archived labels. This Skill MUST NOT mirror or maintain a
+page-by-page copy. [Referencing ModdingAPI](../sub-skills/referencing-modding-api.md)
+selects the local or release-aware reference and routes each topic through that
+index.
 
-| Upstream document | Read when the task involves | Responsibility |
-| --- | --- | --- |
-| `docs/development/main.md` | Navigating ModdingAPI development topics | Index of setup, lifecycle, persistence, logging, modules, and archived services |
-| `docs/development/setup.md` | Creating or packaging a Mod project | Template commands, export layout, and resource folders |
-| `docs/development/mod.md` | Deriving from BlasMod or registering services | Mod class callbacks and ModServiceProvider entry point |
-| `docs/development/execution.md` | Ordering startup, initialization, save, or shutdown work | Manager and BlasMod event order |
-| `docs/development/persistence.md` | Global or slot save data | Persistence interfaces, reset, load, save, and storage responsibilities |
-| `docs/development/logging.md` | Writing or reviewing ModLog calls | Upstream logging overview; the ModLog source below is authoritative for methods and effects |
-| `docs/development/config.md` | Loading or saving Mod configuration | ConfigHandler usage and configuration data |
-| `docs/development/files.md` | Loading Mod data, images, or other files | FileHandler and resource-loading responsibilities |
-| `docs/development/input.md` | Registering keybindings or reading input | InputHandler and input lifecycle |
-| `docs/development/localization.md` | Registering or reading translated text | LocalizationHandler and language-change behavior |
-| `docs/development/console.md` | Adding console commands | ModCommand and command registration |
-| `docs/development/items.md` | Adding items or item effects | Item registration and item-specific extension points |
-| `docs/development/levels.md` | Modifying or adding levels | Level modification surface; the upstream page is marked active development |
-| `docs/development/penitence.md` | Adding penitences | Penitence registration and image/effect responsibilities |
-
-Route table MUST be updated when upstream development directory gains or removes document. stale page MAY provide context, but it MUST NOT override conflicting assembly or source fact.
+The upstream development responsibilities include project setup and packaging;
+Mod class lifecycle and execution order; persistence; logging; configuration and
+files; input; localization; and service extensions such as commands, items,
+levels, and penitences. The index's advanced or archived service topics MUST be
+loaded only on demand. Agent MUST follow the selected release's labels and
+MUST treat pages marked active development as version-sensitive. Development
+documents provide navigation and context; API facts remain governed by the
+authority order above.
 
 ## BlasMod lifecycle
 
