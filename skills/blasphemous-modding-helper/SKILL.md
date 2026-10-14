@@ -18,14 +18,14 @@ agent MUST classify the request before applying any branch-specific gate. Agent
 MUST use the route owner's document as the sole authority for that route's
 detailed rules:
 
-| Trigger condition | Route owner | Gate and completion handoff |
+| Request | Route owner | Gate and handoff |
 | --- | --- | --- |
-| natural-language identify, explain, compare, or translate request for a Blasphemous 1 term, name, UI phrase, or textual reference | [Localization lookup](references/sub-skills/localization-lookup.md) | Read-only, configuration-free exception; report localization evidence and route unresolved code-like terms to the named next source branch. |
-| Find or explain decompiled game source, mechanics, classes, or dependencies | [Source analyzer](references/sub-skills/source-analyzer.md) | Complete [Invocation preflight](references/config/invocation-preflight.md) and the source-path gate; report the selected source tree, verified code evidence, and next analysis action. |
-| Diagnose BepInEx or Unity logs, startup evidence, or runtime diagnostics | [Log analyzer](references/sub-skills/log-analyzer.md) | Complete [Invocation preflight](references/config/invocation-preflight.md) and resolve required log sources; report evidence mode, paths, status, and next recovery or verification action. |
-| Test a Mod, build/deploy/launch a profile, inspect startup, stop, clean, or perform Manual verification | [Mod-test entry](references/sub-skills/blasphemous-modding-test.md) | Classify into `Real-profile`, `xUnit`, `both`, or `ambiguous`, then follow the selected branch owner. Caller-owned xUnit does not wait for the Real-profile configuration gate; `both` keeps independent phase reports. |
-| Generate, modify, review, or refactor Mod-owned C# or project structure | [Coding standards](references/sub-skills/coding-standards.md) | Complete the shared entry gate and the selected coding branch; report the ownership boundary and next implementation or verification action. |
-| Need ModdingAPI documentation, source guidance, or framework conventions | [Referencing ModdingAPI](references/sub-skills/referencing-modding-api.md) | Complete the command-context gate, resolve one local or release-aware reference, and report the selected reference/topic and next source or code action. |
+| Natural-language identify, explain, compare, or translate request for a Blasphemous 1 term, name, UI phrase, or textual reference | [Localization lookup](references/sub-skills/localization-lookup.md) | Read-only, configuration-free exception. Report localization evidence; route unresolved code-like terms to the source analyzer. |
+| Find or explain decompiled game source, mechanics, classes, or dependencies | [Source analyzer](references/sub-skills/source-analyzer.md) | Complete the shared entry gate and the source-path gate; report the selected source tree, verified code evidence, and next analysis action. |
+| Diagnose BepInEx or Unity logs, startup evidence, or runtime diagnostics | [Log analyzer](references/sub-skills/log-analyzer.md) | Complete the shared entry gate and resolve required log sources; report evidence mode, paths, status, and next recovery or verification action. |
+| Test a Mod; build/deploy/launch a profile; inspect startup; stop, clean, or perform Manual verification | [Mod-test entry](references/sub-skills/blasphemous-modding-test.md) | Classify as `Real-profile`, `xUnit`, `both`, or `ambiguous`, then follow the selected branch owner. Caller-owned xUnit does not wait for the Real-profile configuration gate; `both` keeps independent phase reports. |
+| Generate, modify, review, or refactor Mod-owned C# or project structure | [Coding standards](references/sub-skills/coding-standards.md) | Complete the shared entry gate and selected coding branch; report the ownership boundary and next implementation or verification action. |
+| Need ModdingAPI documentation, source guidance, or framework conventions | [Referencing ModdingAPI](references/sub-skills/referencing-modding-api.md) | Complete the command-context gate and resolve one local or release-aware reference; report the selected reference/topic and next source or code action. |
 
 The localization row is the only configuration-free operational exception. Every
 other route MUST complete the shared entry gate before its specialized work, with
