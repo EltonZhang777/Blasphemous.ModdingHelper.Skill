@@ -9,6 +9,7 @@ Every "version" field in the JSON manifests below is rewritten to match it:
 
     package.json
     .claude-plugin/plugin.json
+    .codex-plugin/plugin.json
     gemini-extension.json
     skills-lock.json            (main entry + sub-skill entries)
 
@@ -35,6 +36,7 @@ VERSION_FILE = REPO_ROOT / "skills" / "blasphemous-modding-helper" / "version.ym
 MANIFESTS = [
     "package.json",
     ".claude-plugin/plugin.json",
+    ".codex-plugin/plugin.json",
     "gemini-extension.json",
     "skills-lock.json",
 ]
