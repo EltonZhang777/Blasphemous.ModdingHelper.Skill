@@ -7,6 +7,10 @@ Before executing command in this reference, agent MUST apply command-context con
 
 ## Reference selection
 
+For ModdingAPI reference or topic requests, Agent MUST perform these steps.
+A decompiled-game-source request MUST follow the direct route in the
+Reference and topic routing table and MUST NOT perform these steps.
+
 1. Agent MUST read selected `config.yml`.
 2. If `modding_api_reference_path` is present, agent MUST use that local checkout. The
    path is authoritative for task; agent MUST NOT clone or update it during an
@@ -23,15 +27,17 @@ Explicit local-checkout setup flow is in
 
 ## Reference and topic routing
 
-After reading `config.yml`, Agent MUST use this single table to select the
-reference and topic route. After opening the selected reference's `main.md`
-index, Agent MUST resolve topic pages from its `docs/development` directory.
+For ModdingAPI reference and topic requests, after reading `config.yml`, Agent
+MUST use this table to select the reference and topic route. The game-source
+row is a direct route and MUST NOT require ModdingAPI reference selection.
+After opening the selected ModdingAPI reference's `main.md` index, Agent MUST
+resolve topic pages from its `docs/development` directory.
 
 | Request signal / condition | Route destination | Boundary / next action |
 | --- | --- | --- |
 | Configured local reference: `modding_api_reference_path` is present | `<modding_api_reference_path>/docs/development/main.md` | Agent MUST use this checkout and its selector/lock state. Agent MUST NOT clone or update it for an ordinary question. |
 | Release-aware remote fallback: local reference fields are absent, including legacy configuration or setup **Skip** | `<MODDING_API_DOCS_URL>/development/main.md` | Agent MUST resolve the selected reference first and retain its tag, branch, or commit in every URL. Agent MUST NOT use an unqualified moving branch. |
-| Decompiled Blasphemous game class, gameplay, or dependency question | [Blasphemous Source Code Navigation](../source-code-navigation/MAIN.md) and [Source analyzer](source-analyzer.md) | Agent MUST keep decompiled game-source facts on this route; ModdingAPI facts MUST remain owned by the selected release-aware ModdingAPI reference. |
+| Decompiled Blasphemous game class, gameplay, or dependency question | [Blasphemous Source Code Navigation](../source-code-navigation/MAIN.md) and [Source analyzer](source-analyzer.md) | Agent MUST keep decompiled game-source facts on this route and MUST NOT require or load a ModdingAPI reference; if the task also includes ModdingAPI facts, those facts MUST remain owned by their selected release-aware reference. |
 | Stable topic: Project setup and package shape | `docs/development/setup.md` | When project structure matters, Agent MUST follow direct links to `docs/development/mod.md`. |
 | Stable topic: Mod class, registration, and lifecycle | `docs/development/mod.md` | For callback order, Agent MUST follow `docs/development/execution.md`. |
 | Stable topic: Initialization and callback order | `docs/development/execution.md` | For lifecycle context, Agent MUST follow `docs/development/mod.md`. |
@@ -45,6 +51,7 @@ index, Agent MUST resolve topic pages from its `docs/development` directory.
 | Advanced / archived topic: Custom items | `docs/development/items.md` | Agent MUST read only on demand and MUST verify current item APIs in source. |
 | Advanced / archived topic: Level modifications | `docs/development/levels.md` | Agent MUST read only on demand and MUST treat active-development behavior as version-sensitive. |
 | Advanced / archived topic: Custom penitences | `docs/development/penitence.md` | Agent MUST read only on demand and MUST verify current types in source. |
+| Topic absent from the table, unlisted, or newly added | `docs/development/main.md` | Agent MUST use the index's actual page list and labels, follow only the exact linked page, and MUST NOT copy the upstream documentation tree. |
 
 ## Advanced and archived topics
 
@@ -52,25 +59,24 @@ Agent MUST load rows marked **Advanced / archived** only when the task names
 that topic or a stable route points to it. Agent MUST follow the selected
 index's current labels because upstream status may change.
 
-For topics absent from the table, Agent MUST use the selected reference's
-`docs/development/main.md` as the index and MUST follow only the exact linked
-page needed for the question. Agent MUST NOT copy the upstream documentation
-tree into this Skill.
+The table's unknown-topic row delegates unlisted pages to the selected
+reference's index. Agent MUST NOT copy the upstream documentation tree into
+this Skill.
 
 ## Routing contract
 
-Agent MUST treat the selected reference as the sole ModdingAPI authority for
-the task and MUST open its `docs/development/main.md` index before loading the
-named page or any directly linked page required by the question. The `main.md` filename
-identifies that documentation index; it MUST NOT be interpreted as an
-unqualified Git branch. The resolver's tag, branch, or commit remains part of
-every remote URL and local-reference decision.
+For ModdingAPI tasks, Agent MUST treat the selected reference as the sole
+ModdingAPI authority and MUST open its `docs/development/main.md` index before
+loading the named page or any directly linked page required by the question.
+The `main.md` filename identifies that documentation index; it MUST NOT be
+interpreted as an unqualified Git branch. The resolver's tag, branch, or
+commit remains part of every remote URL and local-reference decision.
 
-Agent MUST finish reference selection by recording either the validated local
-checkout and its selector/lock state or the release-aware remote resolver
-result. Agent MUST browse only the recorded route. Version-sensitive
-signatures and behavior MUST be confirmed against the actual referenced
-assembly and matching source before writing code.
+For ModdingAPI tasks, Agent MUST finish reference selection by recording
+either the validated local checkout and its selector/lock state or the
+release-aware remote resolver result. Agent MUST browse only the recorded
+ModdingAPI route. Version-sensitive signatures and behavior MUST be confirmed
+against the actual referenced assembly and matching source before writing code.
 
 ## Game-source separation
 

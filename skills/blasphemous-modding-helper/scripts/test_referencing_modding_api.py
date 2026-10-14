@@ -445,6 +445,20 @@ def run_documentation_smoke() -> None:
             f"| {stable_row} |",
             "ModdingAPI reference canonical route table",
         )
+    for route_contract in (
+        "A decompiled-game-source request",
+        "MUST NOT perform these steps",
+        "The game-source",
+        "row is a direct route",
+        "MUST NOT require or load a ModdingAPI reference",
+        "| Topic absent from the table, unlisted, or newly added | `docs/development/main.md` |",
+        "MUST NOT copy the upstream documentation tree",
+    ):
+        assert_contains(
+            referencing,
+            route_contract,
+            "ModdingAPI reference canonical route table",
+        )
     for page in (
         "docs/development/main.md",
         "docs/development/setup.md",

@@ -39,93 +39,101 @@ ROUTING_CONTRACTS = (
         "SKILL.md",
         "## Request routing",
         "## Shared entry gate",
-        "Natural-language identify;Find or explain decompiled game source;"
-        "Diagnose BepInEx or Unity logs;Test a Mod;both;ambiguous;Generate, "
-        "modify, review, or refactor Mod-owned C#;Need ModdingAPI documentation",
-        "references/sub-skills/localization-lookup.md;references/sub-skills/"
-        "source-analyzer.md;references/sub-skills/log-analyzer.md;references/"
-        "sub-skills/blasphemous-modding-test.md;references/sub-skills/"
-        "coding-standards.md;references/sub-skills/referencing-modding-api.md",
+        (
+            ("natural-language identify", "Localization lookup", "MUST NOT require configuration"),
+            ("Find or explain decompiled game source", "Source analyzer", "source-path gate"),
+            ("Diagnose BepInEx or Unity logs", "Log analyzer", "MUST resolve required log sources"),
+            ("Test a Mod; build/deploy/launch a profile", "Mod-test entry", "classify the request"),
+            ("Generate, modify, review, or refactor Mod-owned C#", "Coding standards", "ownership boundary"),
+            ("Need ModdingAPI documentation", "Referencing ModdingAPI", "local or release-aware reference"),
+        ),
     ),
     (
         "references/config/invocation-preflight.md",
         "# Invocation preflight",
         "## Command context",
-        "Localization lookup;Operational branches;First-time setup and Python "
-        "validation;Configuration result;Tracked-session stop;Path recovery;"
-        "Preflight completion",
-        "../sub-skills/localization-lookup.md;../sub-skills/source-analyzer.md;"
-        "../sub-skills/log-analyzer.md;../sub-skills/blasphemous-modding-test.md;"
-        "../sub-skills/coding-standards.md;../sub-skills/referencing-modding-api.md;"
-        "python-runtime.md;first-time-setup.md;../../SKILL.md",
+        (
+            ("Localization lookup", "bundled index", "MUST NOT run scripts"),
+            ("Operational branches", "shared preflight", "complete this preflight before specialized work"),
+            ("First-time setup and Python validation", "Python Runtime → First-Time Setup", "MUST complete [Python Runtime]"),
+            ("Configuration result", "selected config", "MUST consume"),
+            ("Tracked-session stop", "recorded process tree", "MUST NOT read or edit configuration"),
+            ("Path recovery", "path-recovery prompt", "MUST use the exact prompt below"),
+            ("Preflight completion", "preflight result", "before mutations"),
+        ),
     ),
     (
         "references/sub-skills/coding-standards.md",
         "## Route map",
         "## Coding specifications",
-        "New file or directory placement;Mod-owned C# conventions;ModdingAPI "
-        "APIs;Harmony targets;Decompiled, upstream, dependency/vendor;generated;"
-        "directly copied",
-        "project-architecture-guidelines.md;../coding-standards/"
-        "coding-standards-csharp-unity.md;../coding-standards/"
-        "coding-standards-moddingAPI.md;../coding-standards/"
-        "coding-standards-harmony-patching.md;Scope gate",
+        (
+            ("New Mod-owned file or directory placement", "Project architecture guidelines", "established structure MUST take precedence"),
+            ("Mod-owned C# conventions", "C# and runtime Unity standards", "caller compiler and referenced assemblies MUST govern compatibility"),
+            ("ModdingAPI APIs", "ModdingAPI standards", "caller's referenced assembly MUST govern API facts"),
+            ("Harmony targets", "Harmony patching standards", "manual `Harmony.Patch` MUST follow its approval gate"),
+            ("unmodifiable linked, generated, build, cached, derived", "Scope gate", "MUST preserve excluded or copied source"),
+        ),
     ),
     (
         "references/sub-skills/blasphemous-modding-test.md",
         "## Route decision table",
         "## Route result contract",
-        "Needs a real or mirror Modding profile;Is deterministic and can run "
-        "without a game process;Explicitly requests both kinds of test;Runtime "
-        "or evidence conditions are unclear or conflicting",
-        "blasphemous-modding-test-real-profile.md;blasphemous-modding-test-"
-        "automated-xunit.md;Both branch owners;Ambiguous result",
+        (
+            ("Needs a real or mirror Modding profile", "Real-profile branch", "keep startup evidence separate"),
+            ("Is deterministic and can run without a game process", "Automated xUnit branch", "MUST NOT be reported as gameplay proof"),
+            ("Explicitly requests both kinds of test", "Both branch owners", "MUST run Automated xUnit first"),
+            ("Runtime or evidence conditions are unclear or conflicting", "Ambiguous result", "MUST ask the user to clarify"),
+        ),
     ),
     (
         "references/sub-skills/referencing-modding-api.md",
         "## Reference and topic routing",
         "## Advanced and archived topics",
-        "Configured local reference;Release-aware remote fallback;Decompiled "
-        "Blasphemous game class;Stable topic: Project setup and package shape;"
-        "Stable topic: Mod class, registration, and lifecycle;Stable topic: "
-        "Initialization and callback order;Stable topic: Persistent data and save "
-        "compatibility;Stable topic: ModLog methods and severity;Stable topic: "
-        "Mod configuration;Stable topic: File utilities and Mod-owned files;"
-        "Stable topic: Input and keybindings;Stable topic: Localization and "
-        "translations;Advanced / archived topic: Console commands;Advanced / "
-        "archived topic: Custom items;Advanced / archived topic: Level "
-        "modifications;Advanced / archived topic: Custom penitences",
-        "<modding_api_reference_path>/docs/development/main.md;<MODDING_API_DOCS_URL>/"
-        "development/main.md;../source-code-navigation/MAIN.md;source-analyzer.md;"
-        "docs/development/main.md;docs/development/setup.md;docs/development/mod.md;"
-        "docs/development/execution.md;docs/development/persistence.md;"
-        "docs/development/logging.md;docs/development/config.md;docs/development/"
-        "files.md;docs/development/input.md;docs/development/localization.md;"
-        "docs/development/console.md;docs/development/items.md;docs/development/"
-        "levels.md;docs/development/penitence.md",
+        (
+            ("Configured local reference", "<modding_api_reference_path>/docs/development/main.md", "MUST NOT clone or update it for an ordinary question"),
+            ("Release-aware remote fallback", "<MODDING_API_DOCS_URL>/development/main.md", "MUST NOT use an unqualified moving branch"),
+            ("Decompiled Blasphemous game class", "Blasphemous Source Code Navigation", "MUST NOT require or load a ModdingAPI reference"),
+            ("Stable topic: Project setup", "docs/development/setup.md", "MUST follow direct links to"),
+            ("Stable topic: Mod class", "docs/development/mod.md", "MUST follow"),
+            ("Stable topic: Initialization", "docs/development/execution.md", "MUST follow"),
+            ("Stable topic: Persistent data", "docs/development/persistence.md", "MUST follow"),
+            ("Stable topic: ModLog methods", "docs/development/logging.md", "MUST verify version-sensitive facts"),
+            ("Stable topic: Mod configuration", "docs/development/config.md", "MUST follow"),
+            ("Stable topic: File utilities", "docs/development/files.md", "MUST follow"),
+            ("Stable topic: Input and keybindings", "docs/development/input.md", "MUST follow"),
+            ("Stable topic: Localization and translations", "docs/development/localization.md", "MUST follow"),
+            ("Advanced / archived topic: Console commands", "docs/development/console.md", "MUST read only on demand"),
+            ("Advanced / archived topic: Custom items", "docs/development/items.md", "MUST read only on demand"),
+            ("Advanced / archived topic: Level modifications", "docs/development/levels.md", "MUST read only on demand"),
+            ("Advanced / archived topic: Custom penitences", "docs/development/penitence.md", "MUST read only on demand"),
+            ("Topic absent from the table, unlisted, or newly added", "docs/development/main.md", "MUST NOT copy the upstream documentation tree"),
+        ),
     ),
     (
         "references/coding-standards/coding-standards-moddingAPI.md",
         "## ModdingAPI development-document index",
         "## BlasMod lifecycle",
-        "project templates;export layout;resource folders;Mod callbacks;"
-        "ModServiceProvider;service registration;manager/event order;persistence "
-        "interfaces;global/slot reset;load/save/storage;logging;ModLog;ConfigHandler;"
-        "FileHandler;resource loading;input/keybindings/lifecycle;localization/"
-        "translations;language changes;modules/services;ModCommand;command "
-        "registration;item registration;effects;level modification;active-"
-        "development;penitence registration;images;Unknown, unlisted, or newly "
-        "added topic",
-        "docs/development/main.md",
+        (
+            ("Stable responsibilities:", "docs/development/main.md", "MUST use the index's current page list and labels"),
+            ("Advanced / archived responsibilities:", "docs/development/main.md", "MUST load only on demand"),
+            ("Unknown, unlisted, or newly added topic", "docs/development/main.md", "MUST use the index's actual page list and labels"),
+        ),
     ),
     (
         "references/source-code-navigation/MAIN.md",
         "## Navigation Routes",
         "## Quick Access for Mod Development",
-        "**Core.**;**Player.**;**Enemy.**;**Bosses.**;**UI.**;**Items.**;"
-        "**Level.**;**Tools.**;**Localization.**",
-        "core.md;player.md;enemy.md;bosses.md;ui.md;items.md;level.md;tools.md;"
-        "localization.md;Assembly-CSharp/",
+        (
+            ("**Core.**", "core.md", "matching manager or framework class within the selected `Assembly-CSharp/` tree"),
+            ("**Player.**", "player.md", "relevant Penitent behavior within the selected `Assembly-CSharp/` tree"),
+            ("**Enemy.**", "enemy.md", "enemy AI or shared entity bases within the selected `Assembly-CSharp/` tree"),
+            ("**Bosses.**", "bosses.md", "boss or shared combat behavior within the selected `Assembly-CSharp/` tree"),
+            ("**UI.**", "ui.md", "screen/widget or console path that matches the request within the selected `Assembly-CSharp/` tree"),
+            ("**Items.**", "items.md", "item or effect implementation within the selected `Assembly-CSharp/` tree"),
+            ("**Level.**", "level.md", "matching level mechanic within the selected `Assembly-CSharp/` tree"),
+            ("**Tools.**", "tools.md", "matching tool family as the search entry within the selected `Assembly-CSharp/` tree"),
+            ("**Localization.**", "localization.md", "I2 localization or the game LocalizationManager as indicated within the selected `Assembly-CSharp/` tree"),
+        ),
     ),
 )
 
@@ -149,15 +157,27 @@ def markdown_table_cells(line):
     return tuple(cell.strip() for cell in line.split("|"))
 
 
-def canonical_route_tables(document_text):
+def markdown_tables(document_text):
     lines = document_text.splitlines()
     tables = []
     for row, line in enumerate(lines[:-1]):
         headers = markdown_table_cells(line)
         separators = markdown_table_cells(lines[row + 1])
-        if len(headers) != 3 or len(separators) != 3:
+        if len(headers) < 2 or len(separators) != len(headers):
             continue
         if not all(TABLE_SEPARATOR.fullmatch(cell) for cell in separators):
+            continue
+        end = row + 2
+        while end < len(lines) and lines[end].lstrip().startswith("|"):
+            end += 1
+        tables.append((row, headers, "\n".join(lines[row:end])))
+    return tables
+
+
+def canonical_route_tables(document_text):
+    tables = []
+    for row, headers, table_text in markdown_tables(document_text):
+        if len(headers) != 3:
             continue
         first, second, third = (header.casefold() for header in headers)
         if not any(token in first for token in ("request", "signal", "condition", "invocation")):
@@ -166,10 +186,7 @@ def canonical_route_tables(document_text):
             continue
         if not any(token in third for token in ("boundary", "handoff", "next")):
             continue
-        end = row + 2
-        while end < len(lines) and lines[end].lstrip().startswith("|"):
-            end += 1
-        tables.append((row, "\n".join(lines[row:end])))
+        tables.append((row, table_text))
     return tables
 
 
@@ -333,7 +350,7 @@ class DocumentationConsistencyTests(unittest.TestCase):
         }
         self.assertEqual(discovered_owners, APPROVED_CANONICAL_OWNERS)
 
-        for relative, route_section, detail_section, signals, destinations in ROUTING_CONTRACTS:
+        for relative, route_section, detail_section, expected_routes in ROUTING_CONTRACTS:
             with self.subTest(document=relative):
                 document_text = read(SKILL_ROOT / relative)
                 lines = document_text.splitlines()
@@ -342,18 +359,36 @@ class DocumentationConsistencyTests(unittest.TestCase):
                 if len(tables) != 1:
                     continue
 
+                if relative == "references/sub-skills/coding-standards.md":
+                    self.assertEqual(len(markdown_tables(document_text)), 1, relative)
+
                 table_line, table_text = tables[0]
                 self.assertLess(lines.index(route_section), table_line, relative)
                 self.assertLess(table_line, lines.index(detail_section), relative)
-                normalized = table_text.casefold()
-                for token in signals.split(";") + destinations.split(";"):
-                    self.assertIn(token.casefold(), normalized, f"{relative}: {token}")
 
-                rows = table_text.splitlines()[2:]
+                rows = [
+                    markdown_table_cells(row)
+                    for row in table_text.splitlines()[2:]
+                ]
+                self.assertEqual(len(rows), len(expected_routes), relative)
                 self.assertTrue(rows, relative)
-                for row in rows:
-                    cells = markdown_table_cells(row)
-                    self.assertEqual(len(cells), 3, f"{relative}: {row}")
+                for cells in rows:
+                    self.assertEqual(len(cells), 3, f"{relative}: {cells}")
+                if any(len(cells) != 3 for cells in rows):
+                    continue
+
+                for signal, destination, boundary in expected_routes:
+                    matches = [
+                        cells
+                        for cells in rows
+                        if signal.casefold() in cells[0].casefold()
+                        and destination.casefold() in cells[1].casefold()
+                    ]
+                    self.assertEqual(len(matches), 1, f"{relative}: {signal} -> {destination}")
+                    if matches:
+                        self.assertIn(boundary.casefold(), matches[0][2].casefold())
+
+                for cells in rows:
                     self.assertNotRegex(
                         cells[1],
                         DESTINATION_COMMAND_WORDS,
