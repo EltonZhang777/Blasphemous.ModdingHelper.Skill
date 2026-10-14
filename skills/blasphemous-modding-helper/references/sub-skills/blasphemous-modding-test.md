@@ -39,12 +39,12 @@ requirements.
 
 ## Route decision table
 
-| Request condition | Route | Evidence boundary |
+| Signal / condition | Destination | Boundary / next action |
 | --- | --- | --- |
-| Needs a real or mirror Modding profile, game process, BepInEx or Unity startup, actual Unity lifecycle or scene state, runtime logs, or player actions | [Real-profile branch](blasphemous-modding-test-real-profile.md) | Build, package, deployment, launch, startup evidence, stop, cleanup, and player **Manual verification** remain separate states. |
-| Is deterministic and can run without a game process, Modding profile, runtime lifecycle, startup logs, or player action | [Automated xUnit branch](blasphemous-modding-test-automated-xunit.md) | Standard xUnit runner output is automated test evidence only; it is not gameplay evidence. |
-| Explicitly requests both kinds of test | Run two ordered phases: Automated xUnit first when available, then Real-profile | Record each phase and its evidence independently; neither phase promotes the other. |
-| Leaves the required runtime conditions unclear | Ask the user to clarify before choosing a route | Agent MUST NOT silently choose a destructive, incomplete, or evidence-incompatible route. |
+| Needs a real or mirror Modding profile, game process, runtime startup/lifecycle, BepInEx or Unity logs, or player actions | [Real-profile branch](blasphemous-modding-test-real-profile.md) | Branch owns build/package/deploy/launch/log/stop/cleanup; keep startup evidence separate from player **Manual verification**. |
+| Is deterministic and can run without a game process, Modding profile, runtime startup/lifecycle, startup logs, or player action | [Automated xUnit branch](blasphemous-modding-test-automated-xunit.md) | Use the standard xUnit/.NET runner; its output is automated evidence, not gameplay proof. |
+| Explicitly requests both kinds of test | Automated xUnit first when available, then Real-profile | Keep each phase's status and evidence separate; neither phase promotes the other. |
+| Runtime or evidence conditions are unclear or conflicting | Ask the user to clarify before routing | Run no branch command until clarified. |
 
 ## Route result contract
 
