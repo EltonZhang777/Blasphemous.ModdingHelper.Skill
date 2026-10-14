@@ -22,6 +22,74 @@ ROUTE_DOCUMENTS = (
     "references/sub-skills/referencing-modding-api.md",
 )
 
+ROUTING_CONTRACTS = (
+    ("SKILL.md", "## Request routing", "## Shared entry gate", "source;ModdingAPI", "source-analyzer.md;referencing-modding-api.md"),
+    ("references/config/invocation-preflight.md", "# Invocation preflight", "## Command context", "Operational;setup", "source-analyzer.md;referencing-modding-api.md"),
+    ("references/sub-skills/coding-standards.md", "## Route map", "## Coding specifications", "ModdingAPI;Harmony", "coding-standards-moddingAPI.md;coding-standards-harmony-patching.md"),
+    ("references/sub-skills/blasphemous-modding-test.md", "## Route decision table", "## Route result contract", "real;deterministic", "blasphemous-modding-test-real-profile.md;blasphemous-modding-test-automated-xunit.md"),
+    ("references/sub-skills/referencing-modding-api.md", "## Reference and topic routing", "## Stable API topic routing", "Decompiled;dependency", "../source-code-navigation/MAIN.md;source-analyzer.md"),
+    (
+        "references/coding-standards/coding-standards-moddingAPI.md",
+        "## ModdingAPI development-document index",
+        "## BlasMod lifecycle",
+        "setup;package;lifecycle;execution;persistence;logging;config;files;input;localization;modules/services;Advanced;commands;items;levels;penitences;Unlisted",
+        "docs/development/main.md",
+    ),
+    ("references/source-code-navigation/MAIN.md", "## Navigation Routes", "## Quick Access for Mod Development", "Core;Localization", "core.md;player.md;enemy.md;bosses.md;ui.md;items.md;level.md;tools.md;localization.md"),
+)
+
+NON_OWNER_ROUTE_DOCUMENTS = (
+    "references/coding-standards/coding-standards.md",
+    "references/sub-skills/project-architecture-guidelines.md",
+    "references/sub-skills/localization-lookup.md",
+    "references/sub-skills/source-analyzer.md",
+    "references/sub-skills/log-analyzer.md",
+    "references/sub-skills/blasphemous-modding-test-automated-xunit.md",
+    "references/sub-skills/blasphemous-modding-test-real-profile.md",
+    "references/coding-standards/coding-standards-csharp-unity.md",
+    "references/coding-standards/coding-standards-harmony-patching.md",
+) + tuple(
+    f"references/source-code-navigation/{name}.md"
+    for name in ("core", "player", "enemy", "bosses", "ui", "items", "level", "tools", "localization")
+)
+
+
+TABLE_SEPARATOR = re.compile(r":?-{3,}:?")
+
+
+def markdown_table_cells(line):
+    line = line.strip()
+    if not line.startswith("|"):
+        return ()
+    line = line[1:]
+    if line.endswith("|"):
+        line = line[:-1]
+    return tuple(cell.strip() for cell in line.split("|"))
+
+
+def canonical_route_tables(document_text):
+    lines = document_text.splitlines()
+    tables = []
+    for row, line in enumerate(lines[:-1]):
+        headers = markdown_table_cells(line)
+        separators = markdown_table_cells(lines[row + 1])
+        if len(headers) != 3 or len(separators) != 3:
+            continue
+        if not all(TABLE_SEPARATOR.fullmatch(cell) for cell in separators):
+            continue
+        first, second, third = (header.casefold() for header in headers)
+        if not any(token in first for token in ("request", "signal", "condition", "invocation")):
+            continue
+        if not any(token in second for token in ("destination", "owner", "route")):
+            continue
+        if not any(token in third for token in ("boundary", "handoff", "next")):
+            continue
+        end = row + 2
+        while end < len(lines) and lines[end].lstrip().startswith("|"):
+            end += 1
+        tables.append((row, "\n".join(lines[row:end])))
+    return tables
+
 
 def read(path):
     return path.read_text(encoding="utf-8")
@@ -170,6 +238,27 @@ class DocumentationConsistencyTests(unittest.TestCase):
             text = " ".join(read(SKILL_ROOT / relative).split())
             self.assertIn("completion evidence", text, relative)
             self.assertIn("next action", text, relative)
+
+    def test_canonical_routing_tables_have_one_owner_per_document(self):
+        for relative, route_section, detail_section, signals, destinations in ROUTING_CONTRACTS:
+            with self.subTest(document=relative):
+                document_text = read(SKILL_ROOT / relative)
+                lines = document_text.splitlines()
+                tables = canonical_route_tables(document_text)
+                self.assertEqual(len(tables), 1, relative)
+                if len(tables) != 1:
+                    continue
+
+                table_line, table_text = tables[0]
+                self.assertLess(lines.index(route_section), table_line, relative)
+                self.assertLess(table_line, lines.index(detail_section), relative)
+                normalized = table_text.casefold()
+                for token in signals.split(";") + destinations.split(";"):
+                    self.assertIn(token.casefold(), normalized, f"{relative}: {token}")
+
+        for relative in NON_OWNER_ROUTE_DOCUMENTS:
+            with self.subTest(excluded_document=relative):
+                self.assertEqual([], canonical_route_tables(read(SKILL_ROOT / relative)), relative)
 
 
 if __name__ == "__main__":

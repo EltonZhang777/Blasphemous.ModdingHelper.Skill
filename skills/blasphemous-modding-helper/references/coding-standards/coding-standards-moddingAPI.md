@@ -27,18 +27,16 @@ Routed development documents are a responsibility index, not a second API encycl
 
 The selected reference's `docs/development/main.md` owns the page list and its
 current stable or archived labels. This Skill MUST NOT mirror or maintain a
-page-by-page copy. [Referencing ModdingAPI](../sub-skills/referencing-modding-api.md)
+page-by-page copy. Development documents provide navigation and context; API
+facts remain governed by the authority order above. [Referencing ModdingAPI](../sub-skills/referencing-modding-api.md)
 selects the local or release-aware reference and routes each topic through that
 index.
 
-The upstream development responsibilities include project setup and packaging;
-Mod class lifecycle and execution order; persistence; logging; configuration and
-files; input; localization; and service extensions such as commands, items,
-levels, and penitences. The index's advanced or archived service topics MUST be
-loaded only on demand. Agent MUST follow the selected release's labels and
-MUST treat pages marked active development as version-sensitive. Development
-documents provide navigation and context; API facts remain governed by the
-authority order above.
+| Request signal / condition | Route destination | Boundary / next action |
+| --- | --- | --- |
+| Stable responsibility: setup/package, lifecycle/execution, persistence, logging, config/files, input/localization, or modules/services | Selected release's `docs/development/main.md`, then the relevant linked topic | Use the index's current page list and labels; read only the needed topic and keep API facts under the caller's referenced assembly and matching source. |
+| Advanced / archived service topics: commands, items, levels, or penitences | Selected release's `docs/development/main.md`, then the named service page | Load only on demand, follow the selected release's label, treat active-development behavior as version-sensitive, and verify service facts against the API authority. |
+| Unlisted or newly added topic | Selected release's `docs/development/main.md` | Use the index's actual page list and labels, then follow only the exact linked page; Agent MUST NOT copy the upstream documentation tree. |
 
 ## BlasMod lifecycle
 

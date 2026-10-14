@@ -31,6 +31,7 @@ index, Agent MUST resolve topic pages from its `docs/development` directory.
 | --- | --- | --- |
 | Configured local reference: `modding_api_reference_path` is present | `<modding_api_reference_path>/docs/development/main.md` | Agent MUST use this checkout and its selector/lock state. Agent MUST NOT clone or update it for an ordinary question. |
 | Release-aware remote fallback: local reference fields are absent, including legacy configuration or setup **Skip** | `<MODDING_API_DOCS_URL>/development/main.md` | Agent MUST resolve the selected reference first and retain its tag, branch, or commit in every URL. Agent MUST NOT use an unqualified moving branch. |
+| Decompiled Blasphemous game class, gameplay, or dependency question | [Blasphemous Source Code Navigation](../source-code-navigation/MAIN.md) and [Source analyzer](source-analyzer.md) | Keep decompiled game-source facts on this route; ModdingAPI facts remain owned by the selected release-aware ModdingAPI reference. |
 | Stable topic: Project setup and package shape | `docs/development/setup.md` | When project structure matters, Agent MUST follow direct links to `docs/development/mod.md`. |
 | Stable topic: Mod class, registration, and lifecycle | `docs/development/mod.md` | For callback order, Agent MUST follow `docs/development/execution.md`. |
 | Stable topic: Initialization and callback order | `docs/development/execution.md` | For lifecycle context, Agent MUST follow `docs/development/mod.md`. |
