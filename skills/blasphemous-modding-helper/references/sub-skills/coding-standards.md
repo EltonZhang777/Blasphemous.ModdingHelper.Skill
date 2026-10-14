@@ -1,26 +1,8 @@
 # Coding standards router
 
-## Route map
+## Entry and scope requirements
 
-| Request signal | Route |
-| --- | --- |
-| New file or directory placement in an unstructured Mod, or an explicit organization request | [Project architecture guidelines](project-architecture-guidelines.md) |
-| Mod-owned C# naming, organization, compiler compatibility, or Unity runtime callbacks | [C# and runtime Unity standards](../coding-standards/coding-standards-csharp-unity.md) |
-| ModdingAPI APIs, lifecycle, services, persistence, commands, or logging | [ModdingAPI standards](../coding-standards/coding-standards-moddingAPI.md) |
-| Harmony targets, Patch files/classes, injections, or manual patching | [Harmony patching standards](../coding-standards/coding-standards-harmony-patching.md) |
-| Decompiled, upstream, dependency, generated, or directly copied code | Scope gate; preserve excluded code and load no Mod-owned C# branch |
-
-## Coding specifications
-
-Before generating, modifying, reviewing, or refactoring Mod-owned C# in Caller Mod repository, agent MUST read this router and [Requirement levels](../requirement-levels-definitions.md). router selects only branch references required by task.
-
-- Mod language is C#.
-- Supported game baseline is Unity `2017.4.40f1`.
-- Caller's actual compiler, referenced assemblies, and project target MUST take precedence over general language or Unity baseline.
-- Agent MAY consult [Unity 2017.4 Script Reference](https://docs.unity3d.com/2017.4/Documentation/ScriptReference/30_search.html) when runtime Unity fact needs verification.
-- ModdingAPI-specific behavior MUST be checked against caller's referenced ModdingAPI assembly and corresponding source or documentation. ModdingAPI tasks route to [ModdingAPI standards](../coding-standards/coding-standards-moddingAPI.md); Harmony tasks route to the [Harmony patching standards](../coding-standards/coding-standards-harmony-patching.md).
-
-## Scope gate
+Before generating, modifying, reviewing, or refactoring Mod-owned C# in Caller Mod repository, agent MUST read this router and [Requirement levels](../requirement-levels-definitions.md). The router selects only branch references required by task.
 
 This router applies only to code that Mod author can maintain in root of Caller Mod repository, including its source projects, `src/`, `Patches/`, and Mod-owned tests. It MUST NOT be applied to:
 
@@ -29,6 +11,24 @@ This router applies only to code that Mod author can maintain in root of Caller 
 - Generated output, build output, package caches, or other derived files.
 
 When request directly copies code from excluded source, agent MUST preserve direct copy as-is. Mechanical namespace or path changes MAY be made when they are required for compilation. If copied code receives substantive new behavior or structural rewrite, new or changed code MUST follow selected standards.
+
+## Route map
+
+| Signal / condition | Destination | Boundary / next action |
+| --- | --- | --- |
+| New file or directory placement with no established boundaries, or an explicit organization request | [Project architecture guidelines](project-architecture-guidelines.md) | Soft guidance for new files; established structure MUST take precedence. Agent MUST NOT move existing files and MUST report the boundary and proposed directory/namespace. |
+| Mod-owned C# conventions, compiler compatibility, or runtime Unity callbacks | [C# and runtime Unity standards](../coding-standards/coding-standards-csharp-unity.md) | Agent MUST load this branch for every applicable Mod-owned C# task; caller compiler and referenced assemblies MUST govern compatibility. |
+| ModdingAPI APIs, lifecycle, services, persistence, commands, or logging | [ModdingAPI standards](../coding-standards/coding-standards-moddingAPI.md) | Agent MUST route framework documentation/source through Referencing ModdingAPI; caller's referenced assembly MUST govern API facts. |
+| Harmony targets, Patch files/classes, injections, or manual patching | [Harmony patching standards](../coding-standards/coding-standards-harmony-patching.md) | Applicable C# tasks MUST also load the C# branch; ModdingAPI remains the single authority for framework discovery, and manual `Harmony.Patch` MUST follow its approval gate. |
+| Decompiled, upstream, dependency/vendor, unmodifiable linked, generated, build, cached, derived, or directly copied code | Scope gate | Agent MUST preserve excluded or copied source; namespace/path-only changes MAY be made when needed. Substantive Mod-owned changes MUST follow the applicable branch. |
+
+## Coding specifications
+
+- Mod language is C#.
+- Supported game baseline is Unity `2017.4.40f1`.
+- Caller's actual compiler, referenced assemblies, and project target MUST take precedence over general language or Unity baseline.
+- Agent MAY consult [Unity 2017.4 Script Reference](https://docs.unity3d.com/2017.4/Documentation/ScriptReference/30_search.html) when runtime Unity fact needs verification.
+- ModdingAPI-specific behavior MUST be checked against caller's referenced ModdingAPI assembly and corresponding source or documentation. ModdingAPI tasks route to [ModdingAPI standards](../coding-standards/coding-standards-moddingAPI.md); Harmony tasks route to the [Harmony patching standards](../coding-standards/coding-standards-harmony-patching.md).
 
 ## Route C# and runtime Unity tasks
 
