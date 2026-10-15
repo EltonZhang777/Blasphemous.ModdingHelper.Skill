@@ -12,6 +12,7 @@ SCRIPT = REPOSITORY_ROOT / "ci" / "update-version" / "UpdateVersionNumber.py"
 MANIFESTS = (
     "package.json",
     ".claude-plugin/plugin.json",
+    ".codex-plugin/plugin.json",
     "gemini-extension.json",
     "skills-lock.json",
 )
@@ -100,7 +101,7 @@ class UpdateVersionNumberTests(unittest.TestCase):
                 )
                 for path in MANIFESTS
             ),
-            9,
+            10,
         )
 
     def test_missing_manifest_fails_before_writing_other_manifests(self):
@@ -111,7 +112,7 @@ class UpdateVersionNumberTests(unittest.TestCase):
             json.dumps(package, indent=2) + "\n", encoding="utf-8"
         )
         before = package_path.read_bytes()
-        (self.root / "gemini-extension.json").unlink()
+        (self.root / ".codex-plugin" / "plugin.json").unlink()
 
         result = self.run_updater()
 

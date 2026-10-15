@@ -27,7 +27,7 @@ ROUTED_REFERENCES = {
 
 
 class ReleaseMetadataTests(unittest.TestCase):
-    def test_public_manifests_share_the_version_source(self):
+    def test_public_integration_metadata_matches_skill_identity_and_version(self):
         self.assertTrue(VERSION_SOURCE.is_file())
         self.assertFalse(
             (REPOSITORY_ROOT / "ci" / "update-version" / "version.yml").exists()
@@ -43,18 +43,70 @@ class ReleaseMetadataTests(unittest.TestCase):
 
         manifests = (
             REPOSITORY_ROOT / ".claude-plugin" / "plugin.json",
+            REPOSITORY_ROOT / ".codex-plugin" / "plugin.json",
             REPOSITORY_ROOT / "gemini-extension.json",
             REPOSITORY_ROOT / "package.json",
             REPOSITORY_ROOT / "skills-lock.json",
         )
+        loaded_manifests = {}
         for manifest_path in manifests:
             with self.subTest(manifest=manifest_path.name):
                 manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+                loaded_manifests[manifest_path] = manifest
                 self.assertEqual(manifest["version"], expected)
                 if manifest_path.name == "skills-lock.json":
                     self.assertEqual(manifest["skills"]["blasphemous-modding-helper"]["version"], expected)
                     for entry in manifest["references"].values():
                         self.assertEqual(entry["version"], expected)
+
+        codex = loaded_manifests[REPOSITORY_ROOT / ".codex-plugin" / "plugin.json"]
+        claude = loaded_manifests[REPOSITORY_ROOT / ".claude-plugin" / "plugin.json"]
+        marketplace = json.loads(
+            (REPOSITORY_ROOT / ".claude-plugin" / "marketplace.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        codex_marketplace = json.loads(
+            (
+                REPOSITORY_ROOT
+                / ".agents"
+                / "plugins"
+                / "marketplace.json"
+            ).read_text(encoding="utf-8")
+        )
+
+        self.assertEqual(codex["name"], "blasphemous-modding-helper")
+        self.assertEqual(codex["skills"], "./skills/")
+        self.assertTrue((REPOSITORY_ROOT / "skills").is_dir())
+        self.assertEqual(claude["name"], codex["name"])
+        self.assertNotIn("minCliVersion", claude)
+        self.assertNotIn("agents", claude)
+        self.assertTrue(marketplace["description"])
+        self.assertEqual(marketplace["plugins"][0]["name"], claude["name"])
+        codex_entry = codex_marketplace["plugins"][0]
+        self.assertEqual(codex_entry["name"], codex["name"])
+        self.assertEqual(codex_entry["source"]["path"], "./")
+        self.assertEqual(codex_entry["policy"]["installation"], "AVAILABLE")
+        self.assertEqual(codex_entry["policy"]["authentication"], "ON_INSTALL")
+        self.assertEqual(
+            codex_entry["interface"]["displayName"],
+            "Blasphemous Modding Helper",
+        )
+        self.assertTrue(
+            (
+                REPOSITORY_ROOT
+                / codex_entry["source"]["path"]
+                / ".codex-plugin"
+                / "plugin.json"
+            ).is_file()
+        )
+        readme = (REPOSITORY_ROOT / "README.md").read_text(encoding="utf-8")
+        repository = codex["repository"].removeprefix("https://github.com/")
+        self.assertIn(f"codex plugin marketplace add {repository}", readme)
+        self.assertIn(
+            f"codex plugin add {codex_entry['name']}@{codex_marketplace['name']}",
+            readme,
+        )
 
     def test_release_matrix_validates_runtime_before_acceptance(self):
         workflow = (
@@ -62,6 +114,10 @@ class ReleaseMetadataTests(unittest.TestCase):
         ).read_text(encoding="utf-8")
         preflight = workflow.index("check_python_environment.py")
         acceptance = workflow.index("test_modding_api_acceptance.py")
+        self.assertIn(
+            "run: python tests/test_modding_api_acceptance.py --python python --require-clean",
+            workflow,
+        )
         self.assertLess(preflight, acceptance)
         self.assertIn(
             "skills/blasphemous-modding-helper/requirements.txt",

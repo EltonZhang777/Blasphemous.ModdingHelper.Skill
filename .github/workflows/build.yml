@@ -43,12 +43,12 @@ jobs:
     - name: Run acceptance surface (Bash)
       if: matrix.shell_name == 'bash'
       shell: bash
-      run: python skills/blasphemous-modding-helper/scripts/test_modding_api_acceptance.py --python python --require-clean
+      run: python tests/test_modding_api_acceptance.py --python python --require-clean
 
     - name: Run acceptance surface (PowerShell)
       if: matrix.shell_name == 'pwsh'
       shell: pwsh
-      run: python skills/blasphemous-modding-helper/scripts/test_modding_api_acceptance.py --python python --require-clean
+      run: python tests/test_modding_api_acceptance.py --python python --require-clean
 
   build:
     permissions:

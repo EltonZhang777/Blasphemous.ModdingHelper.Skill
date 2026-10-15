@@ -7,6 +7,10 @@ Before executing command in this reference, agent MUST apply command-context con
 
 ## Reference selection
 
+For ModdingAPI reference or topic requests, Agent MUST perform these steps.
+A decompiled-game-source request MUST follow the direct route in the
+Reference and topic routing table and MUST NOT perform these steps.
+
 1. Agent MUST read selected `config.yml`.
 2. If `modding_api_reference_path` is present, agent MUST use that local checkout. The
    path is authoritative for task; agent MUST NOT clone or update it during an
@@ -21,60 +25,68 @@ locations are defined in the [config schema](../config/preferences-schema.md).
 Explicit local-checkout setup flow is in
 [first-time-setup.md#q6-local-moddingapi-reference](../config/first-time-setup.md#q6-local-moddingapi-reference).
 
-## Routing contract
+## Read-only lookup delegation
 
-Selected reference is sole ModdingAPI authority for task. Agent MUST start at
-upstream development index and follow only linked page needed for the
-question:
+This route follows the shared [Read-only evidence delegation](../read-only-evidence-delegation.md) contract. The main agent retains command-context and configuration gates, reference selection and lifecycle, evidence synthesis, and any code or source-analysis work.
 
-- Local checkout: `<modding_api_reference_path>/docs/development/main.md`.
-- Remote fallback: `<MODDING_API_DOCS_URL>/development/main.md`, where
-  `MODDING_API_DOCS_URL` comes from resolver for selected reference.
+- The main agent MAY delegate a lookup only when it is read-only, bounded to one clear question and the selected reference pages, independently verifiable, and broad enough to justify context isolation. A small lookup on a known topic page SHOULD stay with the main agent. Reference lifecycle work and code changes MUST stay with the main agent.
+- Before delegation, the main agent MUST complete the command-context and configuration gates above and resolve the selected local checkout or release-aware remote reference. The child task MUST receive the exact question, permitted scope, and selected authority identity: for a remote reference, the selector, resolved release/tag or version, commit, and resolver-provided documentation/source URLs; for a local checkout, its absolute path, configured selector and available lock identity, and checkout HEAD. The child MUST NOT select or resolve another reference.
+- The child MUST begin with that reference's `docs/development/main.md` and follow only linked topic pages directly required by the question. Version-sensitive claims MUST identify the selected reference and the precise page or source location that supports them. When a coding question requires signature or behavior verification, the main agent retains the existing assembly/source check.
+- The child MUST NOT clone, fetch, update, check out, replace, or otherwise manage the selected reference or its lock state. If the supplied authority is missing, unreadable, or insufficient, the child MUST return the exact gap and the next action for the main agent.
+- The child handoff MUST satisfy the shared contract, including concise claim evidence, precise locations, the selected reference identity, and any ambiguity or missing evidence. The main agent SHOULD verify reported claims against the selected authority before using them.
 
-`main.md` name identifies documentation index. It is not request to
-read unqualified Git branch; agent MUST NOT interpret it that way. resolver's tag, branch, or commit remains
-part of every remote URL and every local-reference decision.
+## Reference and topic routing
 
-Reference selection is complete when active `config.yml` scope has been read and agent has recorded one resolved route: validated local checkout with its selector/lock state, or release-aware remote resolver output required for browsing.
+For ModdingAPI reference and topic requests, after reading `config.yml`, Agent
+MUST use this table to select the reference and topic route. The game-source
+row is a direct route and MUST NOT require ModdingAPI reference selection.
+After opening the selected ModdingAPI reference's `main.md` index, Agent MUST
+resolve topic pages from its `docs/development` directory.
 
-## Stable API topic routing
-
-Agent MUST use this table as first route for ordinary ModdingAPI work. Agent MUST open the
-selected reference's `docs/development/main.md`, then load named page and
-any directly linked page required by question.
-
-| Task topic | First page | Typical follow-up |
+| Request signal / condition | Route destination | Boundary / next action |
 | --- | --- | --- |
-| Project setup and package shape | `docs/development/setup.md` | `docs/development/mod.md` |
-| Mod class, registration, and lifecycle | `docs/development/mod.md` | `docs/development/execution.md` |
-| Initialization and callback order | `docs/development/execution.md` | `docs/development/mod.md` |
-| Persistent data and save compatibility | `docs/development/persistence.md` | `docs/development/mod.md` |
-| ModLog methods and severity | `docs/development/logging.md` | Referenced assembly/source when facts conflict |
-| Mod configuration | `docs/development/config.md` | `docs/development/files.md` when paths or data files matter |
-| File utilities and mod-owned files | `docs/development/files.md` | `docs/development/config.md` when configuration is involved |
-| Input and keybindings | `docs/development/input.md` | `docs/development/mod.md` for registration context |
-| Localization and translations | `docs/development/localization.md` | `docs/development/files.md` for resource paths |
-
-Table is route, not replacement API reference. Agent MUST confirm version-sensitive
-signatures and behavior against actual referenced assembly and matching
-source before writing code.
+| Configured local reference: `modding_api_reference_path` is present | `<modding_api_reference_path>/docs/development/main.md` | Agent MUST use this checkout and its selector/lock state. Agent MUST NOT clone or update it for an ordinary question. |
+| Release-aware remote fallback: local reference fields are absent, including legacy configuration or setup **Skip** | `<MODDING_API_DOCS_URL>/development/main.md` | Agent MUST resolve the selected reference first and retain its tag, branch, or commit in every URL. Agent MUST NOT use an unqualified moving branch. |
+| Decompiled Blasphemous game class, gameplay, or dependency question | [Blasphemous Source Code Navigation](../source-code-navigation/MAIN.md) and [Source analyzer](source-analyzer.md) | Agent MUST keep decompiled game-source facts on this route and MUST NOT require or load a ModdingAPI reference; if the task also includes ModdingAPI facts, those facts MUST remain owned by their selected release-aware reference. |
+| Stable topic: Project setup and package shape | `docs/development/setup.md` | When project structure matters, Agent MUST follow direct links to `docs/development/mod.md`. |
+| Stable topic: Mod class, registration, and lifecycle | `docs/development/mod.md` | For callback order, Agent MUST follow `docs/development/execution.md`. |
+| Stable topic: Initialization and callback order | `docs/development/execution.md` | For lifecycle context, Agent MUST follow `docs/development/mod.md`. |
+| Stable topic: Persistent data and save compatibility | `docs/development/persistence.md` | When lifecycle context matters, Agent MUST follow `docs/development/mod.md`. |
+| Stable topic: ModLog methods and severity | `docs/development/logging.md` | Agent MUST verify version-sensitive facts against the referenced assembly and matching source. |
+| Stable topic: Mod configuration | `docs/development/config.md` | When paths or data files matter, Agent MUST follow `docs/development/files.md`. |
+| Stable topic: File utilities and Mod-owned files | `docs/development/files.md` | When configuration is involved, Agent MUST follow `docs/development/config.md`. |
+| Stable topic: Input and keybindings | `docs/development/input.md` | For registration context, Agent MUST follow `docs/development/mod.md`. |
+| Stable topic: Localization and translations | `docs/development/localization.md` | For resource paths, Agent MUST follow `docs/development/files.md`. |
+| Advanced / archived topic: Console commands | `docs/development/console.md` | Agent MUST read only on demand and MUST verify current command types in source. |
+| Advanced / archived topic: Custom items | `docs/development/items.md` | Agent MUST read only on demand and MUST verify current item APIs in source. |
+| Advanced / archived topic: Level modifications | `docs/development/levels.md` | Agent MUST read only on demand and MUST treat active-development behavior as version-sensitive. |
+| Advanced / archived topic: Custom penitences | `docs/development/penitence.md` | Agent MUST read only on demand and MUST verify current types in source. |
+| Topic absent from the table, unlisted, or newly added | `docs/development/main.md` | Agent MUST use the index's actual page list and labels, follow only the exact linked page, and MUST NOT copy the upstream documentation tree. |
 
 ## Advanced and archived topics
 
-Agent MUST load these pages only when task names topic or stable route points
-to it. upstream index currently labels them `Services (Archive)`:
+Agent MUST load rows marked **Advanced / archived** only when the task names
+that topic or a stable route points to it. Agent MUST follow the selected
+index's current labels because upstream status may change.
 
-| Topic | First page | Handling |
-| --- | --- | --- |
-| Console commands | `docs/development/console.md` | Read on demand; verify current command types in source |
-| Custom items | `docs/development/items.md` | Read on demand; verify current item APIs in source |
-| Level modifications | `docs/development/levels.md` | Read on demand; label active-development behavior as version-sensitive |
-| Custom penitences | `docs/development/penitence.md` | Read on demand; verify current types in source |
+The table's unknown-topic row delegates unlisted pages to the selected
+reference's index. Agent MUST NOT copy the upstream documentation tree into
+this Skill.
 
-For topic absent from both tables, agent MUST use selected reference's
-`docs/development/main.md` as index, follow exact linked page on demand,
-and record resolved reference before relying on its guidance. Agent MUST NOT copy
-upstream documentation tree into this Skill.
+## Routing contract
+
+For ModdingAPI tasks, Agent MUST treat the selected reference as the sole
+ModdingAPI authority and MUST open its `docs/development/main.md` index before
+loading the named page or any directly linked page required by the question.
+The `main.md` filename identifies that documentation index; it MUST NOT be
+interpreted as an unqualified Git branch. The resolver's tag, branch, or
+commit remains part of every remote URL and local-reference decision.
+
+For ModdingAPI tasks, Agent MUST finish reference selection by recording
+either the validated local checkout and its selector/lock state or the
+release-aware remote resolver result. Agent MUST browse only the recorded
+ModdingAPI route. Version-sensitive signatures and behavior MUST be confirmed
+against the actual referenced assembly and matching source before writing code.
 
 ## Game-source separation
 
@@ -221,62 +233,9 @@ guidance. Bash and PowerShell
 command forms invoke this same Python entry point and therefore retain
 identical resolver fields, exit codes, and fixture checks.
 
-## Cross-platform acceptance gate
-
-Agent MUST run the deterministic Python acceptance gate before publishing
-changes to the reference workflow:
-
-```bash
-"$PYTHON3" "$SKILL_ROOT/scripts/test_modding_api_acceptance.py"
-```
-
-```powershell
-& $PYTHON3 (Join-Path $SkillRoot 'scripts\test_modding_api_acceptance.py')
-```
-
-Gate runs resolver, clone, lifecycle, and documentation suites through the
-same Python surface on the current native host. Its fixture scenarios cover
-annotated tags,
-branches, exact commits, clean updates, dirty worktrees, wrong origins,
-missing references, network failure, offline locks, output fields, and exit
-codes. It also checks resolver parity, installer dry-runs, repository-owned
-Markdown links, reports ignored local Markdown artifacts separately, and runs
-`git diff --check`. It never contacts GitHub and never uses user's reference
-checkout.
-
-Final verification invocation may require a clean worktree:
-
-```bash
-"$PYTHON3" "$SKILL_ROOT/scripts/test_modding_api_acceptance.py" --require-clean
-```
-
-```powershell
-& $PYTHON3 (Join-Path $SkillRoot 'scripts\test_modding_api_acceptance.py') --require-clean
-```
-
-Live network check is separate and manual. It resolves the actual latest
-non-draft, non-prerelease Release through the Python entry point, compares the
-resolved tag and commit, and verifies tag-specific documentation and source
-URLs:
-
-```bash
-"$PYTHON3" "$SKILL_ROOT/scripts/test_modding_api_live.py"
-```
-
-```powershell
-& $PYTHON3 (Join-Path $SkillRoot 'scripts\test_modding_api_live.py')
-```
-
-Agent MAY run live check only when network access is available. failure MUST NOT be
-treated as reason to substitute `main`; agent MUST preserve resolver error report and
-retry or use explicit selector.
-
-Acceptance verification is complete when the Python documentation smoke check
-and acceptance gate exit successfully on each native Windows/Linux/macOS CI
-matrix job. Ignored local Markdown artifacts MAY produce a separate warning,
-but MUST NOT make repository-owned documentation validation fail; live network
-check is optional and MUST be reported as not run when it was not requested or
-unavailable.
+If release resolution fails, Agent MUST NOT substitute `main` to mask the
+failure; Agent MUST preserve the resolver error report and retry or use an
+explicit selector.
 
 ## Completion criterion
 

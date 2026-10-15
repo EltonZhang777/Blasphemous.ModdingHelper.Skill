@@ -13,6 +13,10 @@ This sub-skill analyzes Blasphemous game source code, with focus on game mechani
 
 Before source analysis, agent MUST complete [Invocation preflight](../config/invocation-preflight.md). This branch adds source-path requirement: active `config.yml` MUST provide at least one valid `full_source_code_path` or `lightweight_source_code_path`.
 
+## Read-only evidence delegation
+
+Any delegated source evidence work MUST follow the shared [Read-only evidence delegation](../read-only-evidence-delegation.md) authority. The main agent MUST complete [Invocation preflight](../config/invocation-preflight.md), satisfy this source-path gate, and select one configured source tree plus its applicable authority through the [Source Code Navigation Guide](../source-code-navigation/MAIN.md) before delegating. The child MUST stay within that tree and authority and return each claim with the source identity, exact file path, and line number(s). If a path is missing or unreadable, the child MUST report the exact gap and next path-recovery action to the main agent; it MUST NOT guess or switch source trees. The shared authority's child boundaries apply, including its restrictions on configuration changes, log writes, worktree creation, and user decisions.
+
 ## Analysis Approach
 1. Agent MUST analyze user input to extract expected pattern, source-code details to find, and source-code file to check when one is specified.
 2. Agent MUST prioritize searching in lightweight solution first and SHOULD use full solution only when necessary.

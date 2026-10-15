@@ -28,7 +28,8 @@ If any selected agent installation or uninstallation fails, the installer exits 
 |-------|---------|
 | **Claude Code** | `/plugin marketplace add EltonZhang777/Blasphemous.ModdingHelper.Skill` then `/plugin install blasphemous-modding-helper@blasphemous-modding-helper-marketplace` |
 | **Gemini CLI** | `gemini extensions install https://github.com/EltonZhang777/Blasphemous.ModdingHelper.Skill` |
-| **Codex CLI** | `npx -y skills add EltonZhang777/Blasphemous.ModdingHelper.Skill -a codex -g -y` |
+| **Codex CLI (Skill)** | `npx -y skills add EltonZhang777/Blasphemous.ModdingHelper.Skill -a codex -g -y` |
+| **Codex CLI (plugin)** | `codex plugin marketplace add EltonZhang777/Blasphemous.ModdingHelper.Skill`, then `codex plugin add blasphemous-modding-helper@blasphemous-modding-helper-marketplace` |
 | **Cursor / Windsurf / Cline** | `npx -y skills add EltonZhang777/Blasphemous.ModdingHelper.Skill -a <agent> -g -y` |
 
 ### Custom-path install
@@ -111,6 +112,8 @@ cd Blasphemous.ModdingHelper.Skill
 
 The repository uses:
 - **`.claude-plugin/plugin.json`** — Claude Code plugin manifest
+- **`.codex-plugin/plugin.json`** — Codex plugin manifest for the bundled Skill
+- **`.agents/plugins/marketplace.json`** — Codex repo marketplace entry for the native plugin route
 - **`skills/blasphemous-modding-helper/SKILL.md`** — Core skill definition
 - **`install.sh` / `install.ps1`** — Cross-platform unified installers
 - **`gemini-extension.json`** — Gemini CLI extension descriptor
