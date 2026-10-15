@@ -404,18 +404,29 @@ class DocumentationConsistencyTests(unittest.TestCase):
         setup = read(SKILL_ROOT / "references" / "config" / "first-time-setup.md")
         normalized = setup.casefold()
 
-        self.assertLess(setup.index("[Python runtime gate]"), setup.index("1. Q1"))
-        order = ("1. Q1", "2. Q3", "3. Q4", "4. Q4b", "5. Q5", "6. Selector")
+        self.assertLess(setup.index("[Python runtime gate]"), setup.index("## Question Batches"))
+        order = (
+            "### Q1: Save Location",
+            "### Q2: Decompiled Source Branch",
+            "### Q3: Lightweight Source Code Path",
+            "### Q4: Full Source Code (optional)",
+            "### Q4b: Full Source Code Path (conditional)",
+            "### Q5: Modding Profile Path",
+            "### Q6: Local ModdingAPI Reference",
+            "### Reference Selector",
+        )
         positions = [setup.index(marker) for marker in order]
         self.assertEqual(positions, sorted(positions))
         for phrase in (
-            "q3 only when q2 is **yes**",
-            "q4b only when q4 is **yes**",
-            "selector details only when q6 is **yes**",
-            "conditional inputs must not be presented",
+            "the first message MUST ask Q1 and Q2 together, in that order",
+            "agent MUST ask Q4, Q5, and Q6 together",
+            "MUST ask Q3 only if the user chooses manual paths",
+            "agent MUST ask Q4b only after Q4 is answered **Yes**",
+            "the selector only after Q6 is answered **Yes**",
+            "agent MUST defer a question only when an unresolved answer determines",
             "corresponding single question",
             "retain every unrelated valid answer",
-            "askuserquestion",
+            "agent MUST NOT use agent or harness question components",
         ):
             self.assertIn(phrase.casefold(), normalized)
 
