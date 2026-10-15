@@ -15,9 +15,8 @@ from typing import Callable, Iterable, List, Optional, Sequence
 from urllib.parse import unquote
 
 
-SCRIPT_ROOT = Path(__file__).resolve().parent
-SKILL_ROOT = SCRIPT_ROOT.parent
-REPOSITORY_ROOT = SKILL_ROOT.parents[1]
+REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
+SKILL_ROOT = REPOSITORY_ROOT / "skills" / "blasphemous-modding-helper"
 ROOT_RUNNER = REPOSITORY_ROOT / "tests" / "run_blasphemous_modding_test.py"
 INSTALLER = REPOSITORY_ROOT / "bin" / "install.js"
 INSTALLER_TEST = REPOSITORY_ROOT / "tests" / "test_installer.js"

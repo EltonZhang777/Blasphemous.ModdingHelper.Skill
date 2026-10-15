@@ -22,6 +22,8 @@
     "bin/",
     "skills/",
     ".claude-plugin/",
+    ".codex-plugin/",
+    ".agents/plugins/",
     "gemini-extension.json",
     "README.md"
   ]

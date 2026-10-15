@@ -16,6 +16,7 @@ Use the narrowest authoritative file for each change:
 - `skills/blasphemous-modding-helper/references/source-code-navigation/MAIN.md` is the source-navigation authority; read it before searching source details.
 - `bin/install.js` owns installer behavior, agent detection, provider IDs, and CLI flags. `install.sh` and `install.ps1` are entry shims and stay behaviorally aligned with it.
 - `skills/blasphemous-modding-helper/version.yml` is the version source; `ci/update-version/UpdateVersionNumber.py` synchronizes public version fields.
+- `.codex-plugin/plugin.json` and `.agents/plugins/marketplace.json` own Codex plugin metadata and the repository marketplace route.
 - `README.md`, `package.json`, `.claude-plugin/plugin.json`, `gemini-extension.json`, and `skills-lock.json` are public package docs or manifests.
 - `.github/workflows/build.yml` is the CI and release-packaging contract.
 
@@ -43,5 +44,6 @@ The repository has no npm test/build script; use the branch checks and CI contra
 - Installer or JavaScript: run syntax, installer regression, wrapper, dry-run, and help checks relevant to the change.
 - Python Skill workflows: follow `docs/verification/blasphemous-modding-test.md` with a resolved Python 3.9+ interpreter; compile changed entry points when applicable.
 - Version or manifest: run the updater in dry-run mode and compare changed manifests with `skills/blasphemous-modding-helper/version.yml`.
-- Skill or Markdown references: validate changed relative links and preserve `MAIN.md` routing.
+- Skill or Markdown references: validate changed relative links and preserve `MAIN.md` routing. When changing normative Skill wording, run `python ci/audit_rfc2119.py --strict` and manually classify reported factual or illustrative prose.
+- ModdingAPI reference verification: follow `docs/verification/blasphemous-modding-test.md` for the repository acceptance gate and optional live check.
 - Any change: run `git diff --check` and finish with `git status --short`.

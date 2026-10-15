@@ -29,8 +29,6 @@ PYTHON_ENTRY_POINTS = (
     "decompile_source.py",
     "manage_modding_api.py",
     "resolve_modding_api.py",
-    "test_modding_api_acceptance.py",
-    "test_modding_api_live.py",
     "test_referencing_modding_api.py",
 )
 
@@ -340,9 +338,26 @@ def run_documentation_smoke() -> None:
         "references/config/invocation-preflight.md",
         "top-level Skill",
     )
-    if top_level.count("references/config/invocation-preflight.md") != 1:
+    canonical_preflight_path = "references/config/invocation-preflight.md"
+    preflight_link_targets = {
+        target
+        for label, target in re.findall(r"\[([^\]]+)\]\(([^)]+)\)", top_level)
+        if "preflight" in label.lower() or "invocation-preflight" in target.lower()
+    }
+    shared_gate = re.search(
+        r"(?ms)^## Shared entry gate\s+(.*?)(?=^## |\Z)", top_level
+    )
+    shared_gate_links = (
+        re.findall(r"\[Invocation preflight\]\(([^)]+)\)", shared_gate.group(1))
+        if shared_gate is not None
+        else []
+    )
+    if (
+        preflight_link_targets != {canonical_preflight_path}
+        or shared_gate_links != [canonical_preflight_path]
+    ):
         raise DocumentationTestFailure(
-            "top-level Skill must expose one shared preflight entry pointer"
+            "top-level Skill must keep one canonical preflight entry; route shortcuts must target it"
         )
     assert_not_contains(top_level, "## Skill command context", "top-level Skill")
     assert_not_contains(
@@ -422,13 +437,43 @@ def run_documentation_smoke() -> None:
     assert_contains(mod_test, "Completion criterion", "mod-test route")
 
     for heading in (
+        "## Reference and topic routing",
         "## Routing contract",
-        "## Stable API topic routing",
         "## Advanced and archived topics",
         "## Game-source separation",
         "## Documentation smoke check",
     ):
         assert_contains(referencing, heading, "ModdingAPI reference sub-skill")
+    for stable_row in (
+        "Stable topic: Project setup and package shape",
+        "Stable topic: Mod class, registration, and lifecycle",
+        "Stable topic: Initialization and callback order",
+        "Stable topic: Persistent data and save compatibility",
+        "Stable topic: ModLog methods and severity",
+        "Stable topic: Mod configuration",
+        "Stable topic: File utilities and Mod-owned files",
+        "Stable topic: Input and keybindings",
+        "Stable topic: Localization and translations",
+    ):
+        assert_contains(
+            referencing,
+            f"| {stable_row} |",
+            "ModdingAPI reference canonical route table",
+        )
+    for route_contract in (
+        "A decompiled-game-source request",
+        "MUST NOT perform these steps",
+        "The game-source",
+        "row is a direct route",
+        "MUST NOT require or load a ModdingAPI reference",
+        "| Topic absent from the table, unlisted, or newly added | `docs/development/main.md` |",
+        "MUST NOT copy the upstream documentation tree",
+    ):
+        assert_contains(
+            referencing,
+            route_contract,
+            "ModdingAPI reference canonical route table",
+        )
     for page in (
         "docs/development/main.md",
         "docs/development/setup.md",

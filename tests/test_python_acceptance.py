@@ -6,13 +6,8 @@ from pathlib import Path
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 ROOT_RUNNER = REPOSITORY_ROOT / "tests" / "run_blasphemous_modding_test.py"
-ACCEPTANCE_RUNNER = (
-    REPOSITORY_ROOT
-    / "skills"
-    / "blasphemous-modding-helper"
-    / "scripts"
-    / "test_modding_api_acceptance.py"
-)
+ACCEPTANCE_RUNNER = REPOSITORY_ROOT / "tests" / "test_modding_api_acceptance.py"
+ROOT_TESTS = REPOSITORY_ROOT / "tests"
 SCRIPT_TESTS = (
     REPOSITORY_ROOT
     / "skills"
@@ -52,13 +47,14 @@ class PythonAcceptanceEntryPointTests(unittest.TestCase):
         self.assertEqual(result.stderr, "")
 
     def test_script_local_behavior_tests_have_python_entry_points(self):
-        for name in (
-            "test_modding_api_lifecycle.py",
-            "test_referencing_modding_api.py",
-            "test_modding_api_live.py",
-        ):
-            with self.subTest(name=name):
-                result = self.run_entry_point(SCRIPT_TESTS / name, "--help")
+        entry_points = (
+            ROOT_TESTS / "test_modding_api_lifecycle.py",
+            SCRIPT_TESTS / "test_referencing_modding_api.py",
+            ROOT_TESTS / "test_modding_api_live.py",
+        )
+        for entry_point in entry_points:
+            with self.subTest(name=entry_point.name):
+                result = self.run_entry_point(entry_point, "--help")
 
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertIn("usage:", result.stdout)
@@ -66,12 +62,26 @@ class PythonAcceptanceEntryPointTests(unittest.TestCase):
 
     def test_live_smoke_requires_explicit_opt_in(self):
         result = self.run_entry_point(
-            SCRIPT_TESTS / "test_modding_api_live.py"
+            ROOT_TESTS / "test_modding_api_live.py"
         )
 
         self.assertEqual(result.returncode, 2)
         self.assertIn("opt-in", result.stderr)
         self.assertEqual(result.stdout, "")
+
+    def test_repository_only_tools_are_outside_the_packaged_skill(self):
+        for name in (
+            "test_modding_api_acceptance.py",
+            "test_modding_api_lifecycle.py",
+            "test_modding_api_live.py",
+        ):
+            with self.subTest(name=name):
+                self.assertTrue((ROOT_TESTS / name).is_file())
+                self.assertFalse((SCRIPT_TESTS / name).exists())
+
+        self.assertTrue((REPOSITORY_ROOT / "ci" / "audit_rfc2119.py").is_file())
+        self.assertFalse((SCRIPT_TESTS / "audit_rfc2119.py").exists())
+        self.assertTrue((SCRIPT_TESTS / "test_referencing_modding_api.py").is_file())
 
     def test_legacy_skill_scripts_and_test_runners_are_absent(self):
         legacy_scripts = sorted(

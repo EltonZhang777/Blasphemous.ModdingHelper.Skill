@@ -166,7 +166,7 @@ class ProjectArchitectureDocumentationTests(unittest.TestCase):
             self.assertIn(phrase, harmony)
 
     def test_final_architecture_terminology_is_reusable(self):
-        context = GLOSSARY.read_text(encoding="utf-8").casefold()
+        glossary = GLOSSARY.read_text(encoding="utf-8").casefold()
         guide = GUIDE.read_text(encoding="utf-8").casefold()
 
         for term in (
@@ -179,7 +179,7 @@ class ProjectArchitectureDocumentationTests(unittest.TestCase):
             "events",
             "harmony bridge",
         ):
-            self.assertIn(term, context)
+            self.assertIn(term, glossary)
             self.assertIn(term, guide)
 
 
