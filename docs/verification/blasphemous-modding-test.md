@@ -84,6 +84,35 @@ passes CLI help, and passes the same fixture suite on native Windows, Linux,
 and macOS. An unavailable CI host produces a warning with the reason; it is
 not substituted with a shell-wrapper result.
 
+## ModdingAPI reference maintainer gate
+
+Before publishing changes to the ModdingAPI reference workflow, maintainers
+MUST run the repository-only acceptance gate from the Skill repository root:
+
+```text
+<python3> tests/test_modding_api_acceptance.py
+```
+
+Append `--require-clean` for final verification. CI runs the gate with that
+option on native Windows, Linux, and macOS jobs. The gate covers resolver,
+clone, lifecycle, and documentation behavior; resolver parity; installer
+dry-runs; repository-owned Markdown links; and `git diff --check`. It does not
+contact GitHub or use a caller's reference checkout. Ignored local Markdown
+artifacts MAY produce a separate warning, but MUST NOT fail repository-owned
+documentation validation.
+
+Maintainers MAY run the separate live release check when network access is
+available. Run it from the Skill repository root:
+
+```text
+<python3> tests/test_modding_api_live.py
+```
+
+The check resolves the latest non-draft, non-prerelease Release, compares the
+resolved tag and commit, and verifies tag-specific documentation and source
+URLs. The live check is optional; report it as not run when it was not
+requested or network access is unavailable.
+
 ## Real-profile Manual verification gate
 
 The agent does not run this gate automatically. Deployment changes an external profile, launch starts a game process, and gameplay actions require the player. Use a disposable non-Steam or mirror profile and obtain user direction before performing it. For issue #19, the user has deferred this gate until the three worktrees are merged.

@@ -221,65 +221,9 @@ guidance. Bash and PowerShell
 command forms invoke this same Python entry point and therefore retain
 identical resolver fields, exit codes, and fixture checks.
 
-## Cross-platform acceptance gate
-
-Maintainers MUST run this repository-only deterministic Python acceptance gate
-from the root of the `Blasphemous.ModdingHelper.Skill` checkout before
-publishing changes to this reference workflow. Caller Mod repositories MUST NOT
-be required to contain or run these repository-only scripts:
-
-```bash
-"$PYTHON3" "tests/test_modding_api_acceptance.py"
-```
-
-```powershell
-& $PYTHON3 'tests\test_modding_api_acceptance.py'
-```
-
-Gate runs resolver, clone, lifecycle, and documentation suites through the
-same Python surface on the current native host. Its fixture scenarios cover
-annotated tags,
-branches, exact commits, clean updates, dirty worktrees, wrong origins,
-missing references, network failure, offline locks, output fields, and exit
-codes. It also checks resolver parity, installer dry-runs, repository-owned
-Markdown links, reports ignored local Markdown artifacts separately, and runs
-`git diff --check`. It never contacts GitHub and never uses user's reference
-checkout.
-
-Final verification invocation may require a clean worktree:
-
-```bash
-"$PYTHON3" "tests/test_modding_api_acceptance.py" --require-clean
-```
-
-```powershell
-& $PYTHON3 'tests\test_modding_api_acceptance.py' --require-clean
-```
-
-Maintainers MAY run the separate, manual repository-only live network check when network access is
-available. When they do, they MUST run it from the Skill repository root. The check resolves the actual
-latest non-draft, non-prerelease Release through the Python entry point, compares the
-resolved tag and commit, and verifies tag-specific documentation and source
-URLs:
-
-```bash
-"$PYTHON3" "tests/test_modding_api_live.py"
-```
-
-```powershell
-& $PYTHON3 'tests\test_modding_api_live.py'
-```
-
-Agent MAY run live check only when network access is available. failure MUST NOT be
-treated as reason to substitute `main`; agent MUST preserve resolver error report and
-retry or use explicit selector.
-
-Acceptance verification is complete when the Python documentation smoke check
-and acceptance gate exit successfully on each native Windows/Linux/macOS CI
-matrix job. Ignored local Markdown artifacts MAY produce a separate warning,
-but MUST NOT make repository-owned documentation validation fail; live network
-check is optional and MUST be reported as not run when it was not requested or
-unavailable.
+If release resolution fails, Agent MUST NOT substitute `main` to mask the
+failure; Agent MUST preserve the resolver error report and retry or use an
+explicit selector.
 
 ## Completion criterion
 

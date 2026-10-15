@@ -43,5 +43,6 @@ The repository has no npm test/build script; use the branch checks and CI contra
 - Installer or JavaScript: run syntax, installer regression, wrapper, dry-run, and help checks relevant to the change.
 - Python Skill workflows: follow `docs/verification/blasphemous-modding-test.md` with a resolved Python 3.9+ interpreter; compile changed entry points when applicable.
 - Version or manifest: run the updater in dry-run mode and compare changed manifests with `skills/blasphemous-modding-helper/version.yml`.
-- Skill or Markdown references: validate changed relative links and preserve `MAIN.md` routing.
+- Skill or Markdown references: validate changed relative links and preserve `MAIN.md` routing. When changing normative Skill wording, run `python ci/audit_rfc2119.py --strict` and manually classify reported factual or illustrative prose.
+- ModdingAPI reference verification: follow `docs/verification/blasphemous-modding-test.md` for the repository acceptance gate and optional live check.
 - Any change: run `git diff --check` and finish with `git status --short`.
