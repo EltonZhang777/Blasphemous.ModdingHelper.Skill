@@ -112,7 +112,7 @@ Q1 MUST remain first within the initial Q1/Q2 message so its answer is available
 - **Yes (Recommended when decompiled source is already available):** The user will provide an existing source path.
 - **No (run decompiler; Recommended when source is unavailable):** The decompiler obtains source for this branch.
 
-When the user selects **No**, that choice authorizes source acquisition. Before running the script, agent MUST show the resolved Steam game installation path, the `Assembly-CSharp.dll` and `Assembly-CSharp-firstpass.dll` files that will be removed, the Steam restoration step, the output path, and the required Steam, .NET, and `ilspycmd` tools.
+When the user selects **No**, that choice authorizes source acquisition. Before running the script, agent MUST show the resolved Steam game installation path, the `Assembly-CSharp.dll` and `Assembly-CSharp-firstpass.dll` files that will be removed, the Steam restoration step, the output path, and the required Steam, .NET, and `ilspycmd` tools (see [Dependencies](invocation-preflight.md#dependencies) for `ilspycmd` scope and missing-tool handling).
 
 - The Steam game installation MUST be resolved separately from `modding_profile_path`; the decompile branch MUST NOT substitute the Modding profile as its source-acquisition path.
 - Agent MUST validate the selected game path before the destructive step and stop when the path or required tools are invalid.
@@ -162,7 +162,7 @@ This path MUST be entered manually in all branches. A Modding profile is typical
 - **Yes (Recommended):** A shallow, reproducible checkout is cloned and its absolute path and selector are saved in `config.yml`.
 - **Skip:** Local reference fields remain absent and the release-aware remote fallback is used.
 
-If the user selects **Yes**, agent MUST use the same scope selected in Q1. Agent MUST NOT select an independent reference scope: local reference and its configuration MUST remain in the same scope domain. Approved paths are authoritative in [the config schema](preferences-schema.md#approved-local-reference-locations).
+If the user selects **Yes**, agent MUST use the same scope selected in Q1. See [Dependencies](invocation-preflight.md#dependencies) for Git's scope and missing-dependency handling for this optional checkout. Agent MUST NOT select an independent reference scope: local reference and its configuration MUST remain in the same scope domain. Approved paths are authoritative in [the config schema](preferences-schema.md#approved-local-reference-locations).
 
 ### Reference Selector
 

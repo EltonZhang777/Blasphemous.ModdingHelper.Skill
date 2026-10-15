@@ -27,6 +27,54 @@ ROUTED_REFERENCES = {
 
 
 class ReleaseMetadataTests(unittest.TestCase):
+    def test_dependency_inventory_matches_preflight_and_machine_readable_sources(self):
+        requirements = (
+            REPOSITORY_ROOT / "skills" / "blasphemous-modding-helper" / "requirements.txt"
+        ).read_text(encoding="utf-8")
+        preflight = (
+            REPOSITORY_ROOT
+            / "skills"
+            / "blasphemous-modding-helper"
+            / "references"
+            / "config"
+            / "invocation-preflight.md"
+        ).read_text(encoding="utf-8")
+        dependencies_match = re.search(
+            r"(?ms)^## Dependencies\s*\n(.*?)(?=^## |\Z)", preflight
+        )
+        self.assertIsNotNone(dependencies_match)
+        dependencies = dependencies_match.group(1)
+        dependency_rows = [
+            [cell.strip() for cell in line.strip("|").split("|")]
+            for line in dependencies.splitlines()
+            if line.startswith("| ")
+            and not line.startswith(("| Dependency |", "| --- |"))
+        ]
+        self.assertEqual(
+            {row[0] for row in dependency_rows},
+            {"`PyYAML>=6.0`", "`ilspycmd`", "BepInEx", "ModdingAPI", "Git"},
+        )
+        expected_columns = {
+            "`PyYAML>=6.0`": 4,
+            "`ilspycmd`": 3,
+            "BepInEx": 3,
+            "ModdingAPI": 3,
+            "Git": 3,
+        }
+        for row in dependency_rows:
+            self.assertEqual(len(row), expected_columns[row[0]], row[0])
+            self.assertTrue(all(row[1:]), row[0])
+        self.assertNotRegex(dependencies, r"(?m)^\| \x60?(?:Python|Steam|\.NET)\x60?(?:\s|\|)")
+        self.assertRegex(requirements, r"(?m)^\s*PyYAML\s*>=\s*6\.0\s*(?:#.*)?$")
+        declared_packages = re.findall(r"(?m)^\s*([A-Za-z][A-Za-z0-9_.-]*)", requirements)
+        self.assertEqual([name.casefold() for name in declared_packages], ["pyyaml"])
+        self.assertIn("`PyYAML>=6.0`", dependencies)
+
+        package = json.loads((REPOSITORY_ROOT / "package.json").read_text(encoding="utf-8"))
+        self.assertEqual(package["engines"]["node"], ">=18")
+        self.assertIn("Node.js `>=18`", dependencies)
+        self.assertIn("installation-time requirement", dependencies.casefold())
+
     def test_public_integration_metadata_matches_skill_identity_and_version(self):
         self.assertTrue(VERSION_SOURCE.is_file())
         self.assertFalse(

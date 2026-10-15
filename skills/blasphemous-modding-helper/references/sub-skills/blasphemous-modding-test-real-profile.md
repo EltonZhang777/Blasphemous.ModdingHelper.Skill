@@ -139,6 +139,8 @@ Completion criterion: printed artifact plan names one `TargetName`, one package 
 
 ### Profile and launcher preflight
 
+The [Dependencies](../config/invocation-preflight.md#dependencies) section summarizes BepInEx scope and missing-core handling.
+
 Selected `modding_profile_path` MUST be directory containing:
 
 ```text

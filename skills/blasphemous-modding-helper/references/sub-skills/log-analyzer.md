@@ -14,7 +14,7 @@ Before log analysis, agent MUST complete [Invocation preflight](../config/invoca
 ## Log File Paths
 - Blasphemous Unity log file: resolve `unity_log_dir` from `config.yml`; Windows normally uses `$env:USERPROFILE/AppData/LocalLow/TheGameKitchen/Blasphemous/output_log.txt`, while native Linux/macOS profiles normally use `Player.log` under configured directory
 - BepInEx log file: `<modding_profile_path>/BepInEx/LogOutput.log`
-  - Agent MUST acquire `<modding_profile_path>` from `config.yml`.
+  - Agent MUST acquire `<modding_profile_path>` from `config.yml`. The [Dependencies](../config/invocation-preflight.md#dependencies) section summarizes BepInEx scope and missing-source handling.
 
 ## Read-only evidence delegation
 

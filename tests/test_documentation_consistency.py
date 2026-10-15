@@ -37,6 +37,15 @@ ROUTE_DOCUMENTS = (
     "references/sub-skills/coding-standards.md",
     "references/sub-skills/referencing-modding-api.md",
 )
+DEPENDENCY_GUIDANCE = (
+    REPOSITORY_ROOT / "README.md",
+    MAIN_SKILL,
+    SKILL_ROOT / "references" / "config" / "first-time-setup.md",
+    SKILL_ROOT / "references" / "config" / "python-runtime.md",
+    SKILL_ROOT / "references" / "sub-skills" / "blasphemous-modding-test-real-profile.md",
+    SKILL_ROOT / "references" / "sub-skills" / "log-analyzer.md",
+    SKILL_ROOT / "references" / "sub-skills" / "referencing-modding-api.md",
+)
 
 APPROVED_CANONICAL_OWNERS = frozenset(
     {
@@ -232,6 +241,22 @@ def local_links(document):
 
 
 class DocumentationConsistencyTests(unittest.TestCase):
+    def test_dependency_guidance_links_to_shared_inventory(self):
+        inventory = (
+            SKILL_ROOT / "references" / "config" / "invocation-preflight.md"
+        ).resolve()
+        for document in DEPENDENCY_GUIDANCE:
+            targets = []
+            for raw_target in MARKDOWN_LINK.findall(read(document)):
+                path, separator, anchor = raw_target.partition("#")
+                if (
+                    separator
+                    and anchor.casefold() == "dependencies"
+                    and (document.parent / path).resolve() == inventory
+                ):
+                    targets.append(raw_target)
+            self.assertTrue(targets, document)
+
     def test_relative_links_resolve_across_reached_skill_documents(self):
         pending = [MAIN_SKILL]
         reached = set()
