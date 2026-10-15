@@ -7,9 +7,5 @@
   },
   "repository": "https://github.com/EltonZhang777/Blasphemous.ModdingHelper.Skill",
   "license": "MIT",
-  "minCliVersion": "2.1.0",
-  "keywords": ["game-modding", "blasphemous", "ai-agent"],
-  "agents": {
-    "claude-code": "skill"
-  }
+  "keywords": ["game-modding", "blasphemous", "ai-agent"]
 }

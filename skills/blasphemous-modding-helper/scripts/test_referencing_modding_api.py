@@ -29,8 +29,6 @@ PYTHON_ENTRY_POINTS = (
     "decompile_source.py",
     "manage_modding_api.py",
     "resolve_modding_api.py",
-    "test_modding_api_acceptance.py",
-    "test_modding_api_live.py",
     "test_referencing_modding_api.py",
 )
 
@@ -340,7 +338,10 @@ def run_documentation_smoke() -> None:
         "references/config/invocation-preflight.md",
         "top-level Skill",
     )
-    if top_level.count("references/config/invocation-preflight.md") != 1:
+    shared_gate_heading = "## Shared entry gate"
+    assert_contains(top_level, shared_gate_heading, "top-level Skill")
+    shared_gate = top_level.split(shared_gate_heading, 1)[1].split("\n## ", 1)[0]
+    if shared_gate.count("references/config/invocation-preflight.md") != 1:
         raise DocumentationTestFailure(
             "top-level Skill must expose one shared preflight entry pointer"
         )
@@ -422,13 +423,43 @@ def run_documentation_smoke() -> None:
     assert_contains(mod_test, "Completion criterion", "mod-test route")
 
     for heading in (
+        "## Reference and topic routing",
         "## Routing contract",
-        "## Stable API topic routing",
         "## Advanced and archived topics",
         "## Game-source separation",
         "## Documentation smoke check",
     ):
         assert_contains(referencing, heading, "ModdingAPI reference sub-skill")
+    for stable_row in (
+        "Stable topic: Project setup and package shape",
+        "Stable topic: Mod class, registration, and lifecycle",
+        "Stable topic: Initialization and callback order",
+        "Stable topic: Persistent data and save compatibility",
+        "Stable topic: ModLog methods and severity",
+        "Stable topic: Mod configuration",
+        "Stable topic: File utilities and Mod-owned files",
+        "Stable topic: Input and keybindings",
+        "Stable topic: Localization and translations",
+    ):
+        assert_contains(
+            referencing,
+            f"| {stable_row} |",
+            "ModdingAPI reference canonical route table",
+        )
+    for route_contract in (
+        "A decompiled-game-source request",
+        "MUST NOT perform these steps",
+        "The game-source",
+        "row is a direct route",
+        "MUST NOT require or load a ModdingAPI reference",
+        "| Topic absent from the table, unlisted, or newly added | `docs/development/main.md` |",
+        "MUST NOT copy the upstream documentation tree",
+    ):
+        assert_contains(
+            referencing,
+            route_contract,
+            "ModdingAPI reference canonical route table",
+        )
     for page in (
         "docs/development/main.md",
         "docs/development/setup.md",
