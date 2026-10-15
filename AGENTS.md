@@ -16,6 +16,7 @@ Use the narrowest authoritative file for each change:
 - `skills/blasphemous-modding-helper/references/source-code-navigation/MAIN.md` is the source-navigation authority; read it before searching source details.
 - `bin/install.js` owns installer behavior, agent detection, provider IDs, and CLI flags. `install.sh` and `install.ps1` are entry shims and stay behaviorally aligned with it.
 - `skills/blasphemous-modding-helper/version.yml` is the version source; `ci/update-version/UpdateVersionNumber.py` synchronizes public version fields.
+- `.codex-plugin/plugin.json` and `.agents/plugins/marketplace.json` own Codex plugin metadata and the repository marketplace route.
 - `README.md`, `package.json`, `.claude-plugin/plugin.json`, `gemini-extension.json`, and `skills-lock.json` are public package docs or manifests.
 - `.github/workflows/build.yml` is the CI and release-packaging contract.
 

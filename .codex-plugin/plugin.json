@@ -1,0 +1,13 @@
+{
+  "name": "blasphemous-modding-helper",
+  "version": "2.0.0",
+  "description": "Blasphemous modding, testing, log analysis, and localization lookup.",
+  "author": {
+    "name": "EltonZhang777"
+  },
+  "homepage": "https://github.com/EltonZhang777/Blasphemous.ModdingHelper.Skill",
+  "repository": "https://github.com/EltonZhang777/Blasphemous.ModdingHelper.Skill",
+  "license": "MIT",
+  "keywords": ["game-modding", "blasphemous", "ai-agent"],
+  "skills": "./skills/"
+}
