@@ -4,6 +4,8 @@ This reference is Harmony branch selected by [coding standards router](../sub-sk
 
 ## Scope and authority
 
+The canonical guidance for Mod-owned game API access is in the [Mod-owned game API access reminder](../sub-skills/coding-standards.md#mod-owned-game-api-access).
+
 These rules MUST apply only to Harmony code Mod author can maintain in root of Caller Mod repository. Decompiled game source, upstream Mods, dependency or vendor code, generated output, and direct copies remain under router's exclusion and preservation rules.
 
 Caller's actual referenced Harmony assembly and target type's actual signature MUST determine which attributes, overloads, injection parameters, and resolver APIs are legal. authority order is:
