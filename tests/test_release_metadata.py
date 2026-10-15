@@ -114,6 +114,10 @@ class ReleaseMetadataTests(unittest.TestCase):
         ).read_text(encoding="utf-8")
         preflight = workflow.index("check_python_environment.py")
         acceptance = workflow.index("test_modding_api_acceptance.py")
+        self.assertIn(
+            "run: python tests/test_modding_api_acceptance.py --python python --require-clean",
+            workflow,
+        )
         self.assertLess(preflight, acceptance)
         self.assertIn(
             "skills/blasphemous-modding-helper/requirements.txt",

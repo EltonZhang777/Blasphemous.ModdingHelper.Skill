@@ -29,8 +29,6 @@ PYTHON_ENTRY_POINTS = (
     "decompile_source.py",
     "manage_modding_api.py",
     "resolve_modding_api.py",
-    "test_modding_api_acceptance.py",
-    "test_modding_api_live.py",
     "test_referencing_modding_api.py",
 )
 

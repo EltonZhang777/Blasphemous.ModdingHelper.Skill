@@ -8,7 +8,7 @@ from pathlib import Path
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 SKILL_ROOT = REPOSITORY_ROOT / "skills" / "blasphemous-modding-helper"
 MAIN_SKILL = SKILL_ROOT / "SKILL.md"
-RFC_AUDIT = SKILL_ROOT / "scripts" / "audit_rfc2119.py"
+RFC_AUDIT = REPOSITORY_ROOT / "ci" / "audit_rfc2119.py"
 MARKDOWN_LINK = re.compile(r"\]\(([^)]+)\)")
 DELEGATION_REFERENCE = "references/read-only-evidence-delegation.md"
 DELEGATION_ROUTES = (

@@ -250,7 +250,7 @@ class PreferencesValidationTests(unittest.TestCase):
         fields = self.fields(result)
         self.assertEqual(fields["PREFERENCES_VALIDATION_STATUS"], "failed")
         self.assertEqual(fields["PREFERENCES_SETUP"], "required")
-        self.assertIn(str(self.config), fields["PREFERENCES_FILE"])
+        self.assertTrue(Path(fields["PREFERENCES_FILE"]).samefile(self.config))
         self.assertIn("Invalid config.yml", fields["PREFERENCES_VALIDATION_REASON"])
         self.assertEqual(self.config.read_bytes(), before)
 
@@ -285,7 +285,7 @@ class PreferencesValidationTests(unittest.TestCase):
         self.assertEqual(result.returncode, 10)
         fields = self.fields(result)
         self.assertEqual(fields["PREFERENCES_SCOPE"], "project")
-        self.assertIn(str(self.config), fields["PREFERENCES_FILE"])
+        self.assertTrue(Path(fields["PREFERENCES_FILE"]).samefile(self.config))
 
     def test_validation_failure_retains_the_selected_scope(self):
         self.write_config("check_period_days: 0\n")
