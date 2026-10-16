@@ -10,18 +10,13 @@ Run from the repository root:
 <python3> tests/run_blasphemous_modding_test.py
 ```
 
-The Python runner exercises the CLI, script-local contract tests, help contracts,
-documentation smoke checks, temporary projects, packages, profiles, processes,
-logs, and session state. It does not modify a real game profile or claim
-gameplay verification. The broader maintainer gate is:
+The Python runner exercises the CLI, script-local contract tests, help contracts, documentation smoke checks, temporary projects, packages, profiles, processes, logs, and session state. It does not modify a real game profile or claim gameplay verification. The broader maintainer gate is:
 
 ```text
 <python3> tests/test_modding_api_acceptance.py
 ```
 
-These commands verify functionality without requiring a clean worktree. Append
-`--require-clean` for an explicit cleanliness gate; CI uses that gate on a
-fresh checkout. Local runs should omit it when preserving pre-existing changes.
+These commands verify functionality without requiring a clean worktree. Append `--require-clean` for an explicit cleanliness gate; CI uses that gate on a fresh checkout. Local runs should omit it when preserving pre-existing changes.
 
 | Acceptance area | Fixture evidence |
 | --- | --- |
@@ -42,10 +37,7 @@ Observed on 2026-08-23: the process-scoped Windows Python runner passed CLI help
 
 Issue #49 validation on 2026-08-28: the native Python runner passed CLI help and 91 tests; the same 2 symlink-related cases were skipped by host privilege conditions.
 
-Issue #79/#80 validation on 2026-08-31: the native Python runner passed CLI
-help and 179 tests; 2 symlink-related cases were skipped by host privilege
-conditions. The CI contract runs this same Python surface on native Windows,
-Linux, and macOS.
+Issue #79/#80 validation on 2026-08-31: the native Python runner passed CLI help and 179 tests; 2 symlink-related cases were skipped by host privilege conditions. The CI contract runs this same Python surface on native Windows, Linux, and macOS.
 
 ## Agent-safe help gate
 
@@ -53,10 +45,7 @@ The root help must expose the canonical sequence: normal `run`, current-log `log
 
 ## Native Python entrypoint gate
 
-The acceptance runner invokes the same Python CLI and fixture suite directly on
-each supported native host. The invoking shell is only a process host; no
-legacy Skill shell or JavaScript implementation is part of the contract. The
-runner performs no deployment and launches no game:
+The acceptance runner invokes the same Python CLI and fixture suite directly on each supported native host. The invoking shell is only a process host; no legacy Skill shell or JavaScript implementation is part of the contract. The runner performs no deployment and launches no game:
 
 Repository runner:
 
@@ -70,48 +59,29 @@ Maintainer acceptance runner:
 <python3> tests/test_modding_api_acceptance.py
 ```
 
-Both runners accept an explicit Python 3 executable through `--python`; the
-default is the current interpreter. Skill runtime commands use the resolved
-`PYTHON3` context from [Python Runtime](../../skills/blasphemous-modding-helper/references/config/python-runtime.md)
-and do not silently install dependencies.
+Both runners accept an explicit Python 3 executable through `--python`; the default is the current interpreter. Skill runtime commands use the resolved `PYTHON3` context from [Python Runtime](../../skills/blasphemous-modding-helper/references/config/python-runtime.md) and do not silently install dependencies.
 
-The CLI rejects compatibility-layer indicators such as `MSYSTEM`, `CYGWIN`,
-WSL, Proton, and Wine before profile operations. This keeps a compatibility
-layer from being reported as a native host.
+The CLI rejects compatibility-layer indicators such as `MSYSTEM`, `CYGWIN`, WSL, Proton, and Wine before profile operations. This keeps a compatibility layer from being reported as a native host.
 
-Completion criterion: the same Python entry point prints its host identity,
-passes CLI help, and passes the same fixture suite on native Windows, Linux,
-and macOS. An unavailable CI host produces a warning with the reason; it is
-not substituted with a shell-wrapper result.
+Completion criterion: the same Python entry point prints its host identity, passes CLI help, and passes the same fixture suite on native Windows, Linux, and macOS. An unavailable CI host produces a warning with the reason; it is not substituted with a shell-wrapper result.
 
 ## ModdingAPI reference maintainer gate
 
-Before publishing changes to the ModdingAPI reference workflow, maintainers
-MUST run the repository-only acceptance gate from the Skill repository root:
+Before publishing changes to the ModdingAPI reference workflow, maintainers MUST run the repository-only acceptance gate from the Skill repository root:
 
 ```text
 <python3> tests/test_modding_api_acceptance.py
 ```
 
-Append `--require-clean` for final verification. CI runs the gate with that
-option on native Windows, Linux, and macOS jobs. The gate covers resolver,
-clone, lifecycle, and documentation behavior; resolver parity; installer
-dry-runs; repository-owned Markdown links; and `git diff --check`. It does not
-contact GitHub or use a caller's reference checkout. Ignored local Markdown
-artifacts MAY produce a separate warning, but MUST NOT fail repository-owned
-documentation validation.
+Append `--require-clean` for final verification. CI runs the gate with that option on native Windows, Linux, and macOS jobs. The gate covers resolver, clone, lifecycle, and documentation behavior; resolver parity; installer dry-runs; repository-owned Markdown links; and `git diff --check`. It does not contact GitHub or use a caller's reference checkout. Ignored local Markdown artifacts MAY produce a separate warning, but MUST NOT fail repository-owned documentation validation.
 
-Maintainers MAY run the separate live release check when network access is
-available. Run it from the Skill repository root:
+Maintainers MAY run the separate live release check when network access is available. Run it from the Skill repository root:
 
 ```text
 <python3> tests/test_modding_api_live.py
 ```
 
-The check resolves the latest non-draft, non-prerelease Release, compares the
-resolved tag and commit, and verifies tag-specific documentation and source
-URLs. The live check is optional; report it as not run when it was not
-requested or network access is unavailable.
+The check resolves the latest non-draft, non-prerelease Release, compares the resolved tag and commit, and verifies tag-specific documentation and source URLs. The live check is optional; report it as not run when it was not requested or network access is unavailable.
 
 ## Real-profile Manual verification gate
 

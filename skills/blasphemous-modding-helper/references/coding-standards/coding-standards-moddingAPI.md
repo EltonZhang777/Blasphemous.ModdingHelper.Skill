@@ -16,21 +16,13 @@ Caller's actual referenced ModdingAPI assembly MUST be first authority for signa
 
 If two authorities disagree, agent MUST inspect caller's version and corresponding source before generating code. If version or required API fact cannot be established, agent MUST stop and request source analysis or ask user; it MUST NOT guess from current upstream branch.
 
-For lifecycle and service questions, current upstream source entry points are
-`Blasphemous.ModdingAPI/BlasMod.cs` and
-`Blasphemous.ModdingAPI/ModServiceProvider.cs`. Agent MUST open these paths through
-the release-aware `MODDING_API_SOURCE_URL` emitted by [Referencing ModdingAPI](../sub-skills/referencing-modding-api.md); caller's referenced assembly and matching source remain authoritative.
+For lifecycle and service questions, current upstream source entry points are `Blasphemous.ModdingAPI/BlasMod.cs` and `Blasphemous.ModdingAPI/ModServiceProvider.cs`. Agent MUST open these paths through the release-aware `MODDING_API_SOURCE_URL` emitted by [Referencing ModdingAPI](../sub-skills/referencing-modding-api.md); caller's referenced assembly and matching source remain authoritative.
 
 Routed development documents are a responsibility index, not a second API encyclopedia. Agent MUST read only documents relevant to the task and MUST verify their claims against higher-priority authorities above.
 
 ## ModdingAPI development-document index
 
-The selected reference's `docs/development/main.md` owns the page list and its
-current stable or archived labels. This Skill MUST NOT mirror or maintain a
-page-by-page copy. Development documents provide navigation and context; API
-facts remain governed by the authority order above. [Referencing ModdingAPI](../sub-skills/referencing-modding-api.md)
-selects the local or release-aware reference and routes each topic through that
-index.
+The selected reference's `docs/development/main.md` owns the page list and its current stable or archived labels. This Skill MUST NOT mirror or maintain a page-by-page copy. Development documents provide navigation and context; API facts remain governed by the authority order above. [Referencing ModdingAPI](../sub-skills/referencing-modding-api.md) selects the local or release-aware reference and routes each topic through that index.
 
 | Request signal / condition | Route destination | Boundary / next action |
 | --- | --- | --- |
@@ -78,9 +70,7 @@ Current BlasMod constructor registers Mod, applies Harmony patches to Mod assemb
 
 ## ModLog
 
-Authoritative current source is `Blasphemous.ModdingAPI/ModLog.cs`, opened through
-the release-aware `MODDING_API_SOURCE_URL`. source currently exposes these public
-methods; Register is internal and MUST NOT be called by Mod code.
+Authoritative current source is `Blasphemous.ModdingAPI/ModLog.cs`, opened through the release-aware `MODDING_API_SOURCE_URL`. source currently exposes these public methods; Register is internal and MUST NOT be called by Mod code.
 
 | Public method | Public overloads | Source behavior | Intended use |
 | --- | --- | --- | --- |

@@ -41,8 +41,7 @@ This step is complete only when CLI resolves Unity log or warning remains visibl
 
 ## Startup diagnostic ownership
 
-The `logs` operation keeps structured warning and error records as bounded evidence
-hits with an ownership group:
+The `logs` operation keeps structured warning and error records as bounded evidence hits with an ownership group:
 
 | Group | Meaning |
 | --- | --- |
@@ -51,33 +50,17 @@ hits with an ownership group:
 | `baseline` | The record is a structured warning/error within the exact pre-session byte prefix retained by the current log. This is provenance, not a harmlessness claim. |
 | `unknown` | The record is not target-owned, is not from a recognized framework source, and has no proven session baseline; it remains visible without an ownership claim. |
 
-The launcher captures only pre-session file metadata (including size, digest, and
-line count). A current source receives `baseline` labels only when its retained
-prefix still matches that digest and ends at a complete line boundary; a
-rewritten, truncated, missing, or otherwise unproven prefix receives no
-baseline labels. Baseline labels are provenance only; log lines remain visible. Newly
-observed warnings and errors remain visible as `framework` or `unknown`
-evidence, and target-owned errors remain beside the startup result. The report
-stays bounded and does not persist a complete log copy.
+The launcher captures only pre-session file metadata (including size, digest, and line count). A current source receives `baseline` labels only when its retained prefix still matches that digest and ends at a complete line boundary; a rewritten, truncated, missing, or otherwise unproven prefix receives no baseline labels. Baseline labels are provenance only; log lines remain visible. Newly observed warnings and errors remain visible as `framework` or `unknown` evidence, and target-owned errors remain beside the startup result. The report stays bounded and does not persist a complete log copy.
 
 ## Test-session analysis source
 
-For a completed Test session, agent MUST analyze the session-bound **Test log
-snapshot**:
+For a completed Test session, agent MUST analyze the session-bound **Test log snapshot**:
 
 ```text
 <TEST_CLI> logs SESSION_ID --snapshot
 ```
 
-The operation MUST identify the requested session, require a complete BepInEx
-and Unity snapshot, and report every affected source plus the recovery action
-when the snapshot is missing or incomplete. It MUST NOT silently read a later
-live profile log in that mode. Snapshot analysis MUST label the evidence source
-and expose the snapshot capture condition, process state, stop decision, and
-the stop result. A snapshot captured while the process was running remains valid
-session evidence but is not described as post-stop final output. A later
-recapture after process exit updates the same session snapshot and is the
-snapshot used by subsequent analysis.
+The operation MUST identify the requested session, require a complete BepInEx and Unity snapshot, and report every affected source plus the recovery action when the snapshot is missing or incomplete. It MUST NOT silently read a later live profile log in that mode. Snapshot analysis MUST label the evidence source and expose the snapshot capture condition, process state, stop decision, and the stop result. A snapshot captured while the process was running remains valid session evidence but is not described as post-stop final output. A later recapture after process exit updates the same session snapshot and is the snapshot used by subsequent analysis.
 
 For live diagnosis, agent MUST explicitly request **Current log** evidence:
 
@@ -85,10 +68,7 @@ For live diagnosis, agent MUST explicitly request **Current log** evidence:
 <TEST_CLI> logs SESSION_ID --current
 ```
 
-Current analysis continues to resolve `modding_profile_path` and
-`unity_log_dir` from the active configuration and keeps the existing bounded
-diagnostic ownership rules. `--current` is required; the CLI has no implicit
-current-log alias.
+Current analysis continues to resolve `modding_profile_path` and `unity_log_dir` from the active configuration and keeps the existing bounded diagnostic ownership rules. `--current` is required; the CLI has no implicit current-log alias.
 
 ## Completion criteria
 

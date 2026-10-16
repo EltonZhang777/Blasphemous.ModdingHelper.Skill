@@ -2,52 +2,21 @@
 
 ## Problem Statement
 
-The real-profile Test workflow currently reads the BepInEx and Unity **current
-logs** in place. A later game launch can overwrite the BepInEx log before the
-agent analyzes the result of an earlier Manual verification. The user can
-provide a completed test result, but the evidence for that result is not
-reliably preserved as a complete, session-bound artifact.
+The real-profile Test workflow currently reads the BepInEx and Unity **current logs** in place. A later game launch can overwrite the BepInEx log before the agent analyzes the result of an earlier Manual verification. The user can provide a completed test result, but the evidence for that result is not reliably preserved as a complete, session-bound artifact.
 
-The workflow must preserve both log sources after the user confirms that the
-Test session is complete. It must also handle the case where the user has
-finished the Manual verification but has not closed the game. Stopping the
-game can itself produce useful log records, so stop authorization and snapshot
-capture must remain separate, visible decisions.
+The workflow must preserve both log sources after the user confirms that the Test session is complete. It must also handle the case where the user has finished the Manual verification but has not closed the game. Stopping the game can itself produce useful log records, so stop authorization and snapshot capture must remain separate, visible decisions.
 
 ## Solution
 
-Add a log-snapshot operation to the existing Python mod-testing CLI and its
-`TestSession` lifecycle seam. The operation stores a complete BepInEx copy and
-a complete Unity copy in the session data for the associated Test session. It
-never moves, truncates, deletes, or changes the original logs.
+Add a log-snapshot operation to the existing Python mod-testing CLI and its `TestSession` lifecycle seam. The operation stores a complete BepInEx copy and a complete Unity copy in the session data for the associated Test session. It never moves, truncates, deletes, or changes the original logs.
 
-The agent triggers the operation only after the user explicitly confirms that
-the test is complete or supplies a natural-language test result. Process exit,
-startup polling, `logs`, `stop`, and `clean` do not trigger a snapshot by
-themselves.
+The agent triggers the operation only after the user explicitly confirms that the test is complete or supplies a natural-language test result. Process exit, startup polling, `logs`, `stop`, and `clean` do not trigger a snapshot by themselves.
 
-If the tracked game process has already exited, the operation copies both
-sources immediately. If it is still running, the agent tells the user and
-requests permission to stop it. An approved stop is performed through the
-existing tracked-process stop seam; after the process tree exits, the
-operation copies the logs. If the user explicitly declines stop, or an
-approved force stop fails, the operation copies the current log contents
-instead and records that the process was still running or that stopping failed.
-If the user does not answer the stop request, the snapshot remains pending;
-the agent does not infer approval or capture in the same turn.
+If the tracked game process has already exited, the operation copies both sources immediately. If it is still running, the agent tells the user and requests permission to stop it. An approved stop is performed through the existing tracked-process stop seam; after the process tree exits, the operation copies the logs. If the user explicitly declines stop, or an approved force stop fails, the operation copies the current log contents instead and records that the process was still running or that stopping failed. If the user does not answer the stop request, the snapshot remains pending; the agent does not infer approval or capture in the same turn.
 
-Each source is copied independently into a dedicated snapshot directory under
-the Test session's temporary session data. Source-specific target names prevent
-collisions. A repeated capture for the same session replaces that session's
-same-source snapshot and updates its metadata. The session manifest records
-per-source status, capture conditions, process state, stop decision/result,
-source and target paths, byte counts, and digests. A missing or failed source
-does not delete a successful source; the overall snapshot is marked incomplete.
+Each source is copied independently into a dedicated snapshot directory under the Test session's temporary session data. Source-specific target names prevent collisions. A repeated capture for the same session replaces that session's same-source snapshot and updates its metadata. The session manifest records per-source status, capture conditions, process state, stop decision/result, source and target paths, byte counts, and digests. A missing or failed source does not delete a successful source; the overall snapshot is marked incomplete.
 
-When a completed Test session is analyzed, the log-analyzer workflow uses its
-Test log snapshot as the evidence source. It does not silently fall back to a
-profile current log that may belong to a later launch. Analysis of a current
-log remains available only when the user explicitly asks for current evidence.
+When a completed Test session is analyzed, the log-analyzer workflow uses its Test log snapshot as the evidence source. It does not silently fall back to a profile current log that may belong to a later launch. Analysis of a current log remains available only when the user explicitly asks for current evidence.
 
 ## User Stories
 

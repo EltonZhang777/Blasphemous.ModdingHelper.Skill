@@ -7,11 +7,7 @@ description: Python interpreter, dependency, diagnostic, and command-boundary co
 
 This reference owns the Python runtime gate shared by future Skill entry points. It is the single source of truth for interpreter selection, dependency validation, configuration diagnostics, and direct external command execution.
 
-The final configuration vocabulary is fixed: the active file is `config.yml`;
-`last_checked_time` and `last_checked_version` are validation metadata;
-`check_period_days` is the validation period; and `last_checked_version` comes
-from the installed Skill version source, [`version.yml`](../../version.yml).
-These names MUST be used in setup and validation reports.
+The final configuration vocabulary is fixed: the active file is `config.yml`; `last_checked_time` and `last_checked_version` are validation metadata; `check_period_days` is the validation period; and `last_checked_version` comes from the installed Skill version source, [`version.yml`](../../version.yml). These names MUST be used in setup and validation reports.
 
 ## First-time setup gate
 

@@ -1,8 +1,6 @@
 # Local handoff records
 
-`docs/handoff/` contains ignored, local continuation records. It is not Skill
-authority and is not release-package input. Keep records redacted: no tokens,
-credentials, session identifiers, or private machine paths.
+`docs/handoff/` contains ignored, local continuation records. It is not Skill authority and is not release-package input. Keep records redacted: no tokens, credentials, session identifiers, or private machine paths.
 
 ## Status rule
 
@@ -18,9 +16,7 @@ or:
 Status: historical snapshot
 ```
 
-A record without one of these markers is invalid and MUST NOT be treated as a
-handoff record or current instruction. Historical records are evidence tied to
-their recorded revision, not current instructions.
+A record without one of these markers is invalid and MUST NOT be treated as a handoff record or current instruction. Historical records are evidence tied to their recorded revision, not current instructions.
 
 ## Active handoff minimum
 
@@ -33,10 +29,7 @@ An active record MUST identify:
 - `Owner decision`: accepted scope or explicit deferral.
 - `Next gate`: exact check or decision needed to continue.
 
-Use repository-relative links from `docs/handoff/`. Commands MUST name the
-repository, branch or revision, and expected result. A historical command is
-evidence only and MUST be labeled as such; do not present it as a command to
-run against the current tree.
+Use repository-relative links from `docs/handoff/`. Commands MUST name the repository, branch or revision, and expected result. A historical command is evidence only and MUST be labeled as such; do not present it as a command to run against the current tree.
 
 ## Minimal template
 

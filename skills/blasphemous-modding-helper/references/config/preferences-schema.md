@@ -2,9 +2,7 @@
 
 ## Format
 
-`config.yml` is a top-level YAML mapping. The supported configuration shape uses
-scalar values for known fields and preserves unknown scalar, list, and mapping
-fields when they are not changed by a workflow:
+`config.yml` is a top-level YAML mapping. The supported configuration shape uses scalar values for known fields and preserves unknown scalar, list, and mapping fields when they are not changed by a workflow:
 
 ```yaml
 full_source_code_path: Path/to/blasphemous-source-code
@@ -42,15 +40,7 @@ last_checked_version: 2.0.0
 check_period_days: 7
 ```
 
-`last_checked_time` and `last_checked_version` are validation metadata.
-`check_period_days` is the validation period. `last_checked_time` is UTC ISO
-8601 metadata and `last_checked_version` is the exact Skill version from the
-installed Skill's [`version.yml`](../../version.yml). Missing, malformed, or
-future metadata triggers validation. A current configuration within its period
-returns `skipped` without writing. Successful validation returns `passed` or
-`normalized`, writes the managed metadata, and preserves unrelated fields,
-comments, and order. Invalid YAML or invalid `check_period_days` returns
-`failed`, leaves the file unchanged, and routes to first-time setup.
+`last_checked_time` and `last_checked_version` are validation metadata. `check_period_days` is the validation period. `last_checked_time` is UTC ISO 8601 metadata and `last_checked_version` is the exact Skill version from the installed Skill's [`version.yml`](../../version.yml). Missing, malformed, or future metadata triggers validation. A current configuration within its period returns `skipped` without writing. Successful validation returns `passed` or `normalized`, writes the managed metadata, and preserves unrelated fields, comments, and order. Invalid YAML or invalid `check_period_days` returns `failed`, leaves the file unchanged, and routes to first-time setup.
 
 ## Approved local reference locations
 
@@ -61,16 +51,11 @@ Local checkout uses the same scope as its configuration file:
 | User | `$HOME/.skills/blasphemous-modding-helper/references/modding-api` | `$HOME/.skills/blasphemous-modding-helper/config.yml` |
 | Project | `.skills/blasphemous-modding-helper/references/modding-api` | `.skills/blasphemous-modding-helper/config.yml` |
 
-`modding_api_reference_path` is absolute after setup. Missing
-ModdingAPI fields remain valid in legacy configuration and are added only when the
-user opts into local reference setup. Skipping local setup leaves both fields
-absent, preserving release-aware remote fallback.
+`modding_api_reference_path` is absolute after setup. Missing ModdingAPI fields remain valid in legacy configuration and are added only when the user opts into local reference setup. Skipping local setup leaves both fields absent, preserving release-aware remote fallback.
 
 ## Sibling lock state
 
-Lifecycle commands store reproducibility state beside, not inside, the
-checkout. For a reference path ending in `references/modding-api`, lock
-path is `references/modding-api.lock`. lock is plain `key: value` text:
+Lifecycle commands store reproducibility state beside, not inside, the checkout. For a reference path ending in `references/modding-api`, lock path is `references/modding-api.lock`. lock is plain `key: value` text:
 
 ```yaml
 selector: latest
@@ -80,15 +65,11 @@ checked_at: 2026-08-22T12:34:56Z
 repository: https://github.com/BrandenEK/Blasphemous.ModdingAPI.git
 ```
 
-`selector`, `resolved_tag`, `resolved_commit`, and `checked_at` are required.
-`repository` records the supported upstream used by the operation.
-Lock file is managed state, not part of the upstream Git worktree.
+`selector`, `resolved_tag`, `resolved_commit`, and `checked_at` are required. `repository` records the supported upstream used by the operation. Lock file is managed state, not part of the upstream Git worktree.
 
 ## Resolver fixture contract
 
-`--metadata-file` is deterministic test input, not live Release metadata.
-Every fixture record MUST declare `fixture_version` equal to its `tag_name` or
-`resolved_ref`:
+`--metadata-file` is deterministic test input, not live Release metadata. Every fixture record MUST declare `fixture_version` equal to its `tag_name` or `resolved_ref`:
 
 ```json
 {
@@ -101,8 +82,4 @@ Every fixture record MUST declare `fixture_version` equal to its `tag_name` or
 }
 ```
 
-Resolver output reports `MODDING_API_REFERENCE_VERSION`, fixture source,
-fixture version, and `MODDING_API_FIXTURE_STATUS=historical` together. Missing
-or mismatched `fixture_version` fails deterministically. Agent MUST repair the
-fixture or use a matching selector. This prevents old fixtures from resembling
-the current API.
+Resolver output reports `MODDING_API_REFERENCE_VERSION`, fixture source, fixture version, and `MODDING_API_FIXTURE_STATUS=historical` together. Missing or mismatched `fixture_version` fails deterministically. Agent MUST repair the fixture or use a matching selector. This prevents old fixtures from resembling the current API.

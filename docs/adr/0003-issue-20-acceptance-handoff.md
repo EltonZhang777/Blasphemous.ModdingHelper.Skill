@@ -1,10 +1,7 @@
 # Issue #20 historical acceptance handoff
-This handoff records evidence at commit `904ecbf` only. It is historical and
-non-authoritative for later repository states; current release decisions are
-tracked by [issue #89](https://github.com/EltonZhang777/Blasphemous.ModdingHelper.Skill/issues/89).
+This handoff records evidence at commit `904ecbf` only. It is historical and non-authoritative for later repository states; current release decisions are tracked by [issue #89](https://github.com/EltonZhang777/Blasphemous.ModdingHelper.Skill/issues/89).
 
-> Status: historical snapshot. The evidence below is bound to `904ecbf` and
-> is not current release evidence or an active instruction.
+> Status: historical snapshot. The evidence below is bound to `904ecbf` and is not current release evidence or an active instruction.
 
 ## Historical next-session focus
 

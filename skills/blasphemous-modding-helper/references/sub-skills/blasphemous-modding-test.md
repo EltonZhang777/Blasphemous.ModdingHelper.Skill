@@ -9,8 +9,7 @@ The branch documents own their workflows. The shared entry MUST NOT duplicate th
 
 ## Evidence vocabulary
 
-The following terms are distinct and MUST be used consistently in route and
-completion reports:
+The following terms are distinct and MUST be used consistently in route and completion reports:
 
 | Term | Meaning and boundary |
 | --- | --- |
@@ -20,10 +19,7 @@ completion reports:
 | `Automated xUnit test` | Deterministic caller-Mod test run through the standard xUnit/.NET runner without a real profile or game process. |
 | `Real-profile test` | Test phase that uses a disposable or mirror Modding profile and may produce separate startup evidence and Manual verification. |
 
-`launched`, `ready`, and `mod_loaded` are startup states, not gameplay proof.
-An automated xUnit result is automated evidence, not gameplay proof. A Test
-session is identified by its exact session ID; evidence from one session MUST
-NOT be attributed to another.
+`launched`, `ready`, and `mod_loaded` are startup states, not gameplay proof. An automated xUnit result is automated evidence, not gameplay proof. A Test session is identified by its exact session ID; evidence from one session MUST NOT be attributed to another.
 
 ## Shared entry conditions
 
@@ -32,10 +28,7 @@ NOT be attributed to another.
 3. Agent MUST preserve the distinction between caller Mod repositories, the Skill repository, Mod-owned code, generated output, and external game artifacts.
 4. Agent MUST keep automated evidence separate from **Manual verification**. A test runner result or startup log is not a player observation.
 
-Classification happens before branch-specific gates. A caller-owned Automated
-xUnit request does not invoke Skill scripts or require the Skill's configuration
-or Python runtime; the Real-profile branch owns its own preflight and profile
-requirements.
+Classification happens before branch-specific gates. A caller-owned Automated xUnit request does not invoke Skill scripts or require the Skill's configuration or Python runtime; the Real-profile branch owns its own preflight and profile requirements.
 
 ## Route decision table
 
@@ -48,26 +41,15 @@ requirements.
 
 ## Route result contract
 
-The agent MUST return exactly one route result: `Real-profile`, `xUnit`, `both`, or
-`ambiguous`. `ambiguous` is a no-execution result: the agent MUST NOT execute a
-branch command until the user clarifies the required runtime conditions and
-evidence.
+The agent MUST return exactly one route result: `Real-profile`, `xUnit`, `both`, or `ambiguous`. `ambiguous` is a no-execution result: the agent MUST NOT execute a branch command until the user clarifies the required runtime conditions and evidence.
 
 ## Both-phase and final report contract
 
-For a `both` result, the xUnit phase first runs; the Real-profile phase second
-runs. The xUnit phase does not wait for Real-profile configuration; the
-Real-profile phase runs its own branch gate independently.
+For a `both` result, the xUnit phase first runs; the Real-profile phase second runs. The xUnit phase does not wait for Real-profile configuration; the Real-profile phase runs its own branch gate independently.
 
-Each phase records independent commands, independent evidence, and independent statuses.
-A failure or block in one phase does not fabricate the other phase
-result. Both is complete only after all required phases complete.
+Each phase records independent commands, independent evidence, and independent statuses. A failure or block in one phase does not fabricate the other phase result. Both is complete only after all required phases complete.
 
-Conflicting environment or evidence requirements return `ambiguous` or
-`unresolved`. Ambiguous requests execute no test or profile command. The final
-report MUST include route, per-phase command, status, completion evidence,
-blocked reason when applicable, and next action; Automated, startup, and
-**Manual verification** evidence remain separate.
+Conflicting environment or evidence requirements return `ambiguous` or `unresolved`. Ambiguous requests execute no test or profile command. The final report MUST include route, per-phase command, status, completion evidence, blocked reason when applicable, and next action; Automated, startup, and **Manual verification** evidence remain separate.
 
 Test doubles, mocks, and stubs remain compatible with the Automated xUnit route when the test does not require the real game process, profile, lifecycle, or player. A test that needs those runtime conditions belongs to the Real-profile route even when it references Unity or game-facing types.
 
@@ -82,18 +64,9 @@ Test doubles, mocks, and stubs remain compatible with the Automated xUnit route 
 
 ## Manual completion and session identity
 
-The agent MUST treat an explicit statement that testing is complete or a
-natural-language success, failure, or anomalous result as a snapshot trigger
-only when the result is clear and can be associated with exactly one Test
-session. An ambiguous result or an unclear session identity remains unresolved.
+The agent MUST treat an explicit statement that testing is complete or a natural-language success, failure, or anomalous result as a snapshot trigger only when the result is clear and can be associated with exactly one Test session. An ambiguous result or an unclear session identity remains unresolved.
 
-When the result or session is ambiguous, the agent MUST NOT invoke `snapshot`,
-MUST NOT select the newest session by guess, and MUST NOT infer the session from
-process state.
-The agent MUST ask the user for the Test session ID and any missing result
-detail before capturing evidence. Process exit, startup polling, `logs`,
-`stop`, and `clean` MUST NOT resolve a missing completion confirmation or
-session identity.
+When the result or session is ambiguous, the agent MUST NOT invoke `snapshot`, MUST NOT select the newest session by guess, and MUST NOT infer the session from process state. The agent MUST ask the user for the Test session ID and any missing result detail before capturing evidence. Process exit, startup polling, `logs`, `stop`, and `clean` MUST NOT resolve a missing completion confirmation or session identity.
 
 ## Completion criterion
 

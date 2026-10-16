@@ -204,9 +204,7 @@ Validation criteria:
   - Lightweight fail → retry Q3 only
   - Full fail (if provided) → retry Q4b only
   - Modding profile fail → retry Q5 only
-- Agent MUST retain every unrelated valid answer and successful branch result
-  when retrying. A failed path check MUST re-ask only its corresponding question;
-  it MUST NOT discard Q1, Q2, other valid paths, or a successful decompile.
+- Agent MUST retain every unrelated valid answer and successful branch result when retrying. A failed path check MUST re-ask only its corresponding question; it MUST NOT discard Q1, Q2, other valid paths, or a successful decompile.
 - Decompile branch: script exit code 0 validates lightweight automatically
 
 **Script failure handling** (Q2 = No, script exit code != 0):
@@ -226,8 +224,7 @@ Validation criteria:
 
 ## Save Locations
 
-Agent MUST use approved configuration and local-reference paths in
-[the config schema](preferences-schema.md#approved-local-reference-locations).
+Agent MUST use approved configuration and local-reference paths in [the config schema](preferences-schema.md#approved-local-reference-locations).
 
 ## Setup Workflow After User-questions
 
@@ -251,20 +248,13 @@ Setup is complete only when all of the following are true:
 Every setup result MUST report:
 
 - `status`: `complete` when the boundary above is satisfied, otherwise `blocked`;
-- `completion evidence`: the resolved Python runtime fields, selected scope,
-  validated paths, clone result when applicable, and saved `config.yml` path;
-- `blocked reason`: the exact failed gate or unanswered decision when setup is
-  incomplete;
-- `next action`: the corresponding retry question, repair step, or downstream
-  handoff after setup is complete.
+- `completion evidence`: the resolved Python runtime fields, selected scope, validated paths, clone result when applicable, and saved `config.yml` path;
+- `blocked reason`: the exact failed gate or unanswered decision when setup is incomplete;
+- `next action`: the corresponding retry question, repair step, or downstream handoff after setup is complete.
 
 ### Setup incomplete
 
-Setup is incomplete when any required answer, path check, save operation, or
-runtime gate has not succeeded. Clone failure remains incomplete until the user
-chooses a valid retry or explicitly skips the optional local reference. While
-setup is incomplete, the agent MUST NOT enter source analysis, log analysis,
-modding, or test operations; it MUST report the failure and its retry path.
+Setup is incomplete when any required answer, path check, save operation, or runtime gate has not succeeded. Clone failure remains incomplete until the user chooses a valid retry or explicitly skips the optional local reference. While setup is incomplete, the agent MUST NOT enter source analysis, log analysis, modding, or test operations; it MUST report the failure and its retry path.
 
 ## `config.yml` Template
 

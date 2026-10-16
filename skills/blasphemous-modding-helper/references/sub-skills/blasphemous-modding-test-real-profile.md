@@ -62,12 +62,7 @@ Canonical flow for a normal build, startup evidence, tracked stop, safe cleanup,
 <TEST_CLI> status
 ```
 
-The snapshot command comes before the optional stop. If it reports a pending
-approval, repeat it with the requested decision flag; stop the tracked session
-after capture only when the game remains running. If graceful stop does not
-finish, retry only the same tracked session with `<TEST_CLI> stop SESSION_ID --force`.
-`stop` does not accept project, profile, launcher, log-directory, artifact,
-build, or cleanup options.
+The snapshot command comes before the optional stop. If it reports a pending approval, repeat it with the requested decision flag; stop the tracked session after capture only when the game remains running. If graceful stop does not finish, retry only the same tracked session with `<TEST_CLI> stop SESSION_ID --force`. `stop` does not accept project, profile, launcher, log-directory, artifact, build, or cleanup options.
 
 Common options are accepted by `run`, `clean`, `logs`, `snapshot`, and `status`:
 
@@ -182,24 +177,11 @@ Completion criterion: tracked process is stopped or confirmed gone, and no unrel
 <TEST_CLI> logs SESSION_ID [common options] [--full] (--current|--snapshot)
 ```
 
-`logs` uses the selected profile and log-directory context. `--project`,
-`--profile`, `--launcher`, and `--unity-log-dir` override saved values for this
-invocation; `--full` controls output size. Exactly one source flag is required:
-`--current` explicitly reads the configured live sources, called **Current log**
-evidence. `--snapshot` reads the complete **Test log snapshot** associated with
-the completed Test session. There is no implicit source mode.
+`logs` uses the selected profile and log-directory context. `--project`, `--profile`, `--launcher`, and `--unity-log-dir` override saved values for this invocation; `--full` controls output size. Exactly one source flag is required: `--current` explicitly reads the configured live sources, called **Current log** evidence. `--snapshot` reads the complete **Test log snapshot** associated with the completed Test session. There is no implicit source mode.
 
-`--snapshot` analyzes the complete Test-session snapshot associated with
-`SESSION_ID`. It never falls back to live sources: a missing or incomplete
-snapshot reports the affected source and tells the agent to rerun `snapshot`
-after recovery. Snapshot analysis prints the snapshot capture condition,
-process state, stop decision, and stop result, including a visible non-final
-condition for captures made while the game remained running.
+`--snapshot` analyzes the complete Test-session snapshot associated with `SESSION_ID`. It never falls back to live sources: a missing or incomplete snapshot reports the affected source and tells the agent to rerun `snapshot` after recovery. Snapshot analysis prints the snapshot capture condition, process state, stop decision, and stop result, including a visible non-final condition for captures made while the game remained running.
 
-Before invoking `snapshot`, apply the shared Manual completion and session
-identity rules. A clear player result MUST be bound to exactly one
-`SESSION_ID`; an ambiguous result or session remains pending until the agent
-asks the user to identify it.
+Before invoking `snapshot`, apply the shared Manual completion and session identity rules. A clear player result MUST be bound to exactly one `SESSION_ID`; an ambiguous result or session remains pending until the agent asks the user to identify it.
 
 CLI reads existing logs in place and stores only bounded evidence metadata in temporary session manifest. It does not create persistent log report or copy log contents. Default output is last 200 lines per source; `--full` prints complete current file. Evidence hits retain source label, concrete path, line number, match reason, kind, bounded text, and available `mod_id`/`mod_name` independently of the output tail, so early startup hits remain reportable without unbounded output.
 
@@ -232,26 +214,16 @@ Completion criterion: agent reports state, current/stale/missing status of both 
 
 ## Report status and evidence boundary
 
-Reports keep build, artifact, deployment, launch, startup, and process evidence
-separate. The overall status is exactly one of `complete`, `failed`, `blocked`,
-or `pending-manual`:
+Reports keep build, artifact, deployment, launch, startup, and process evidence separate. The overall status is exactly one of `complete`, `failed`, `blocked`, or `pending-manual`:
 
-- `complete`: the requested automated and startup operations finished and any
-  required Manual verification is recorded.
+- `complete`: the requested automated and startup operations finished and any required Manual verification is recorded.
 - `failed`: the operation ran and returned a failure that needs repair.
-- `blocked`: a gate, profile, session, or safety condition prevented execution;
-  the report includes the concrete next action.
-- `pending-manual`: startup evidence exists, but the player's Manual
-  verification is still required.
+- `blocked`: a gate, profile, session, or safety condition prevented execution; the report includes the concrete next action.
+- `pending-manual`: startup evidence exists, but the player's Manual verification is still required.
 
-Every Real-profile test or verification report MUST include `status`,
-`completion evidence`, the blocked or failed reason when applicable, and
-`next action`. Completion evidence MUST identify the Test session and keep
-Current log, Test log snapshot, startup evidence, and Manual verification
-separate.
+Every Real-profile test or verification report MUST include `status`, `completion evidence`, the blocked or failed reason when applicable, and `next action`. Completion evidence MUST identify the Test session and keep Current log, Test log snapshot, startup evidence, and Manual verification separate.
 
-`mod_loaded` remains startup evidence only and never changes into gameplay
-success without a separate Manual verification record.
+`mod_loaded` remains startup evidence only and never changes into gameplay success without a separate Manual verification record.
 
 ### `snapshot`: preserve completed-session logs
 
@@ -261,29 +233,11 @@ success without a separate Manual verification record.
 <TEST_CLI> snapshot SESSION_ID --force-stop-decision approve|decline
 ```
 
-`snapshot` copies the complete BepInEx and configured Unity log bytes into the
-session's temporary `snapshots/` directory. It never changes the live log
-files, writes into the caller Mod repository or game profile, or infers an
-approval from silence. If the tracked process is already exited, capture is
-immediate. If it is still running, the first invocation returns `pending`
-without copying logs; ask the user for ordinary stop approval, then repeat with
-`--stop-decision approve` or `--stop-decision decline`.
+`snapshot` copies the complete BepInEx and configured Unity log bytes into the session's temporary `snapshots/` directory. It never changes the live log files, writes into the caller Mod repository or game profile, or infers an approval from silence. If the tracked process is already exited, capture is immediate. If it is still running, the first invocation returns `pending` without copying logs; ask the user for ordinary stop approval, then repeat with `--stop-decision approve` or `--stop-decision decline`.
 
-An approved ordinary stop reuses the tracked-process stop behavior and captures
-only after the process tree is confirmed exited. If ordinary stop fails, the
-operation remains `pending` and requires separate
-`--force-stop-decision approve` or `--force-stop-decision decline`; force
-approval is never inferred. An explicit refusal at either prompt, or a failed
-approved force stop, captures the current logs and records the running-process
-condition, stop decision, stop result, and any stop error. An unanswered prompt
-does not capture.
+An approved ordinary stop reuses the tracked-process stop behavior and captures only after the process tree is confirmed exited. If ordinary stop fails, the operation remains `pending` and requires separate `--force-stop-decision approve` or `--force-stop-decision decline`; force approval is never inferred. An explicit refusal at either prompt, or a failed approved force stop, captures the current logs and records the running-process condition, stop decision, stop result, and any stop error. An unanswered prompt does not capture.
 
-The manifest records per-source status, source and target paths, byte counts,
-SHA-256 digests, the capture condition, and process/stop metadata. A missing or
-failed source is reported independently and leaves any previously successful
-same-source copy in place; the overall snapshot is incomplete until both
-sources are copied. Snapshot files remain session data through archive and
-safe clean; original log paths and cleanup behavior are unchanged.
+The manifest records per-source status, source and target paths, byte counts, SHA-256 digests, the capture condition, and process/stop metadata. A missing or failed source is reported independently and leaves any previously successful same-source copy in place; the overall snapshot is incomplete until both sources are copied. Snapshot files remain session data through archive and safe clean; original log paths and cleanup behavior are unchanged.
 
 ### `status`: read-only session view
 
@@ -323,20 +277,13 @@ Completion criterion: requested session is `cleaned` or `already-cleaned`, every
 
 Shared [Invocation preflight](../config/invocation-preflight.md) owns configuration scope selection, project-over-user precedence, first-time setup, path recovery, and tracked-session stop exception. After it selects active file, this CLI requires `modding_profile_path`.
 
-The shared gate result is the input to this branch: consume `PREFERENCES_SCOPE`,
-`PREFERENCES_FILE`, and the validation status before loading profile context;
-this branch MUST NOT rediscover configuration independently. The installed Skill root
-and caller Mod repository are explicit command context, and the selected
-Python 3.9+ interpreter is reused for every CLI operation.
+The shared gate result is the input to this branch: consume `PREFERENCES_SCOPE`, `PREFERENCES_FILE`, and the validation status before loading profile context; this branch MUST NOT rediscover configuration independently. The installed Skill root and caller Mod repository are explicit command context, and the selected Python 3.9+ interpreter is reused for every CLI operation.
 
 Explicit CLI options override selected configuration for that invocation: `--profile`, `--project`, `--launcher`, and `--unity-log-dir`. CLI does not rewrite configuration; after missing-log handoff, agent writes user-supplied Unity log directory into active file.
 
 `stop SESSION_ID` is this workflow's implementation of tracked-session recovery exception and uses only recorded session state plus host process check. `run`, `clean`, `logs`, and `status` require normal Invocation preflight and profile gate.
 
-The session/process boundary is strict: each `SESSION_ID` binds one lifecycle,
-profile, deployment manifest, and tracked process tree. A command with another
-session ID cannot cross session identity, attach to its process, or use its
-rollback state.
+The session/process boundary is strict: each `SESSION_ID` binds one lifecycle, profile, deployment manifest, and tracked process tree. A command with another session ID cannot cross session identity, attach to its process, or use its rollback state.
 
 ## Automated evidence versus Manual verification
 
@@ -350,11 +297,7 @@ After startup evidence is available, ask player to perform requested in-game sce
 - observed result, including visual, input, combat, menu, save, or other behavior;
 - any visible error or approximate time at which it occurred.
 
-Combine that Manual verification record with CLI state and the session snapshot
-when analyzing a completed test. Use `logs SESSION_ID --current` only when the
-user explicitly requests live diagnosis. No gameplay transcript or generated
-test report is required by this workflow. Use the existing [log analyzer](log-analyzer.md)
-for interpretation after test evidence is collected.
+Combine that Manual verification record with CLI state and the session snapshot when analyzing a completed test. Use `logs SESSION_ID --current` only when the user explicitly requests live diagnosis. No gameplay transcript or generated test report is required by this workflow. Use the existing [log analyzer](log-analyzer.md) for interpretation after test evidence is collected.
 
 ## Stable failures and recovery
 

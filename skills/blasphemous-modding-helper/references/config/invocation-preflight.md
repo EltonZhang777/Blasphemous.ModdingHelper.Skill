@@ -36,22 +36,14 @@ Command context is ready when installed Skill root, caller Mod repository, resol
 
 ## Native Python shell template
 
-PowerShell and Bash are host syntaxes for the same native Python entry point;
-they are not separate implementations. Every executable example MUST preserve
-this parity:
+PowerShell and Bash are host syntaxes for the same native Python entry point; they are not separate implementations. Every executable example MUST preserve this parity:
 
 | Context | Canonical invocation |
 | --- | --- |
 | Bash | `"$PYTHON3" "$SKILL_ROOT/scripts/<script>.py" [arguments]` |
 | PowerShell | `& $PYTHON3 (Join-Path $SkillRoot 'scripts\<script>.py') [arguments]` |
 
-Both forms MUST use the resolved `PYTHON3`, an absolute installed Skill root,
-the caller's Mod repository as working directory, and the same script and
-argument values. Paths remain separate quoted arguments; host-specific slash
-syntax is the only permitted textual difference. Examples in branch references
-inherit this contract and MUST NOT call a legacy shell/JavaScript entry point,
-MUST NOT use a checkout-relative Skill path, and MUST NOT change the working
-directory implicitly.
+Both forms MUST use the resolved `PYTHON3`, an absolute installed Skill root, the caller's Mod repository as working directory, and the same script and argument values. Paths remain separate quoted arguments; host-specific slash syntax is the only permitted textual difference. Examples in branch references inherit this contract and MUST NOT call a legacy shell/JavaScript entry point, MUST NOT use a checkout-relative Skill path, and MUST NOT change the working directory implicitly.
 
 ## Python runtime gate
 
@@ -71,22 +63,14 @@ Agent MUST run the configuration check from caller's Mod repository with explici
 & $PYTHON3 (Join-Path $SkillRoot 'scripts\check_preferences.py') --validate
 ```
 
-Validation mode emits structured `PREFERENCES_*` fields with a stable status of
-`skipped`, `passed`, `normalized`, or `failed`. A `failed` result includes an
-actionable reason, marks `PREFERENCES_SETUP=required`, and MUST enter
-[First-Time Setup](first-time-setup.md) before any downstream operational
-workflow continues. Downstream branches MUST consume the selected validation result
-and `PREFERENCES_SCOPE`/`PREFERENCES_FILE`; they MUST NOT rediscover or
-revalidate configuration independently. Project scope MUST take precedence over user scope:
+Validation mode emits structured `PREFERENCES_*` fields with a stable status of `skipped`, `passed`, `normalized`, or `failed`. A `failed` result includes an actionable reason, marks `PREFERENCES_SETUP=required`, and MUST enter [First-Time Setup](first-time-setup.md) before any downstream operational workflow continues. Downstream branches MUST consume the selected validation result and `PREFERENCES_SCOPE`/`PREFERENCES_FILE`; they MUST NOT rediscover or revalidate configuration independently. Project scope MUST take precedence over user scope:
 
 - Project: `.skills/blasphemous-modding-helper/config.yml` under caller's current working directory.
 - User: `$HOME/.skills/blasphemous-modding-helper/config.yml`.
 
 When check finds a file, agent MUST read, parse, and apply that selected file. Complete field schema and approved local-reference locations are defined in [the config schema](preferences-schema.md). A branch MAY require additional fields, but it MUST validate those fields after this shared gate selects the active file.
 
-The no-argument `check_preferences.py` mode remains available for callers that
-only need the legacy `project`, `user`, or empty scope output; it does not run
-freshness validation or write configuration metadata.
+The no-argument `check_preferences.py` mode remains available for callers that only need the legacy `project`, `user`, or empty scope output; it does not run freshness validation or write configuration metadata.
 
 When check finds no file, agent MUST enter [First-Time Setup](first-time-setup.md). Agent MUST NOT infer defaults or enter source analysis, log analysis, modding operations, or test workflow commands before setup reports success or explicit setup failure.
 
