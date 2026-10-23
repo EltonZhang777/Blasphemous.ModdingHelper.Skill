@@ -18,7 +18,7 @@ Explicit local-checkout setup flow is in [first-time-setup.md#q6-local-moddingap
 
 ## Read-only lookup delegation
 
-This route follows the shared [Read-only evidence delegation](../read-only-evidence-delegation.md) contract. The main agent retains command-context and configuration gates, reference selection and lifecycle, evidence synthesis, and any code or source-analysis work.
+This route follows the shared [Read-only evidence delegation](../subagent-delegation/read-only-evidence-delegation.md) contract. The main agent retains command-context and configuration gates, reference selection and lifecycle, evidence synthesis, and any code or source-analysis work.
 
 - The main agent MAY delegate a lookup only when it is read-only, bounded to one clear question and the selected reference pages, independently verifiable, and broad enough to justify context isolation. A small lookup on a known topic page SHOULD stay with the main agent. Reference lifecycle work and code changes MUST stay with the main agent.
 - Before delegation, the main agent MUST complete the command-context and configuration gates above and resolve the selected local checkout or release-aware remote reference. The child task MUST receive the exact question, permitted scope, and selected authority identity: for a remote reference, the selector, resolved release/tag or version, commit, and resolver-provided documentation/source URLs; for a local checkout, its absolute path, configured selector and available lock identity, and checkout HEAD. The child MUST NOT select or resolve another reference.

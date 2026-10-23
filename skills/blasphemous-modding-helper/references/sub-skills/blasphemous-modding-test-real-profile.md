@@ -17,6 +17,10 @@ Python CLI automates filesystem, build, process, and log operations. It does not
 
 Done when: agent can name active configuration file, project, profile, Python interpreter, and supported native host before any profile mutation is attempted.
 
+## Subagent delegation
+
+Delegated Real-profile work MUST follow the shared [General subagent delegation guidelines](../subagent-delegation/subagent-delegation-general-guidelines.md) and [Real-profile testing delegation](../subagent-delegation/real-profile-testing-delegation.md). The parent agent MUST complete the entry conditions and assign the exact profile, Test session or session-creating operation, permitted CLI actions, and any user approval for a gated action. Delegation does not authorize a child to infer player-operated **Manual verification**.
+
 ## CLI entry point
 
 This branch inherits the command-context contract from [Invocation preflight](../config/invocation-preflight.md). CLI MUST run from caller's Mod repository; caller does not need repository checkout containing `skills/blasphemous-modding-helper`.

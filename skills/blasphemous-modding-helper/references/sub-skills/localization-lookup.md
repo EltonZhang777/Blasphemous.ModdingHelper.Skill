@@ -6,7 +6,7 @@ Agent MUST use this read-only branch for a natural-language request to identify,
 
 ## Read-only lookup delegation
 
-This route follows the shared [Read-only evidence delegation](../read-only-evidence-delegation.md) contract and keeps its configuration-free exception. The main agent owns language and index selection, evidence synthesis, and any decision to escalate to source analysis.
+This route follows the shared [Read-only evidence delegation](../subagent-delegation/read-only-evidence-delegation.md) contract and keeps its configuration-free exception. The main agent owns language and index selection, evidence synthesis, and any decision to escalate to source analysis.
 
 - The main agent MAY delegate a full-language comparison, broad index search, or ambiguous multi-candidate lookup only when its evidence slice is read-only, clearly bounded, independently verifiable, and large enough to justify context isolation. A small targeted lookup SHOULD stay with the main agent.
 - Before delegating, the main agent MUST complete Procedure steps 1–3: identify the instruction and requested languages, select the core or all-language index, and confirm its path, readability, and header. The child task MUST receive the exact question and search terms, the selected index's resolved path and identity (core or all-language), requested language columns, and the resolved path to `references/localization/semantic-aliases.md`; these are its only evidence sources. The child MUST NOT choose a different index or language scope.

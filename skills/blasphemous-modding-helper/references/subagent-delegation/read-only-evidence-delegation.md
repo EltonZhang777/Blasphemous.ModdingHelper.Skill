@@ -1,6 +1,6 @@
 # Read-only evidence delegation
 
-This reference is the sole authority for shared delegation rules across read-only evidence-gathering routes. When route-owner documents cover delegation, they MUST link here and add only branch-specific delegation constraints; they remain authoritative for their other branch-specific guidance.
+This reference supplements the shared [General subagent delegation guidelines](subagent-delegation-general-guidelines.md) and is the sole authority for shared delegation rules across read-only evidence-gathering routes. When route-owner documents cover delegation, they MUST link here and add only branch-specific delegation constraints; they remain authoritative for their other branch-specific guidance.
 
 ## Terms
 

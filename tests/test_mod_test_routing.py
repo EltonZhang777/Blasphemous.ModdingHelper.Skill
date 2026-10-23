@@ -12,7 +12,20 @@ REFERENCES = SKILL_ROOT / "references" / "sub-skills"
 SHARED = REFERENCES / "blasphemous-modding-test.md"
 AUTOMATED = REFERENCES / "blasphemous-modding-test-automated-xunit.md"
 REAL_PROFILE = REFERENCES / "blasphemous-modding-test-real-profile.md"
-DOCUMENTS = (SHARED, AUTOMATED, REAL_PROFILE)
+DELEGATION_REFERENCES = SKILL_ROOT / "references" / "subagent-delegation"
+GENERAL_DELEGATION = DELEGATION_REFERENCES / "subagent-delegation-general-guidelines.md"
+XUNIT_DELEGATION = DELEGATION_REFERENCES / "xunit-testing-delegation.md"
+REAL_PROFILE_DELEGATION = DELEGATION_REFERENCES / "real-profile-testing-delegation.md"
+READ_ONLY_DELEGATION = DELEGATION_REFERENCES / "read-only-evidence-delegation.md"
+DOCUMENTS = (
+    SHARED,
+    AUTOMATED,
+    REAL_PROFILE,
+    GENERAL_DELEGATION,
+    XUNIT_DELEGATION,
+    REAL_PROFILE_DELEGATION,
+    READ_ONLY_DELEGATION,
+)
 
 
 def read(path):
@@ -45,6 +58,27 @@ class ModTestRoutingDocumentationTests(unittest.TestCase):
                     f"broken documentation link in {document}: {target}",
                 )
 
+    def test_subagent_guidance_follows_shared_and_branch_ownership(self):
+        self.assertTrue(GENERAL_DELEGATION.is_file())
+        self.assertTrue(XUNIT_DELEGATION.is_file())
+        self.assertTrue(REAL_PROFILE_DELEGATION.is_file())
+
+        self.assertIn("../subagent-delegation/" + GENERAL_DELEGATION.name, links(read(SHARED)))
+        self.assertIn("../subagent-delegation/" + GENERAL_DELEGATION.name, links(read(AUTOMATED)))
+        self.assertIn("../subagent-delegation/" + XUNIT_DELEGATION.name, links(read(AUTOMATED)))
+        self.assertIn("../subagent-delegation/" + GENERAL_DELEGATION.name, links(read(REAL_PROFILE)))
+        self.assertIn("../subagent-delegation/" + REAL_PROFILE_DELEGATION.name, links(read(REAL_PROFILE)))
+
+        shared = read(SHARED).casefold()
+        for phrase in (
+            "for a `both` result, the parent must assign the automated xunit phase to one child first",
+            "then assign the real-profile phase to a separate child after the xunit handoff",
+            "each child must report only its own phase",
+            "keeping status, evidence, blocked reason, and next action independent",
+            "if a child for a selected test phase is unavailable",
+            "must not run the assigned tests as a fallback",
+        ):
+            self.assertIn(phrase, shared)
     def test_shared_entry_routes_runtime_and_deterministic_requests(self):
         rows = [line.casefold() for line in read(SHARED).splitlines()]
         real_rows = [

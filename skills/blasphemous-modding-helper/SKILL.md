@@ -15,7 +15,7 @@ At start of every Skill invocation, agent MUST read [Requirement levels](referen
 
 ## Request routing
 
-After reading [Requirement levels](references/requirement-levels-definitions.md), agent MUST classify the request before applying any branch-specific gate. Agent MUST use the route owner's document as the sole authority for that route's branch-specific guidance. After classifying a request, agent MUST read the shared [Read-only evidence delegation](references/read-only-evidence-delegation.md) reference before following specialized route-owner guidance for source analysis, log analysis, ModdingAPI lookup, or localization evidence:
+After reading [Requirement levels](references/requirement-levels-definitions.md), agent MUST classify the request before applying any branch-specific gate. Agent MUST use the route owner's document as the sole authority for that route's branch-specific guidance. After classifying a request, agent MUST read the shared [Read-only evidence delegation](references/subagent-delegation/read-only-evidence-delegation.md) reference before following specialized route-owner guidance for source analysis, log analysis, ModdingAPI lookup, or localization evidence:
 
 | Request | Route owner | Gate and handoff |
 | --- | --- | --- |
