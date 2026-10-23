@@ -15,6 +15,10 @@ Automated xUnit does not require `config.yml`, the Skill Python runtime, `moddin
 
 If a test needs actual Unity lifecycle, scene state, BepInEx startup, a game process, a Modding profile, runtime logs, or player interaction, route it to the [Real-profile branch](blasphemous-modding-test-real-profile.md).
 
+## Subagent delegation
+
+Delegated xUnit execution MUST follow the shared [General subagent delegation guidelines](../subagent-delegation/subagent-delegation-general-guidelines.md) and [Automated xUnit testing delegation](../subagent-delegation/xunit-testing-delegation.md). The parent agent MUST select this route first and provide the exact test project and command. This validation-only delegation does not grant permission to edit implementation or test files.
+
 ## Project convention
 
 When a caller Mod repository adds automated tests, the soft convention is a sibling `<ModRepoName>.Tests` project next to the main Mod project. The test project:

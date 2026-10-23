@@ -10,7 +10,10 @@ SKILL_ROOT = REPOSITORY_ROOT / "skills" / "blasphemous-modding-helper"
 MAIN_SKILL = SKILL_ROOT / "SKILL.md"
 RFC_AUDIT = REPOSITORY_ROOT / "ci" / "audit_rfc2119.py"
 MARKDOWN_LINK = re.compile(r"\]\(([^)]+)\)")
-DELEGATION_REFERENCE = "references/read-only-evidence-delegation.md"
+DELEGATION_REFERENCE = "references/subagent-delegation/read-only-evidence-delegation.md"
+GENERAL_DELEGATION_REFERENCE = "references/subagent-delegation/subagent-delegation-general-guidelines.md"
+XUNIT_DELEGATION_REFERENCE = "references/subagent-delegation/xunit-testing-delegation.md"
+REAL_PROFILE_DELEGATION_REFERENCE = "references/subagent-delegation/real-profile-testing-delegation.md"
 DELEGATION_ROUTES = (
     ("references/sub-skills/source-analyzer.md", "## Read-only evidence delegation"),
     ("references/sub-skills/log-analyzer.md", "## Read-only evidence delegation"),
@@ -287,6 +290,62 @@ class DocumentationConsistencyTests(unittest.TestCase):
             document = SKILL_ROOT / relative
             self.assertIn(shared, set(local_links(document)), relative)
 
+    def test_subagent_guidance_is_reachable_from_shared_and_phase_owners(self):
+        general = SKILL_ROOT / GENERAL_DELEGATION_REFERENCE
+        read_only = SKILL_ROOT / DELEGATION_REFERENCE
+        xunit = SKILL_ROOT / XUNIT_DELEGATION_REFERENCE
+        real_profile = SKILL_ROOT / REAL_PROFILE_DELEGATION_REFERENCE
+        mod_test = SKILL_ROOT / MOD_TEST_DOCUMENT
+        automated = SKILL_ROOT / "references/sub-skills/blasphemous-modding-test-automated-xunit.md"
+        real_branch = SKILL_ROOT / "references/sub-skills/blasphemous-modding-test-real-profile.md"
+
+        for document in (general, read_only, xunit, real_profile):
+            self.assertTrue(document.is_file(), document)
+        for owner, target in (
+            (read_only, general),
+            (mod_test, general),
+            (automated, general),
+            (automated, xunit),
+            (real_branch, general),
+            (real_branch, real_profile),
+        ):
+            self.assertIn(target.resolve(), set(local_links(owner)), owner)
+
+        general_text = normalized(general)
+        for phrase in (
+            "one bounded responsibility",
+            "clear scope, acceptance criteria",
+            "parent retains user intent, user decisions",
+            "parent must inspect delegated results",
+            "or delegate further",
+            "host-neutral",
+        ):
+            self.assertIn(phrase, general_text)
+
+        xunit_text = normalized(xunit)
+        for phrase in (
+            "standard .net test runner",
+            "must not use a modding profile",
+            "launch or inspect the game, deploy an artifact",
+            "runner result, exit status",
+            "must not be reported as gameplay proof",
+        ):
+            self.assertIn(phrase, xunit_text)
+
+        real_text = normalized(real_profile)
+        for phrase in (
+            "exactly one test session",
+            "disposable or mirror modding profile",
+            "must not switch profiles or sessions",
+            "player-operated **manual verification**",
+            "session id",
+            "process id and tracked process tree identity recorded in that session manifest",
+            "approval-gated action",
+            "must not make or infer that decision",
+            "next action",
+        ):
+            self.assertIn(phrase, real_text)
+
     def test_shared_contract_defines_eligibility_ownership_handoff_and_fallback(self):
         contract = normalized(SKILL_ROOT / DELEGATION_REFERENCE)
         for phrase in (
@@ -399,7 +458,11 @@ class DocumentationConsistencyTests(unittest.TestCase):
 
     def test_delegation_contract_has_no_normative_host_dependency(self):
         shared = SKILL_ROOT / DELEGATION_REFERENCE
-        documents = [(shared, read(shared))]
+        general = SKILL_ROOT / GENERAL_DELEGATION_REFERENCE
+        documents = [(shared, read(shared)), (general, read(general))]
+        for relative in (XUNIT_DELEGATION_REFERENCE, REAL_PROFILE_DELEGATION_REFERENCE):
+            document = SKILL_ROOT / relative
+            documents.append((document, read(document)))
         for relative, heading in DELEGATION_ROUTES:
             document = SKILL_ROOT / relative
             delegation = markdown_section(document, heading)

@@ -62,6 +62,10 @@ Test doubles, mocks, and stubs remain compatible with the Automated xUnit route 
 - The Skill repository's Python CLI and fixture tests remain under their existing Python test contract. The caller-Mod xUnit convention does not redirect or replace them.
 - A Test Mod is a game-side real-profile artifact; an Automated test project is a standard .NET test project. They MUST NOT be described as interchangeable.
 
+## Subagent guidance
+
+Any delegated test work MUST follow the shared [General subagent delegation guidelines](../subagent-delegation/subagent-delegation-general-guidelines.md). The selected phase MUST also follow its owner: [Automated xUnit testing delegation](../subagent-delegation/xunit-testing-delegation.md) or [Real-profile testing delegation](../subagent-delegation/real-profile-testing-delegation.md). An ambiguous request remains unresolved and MUST NOT be delegated as an executable test phase. For a `both` result, the parent MUST assign the Automated xUnit phase to one child first, then assign the Real-profile phase to a separate child after the xUnit handoff; each child MUST report only its own phase, keeping status, evidence, blocked reason, and next action independent. If a child for a selected test phase is unavailable, the parent MUST report that phase as blocked with the reason and next action; it MUST NOT run the assigned tests as a fallback.
+
 ## Manual completion and session identity
 
 The agent MUST treat an explicit statement that testing is complete or a natural-language success, failure, or anomalous result as a snapshot trigger only when the result is clear and can be associated with exactly one Test session. An ambiguous result or an unclear session identity remains unresolved.
