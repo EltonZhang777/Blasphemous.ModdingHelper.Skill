@@ -8,6 +8,29 @@ MAIN_SKILL = REPOSITORY_ROOT / "skills" / "blasphemous-modding-helper" / "SKILL.
 
 
 class SkillRouteMapTests(unittest.TestCase):
+    def test_supported_game_scope_is_clear_before_request_routing(self):
+        text = MAIN_SKILL.read_text(encoding="utf-8")
+        description = text.split("---", 2)[1]
+        opening = text.split("## Request routing", 1)[0]
+        normalized_description = " ".join(description.split())
+        normalized_opening = " ".join(opening.split())
+
+        self.assertIn("Blasphemous 1 only", normalized_description)
+        self.assertIn("Blasphemous 2 is not supported", normalized_description)
+        self.assertIn("Blasphemous 2-only requests", normalized_opening)
+        self.assertIn(
+            "MUST briefly state that Blasphemous 2 is out of scope",
+            normalized_opening,
+        )
+        self.assertIn(
+            "MUST invite the user to ask about Blasphemous 1",
+            normalized_opening,
+        )
+        self.assertIn(
+            "MUST NOT start a Skill route or Blasphemous 2-specific work",
+            normalized_opening,
+        )
+
     def test_requirement_levels_precede_request_routing(self):
         text = MAIN_SKILL.read_text(encoding="utf-8")
 

@@ -1,11 +1,13 @@
 ---
 name: blasphemous-modding-helper
-description: Blasphemous modding development helper. Use when the user wants to build, deploy, launch, inspect startup evidence, stop, clean, or perform Manual verification for a Blasphemous mod; identify, explain, compare, or translate a Blasphemous 1 term; develop a mod, analyze Blasphemous decompiled source code, or debug mod-related logs (BepInEx / Unity).
+description: Blasphemous 1 modding development helper; supports Blasphemous 1 only, and Blasphemous 2 is not supported. Use when the user wants to build, deploy, launch, inspect startup evidence, stop, clean, or perform Manual verification for a Blasphemous 1 mod; identify, explain, compare, or translate a Blasphemous 1 term; develop a Blasphemous 1 mod, analyze Blasphemous 1 decompiled source code, or debug Blasphemous 1 mod-related logs (BepInEx / Unity).
 ---
 
 # Blasphemous modding helper
 
-You are helping with Blasphemous mod development.
+You are helping with Blasphemous 1 mod development. This Skill supports Blasphemous 1 only; Blasphemous 2 is not supported.
+
+For Blasphemous 2-only requests, the agent MUST briefly state that Blasphemous 2 is out of scope, MUST invite the user to ask about Blasphemous 1, and MUST NOT start a Skill route or Blasphemous 2-specific work.
 
 ## Requirement levels
 
