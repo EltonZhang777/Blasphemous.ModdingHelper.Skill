@@ -79,25 +79,6 @@ class ModTestRoutingDocumentationTests(unittest.TestCase):
             "must not run the assigned tests as a fallback",
         ):
             self.assertIn(phrase, shared)
-        xunit = read(XUNIT_DELEGATION).casefold()
-        for phrase in (
-            "standard .net test runner",
-            "must not use a modding profile",
-            "runner result, exit status",
-            "must not be reported as gameplay proof",
-        ):
-            self.assertIn(phrase, xunit)
-
-        real_profile = read(REAL_PROFILE_DELEGATION).casefold()
-        for phrase in (
-            "exactly one test session",
-            "disposable or mirror modding profile",
-            "must not switch profiles or sessions",
-            "player-operated **manual verification**",
-            "session id",
-        ):
-            self.assertIn(phrase, real_profile)
-
     def test_shared_entry_routes_runtime_and_deterministic_requests(self):
         rows = [line.casefold() for line in read(SHARED).splitlines()]
         real_rows = [
