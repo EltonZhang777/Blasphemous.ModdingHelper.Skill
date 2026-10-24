@@ -20,7 +20,13 @@ REPOSITORY_ROOT = SKILL_ROOT.parents[1]
 RESOLVER = SCRIPT_ROOT / "resolve_modding_api.py"
 MODDING_API_REPOSITORY = "https://github.com/BrandenEK/Blasphemous.ModdingAPI.git"
 CHECKED_AT = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
-LEGACY_SCRIPT_NAME = re.compile(r"\b[\w.-]+\.(?:js|ps1|sh)\b", re.IGNORECASE)
+LEGACY_SCRIPT_NAME = re.compile(
+    r"\b(?!Node\.js\b)[\w.-]+\.(?:js|ps1|sh)\b", re.IGNORECASE
+)
+INSTALLER_GUIDANCE_SENTENCE = re.compile(
+    r"(?i:\bNode\.js\b[^\n]*?\brequired only to run the package installer, "
+    r"including [`]?)(?P<path>bin/install\.js)[`]?(?:\.(?:\s|$))"
+)
 PYTHON_ENTRY_POINTS = (
     "blasphemous_modding_test.py",
     "check_python_environment.py",
@@ -54,20 +60,83 @@ def assert_not_contains(text: str, needle: str, label: str) -> None:
         raise DocumentationTestFailure(f"{label} must not contain: {needle}")
 
 
+def legacy_script_reference_diagnostics(
+    document: str, source: str
+) -> Sequence[str]:
+    allowed_installer_spans = {
+        (guidance.start("path") + len("bin/"), guidance.end("path"))
+        for guidance in INSTALLER_GUIDANCE_SENTENCE.finditer(document)
+    }
+    return [
+        f"{source}: {match.group(0)}"
+        for match in LEGACY_SCRIPT_NAME.finditer(document)
+        if match.span() not in allowed_installer_spans
+    ]
+
+
+def check_legacy_script_reference_rules() -> None:
+    source = "fixture.md"
+    install_guidance = (
+        "Node.js `>=18` is required only to run the package installer, "
+        "including `bin/install.js`."
+    )
+    if legacy_script_reference_diagnostics(install_guidance, source):
+        raise DocumentationTestFailure(
+            "script-reference audit must allow install-only bin/install.js guidance "
+            "and the Node.js runtime name"
+        )
+    post_install_guidance = (
+        install_guidance
+        + " After installation, use bin/install.js as a Skill runtime entry point."
+    )
+    if legacy_script_reference_diagnostics(post_install_guidance, source) != [
+        f"{source}: install.js"
+    ]:
+        raise DocumentationTestFailure(
+            "script-reference audit must reject bin/install.js as a post-install entry point"
+        )
+    for reference, filename in (
+        ("bin/INSTALL.JS", "INSTALL.JS"),
+        ("Bin/install.js", "install.js"),
+    ):
+        diagnostic = legacy_script_reference_diagnostics(
+            install_guidance.replace("bin/install.js", reference), source
+        )
+        if diagnostic != [f"{source}: {filename}"]:
+            raise DocumentationTestFailure(
+                f"script-reference audit must require exact installer path casing: {reference}"
+            )
+    for reference in (
+        "legacy.js",
+        "legacy.ps1",
+        "legacy.sh",
+        "scripts/bin/install.js",
+        "C:bin/install.js",
+    ):
+        diagnostic = legacy_script_reference_diagnostics(reference, source)
+        if diagnostic != [f"{source}: {reference.rsplit('/', 1)[-1]}"]:
+            raise DocumentationTestFailure(
+                f"obsolete script diagnostic must identify {reference}"
+            )
+
+
 def audit_skill_documentation() -> None:
     """Reject documentation that still presents legacy script files as entry points."""
 
+    check_legacy_script_reference_rules()
     documents = sorted(SKILL_ROOT.rglob("*.md"))
     contents = {path: read_file(path) for path in documents}
     legacy_references = []
     for path, document in contents.items():
-        for match in LEGACY_SCRIPT_NAME.finditer(document):
-            legacy_references.append(
-                f"{path.relative_to(SKILL_ROOT).as_posix()}: {match.group(0)}"
+        legacy_references.extend(
+            legacy_script_reference_diagnostics(
+                document, path.relative_to(SKILL_ROOT).as_posix()
             )
+        )
     if legacy_references:
         raise DocumentationTestFailure(
-            "Skill documentation contains legacy script references:\n"
+            "Skill documentation contains obsolete script references "
+            "(only bin/install.js is allowed for installation):\n"
             + "\n".join(legacy_references)
         )
 
@@ -340,7 +409,7 @@ def run_documentation_smoke() -> None:
     )
     canonical_preflight_path = "references/config/invocation-preflight.md"
     preflight_link_targets = {
-        target
+        target.split("#", 1)[0]
         for label, target in re.findall(r"\[([^\]]+)\]\(([^)]+)\)", top_level)
         if "preflight" in label.lower() or "invocation-preflight" in target.lower()
     }
@@ -415,10 +484,10 @@ def run_documentation_smoke() -> None:
     for contract_text in (
         "Python 3.9 or newer",
         "requirements.txt",
-        "PyYAML",
         "MUST NOT install or upgrade packages",
     ):
         assert_contains(python_runtime, contract_text, "Python runtime reference")
+    assert_contains(preflight, "PyYAML>=6.0", "Invocation preflight reference")
 
     for label, document in (
         ("source route", source),
