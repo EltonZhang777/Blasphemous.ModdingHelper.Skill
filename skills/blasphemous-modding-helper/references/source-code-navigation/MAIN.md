@@ -18,6 +18,7 @@ Blasphemous source navigation. Paths relative to `Assembly-CSharp/`.
 | `HutongGames/` | PlayMaker Custom Actions |
 | `TPO_FOLLOWER_PROTOTYPE/` | TPO Follower Prototype |
 | Root `.cs` files | Miscellaneous tools, traps, effects, UI components, etc. |
+| Other supporting roots (`LevelEditor/`, `Platforms/`, `Properties/`, `PygmyMonkey/`, `RewiredConsts/`, `Sauce3D/`) | Smaller source areas; search these paths directly when a requested type does not fit a domain route. |
 
 ---
 
@@ -34,8 +35,11 @@ Blasphemous source navigation. Paths relative to `Assembly-CSharp/`.
 | **Level.** Level/Environment: Actionables, Interactables, Layout, Teleport. Level Mechanics (Actionables, Interactables, Teleport) — `Tools/Level/`. | [level.md](level.md) | Agent MUST inspect the matching level mechanic within the selected `Assembly-CSharp/` tree and verify its file path before tracing scene interactions. |
 | **Tools.** Tool Set: PlayMaker Actions/Conditions/Events, Audio, Data Containers, NPC. PlayMaker Scripts (Playmaker2/Action, Condition, Events) — `Tools/Playmaker2/`. | [tools.md](tools.md) | Agent MUST use the matching tool family as the search entry within the selected `Assembly-CSharp/` tree and verify each cited class or path there. |
 | **Localization.** Localization System: I2.Loc, Blasphemous's own LocalizationManager. Localization / Translation — `I2/`, `Framework/Managers/LocalizationManager.cs`. | [localization.md](localization.md) | Agent MUST inspect I2 localization or the game LocalizationManager as indicated within the selected `Assembly-CSharp/` tree and verify the source path before citing strings or behavior. |
+| **Lifecycle.** Cross-domain ownership and runtime flow: framework setup, scene transitions, subsystem or actor lifecycle, shared events, and teardown. | [core.md](core.md), then the relevant domain guide | Start at `Framework/Managers/Core.cs`, `LogicManager.cs`, or `LevelManager.cs` for system or scene flow; otherwise start at the feature's domain route and follow its shared base and lifecycle/event links. |
 
 ---
+
+This guide indexes decompiled game source under `Assembly-CSharp/`. For Mod-owned changes, [Project architecture guidelines](../sub-skills/project-architecture-guidelines.md) own project structure, [Harmony patching standards](../coding-standards/coding-standards-harmony-patching.md) own patches, and the [Mod-test entry](../sub-skills/blasphemous-modding-test.md) owns verification.
 
 ## Quick Access for Mod Development
 
