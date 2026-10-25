@@ -46,7 +46,7 @@ class PythonAcceptanceEntryPointTests(unittest.TestCase):
         self.assertIn("--python", result.stdout)
         self.assertEqual(result.stderr, "")
 
-    def test_script_local_behavior_tests_have_python_entry_points(self):
+    def test_python_behavior_test_entry_points_have_help_contract(self):
         entry_points = (
             ROOT_TESTS / "test_modding_api_lifecycle.py",
             SCRIPT_TESTS / "test_referencing_modding_api.py",
