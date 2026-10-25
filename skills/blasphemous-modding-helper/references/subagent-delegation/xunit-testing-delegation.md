@@ -12,6 +12,6 @@ The child MUST NOT use a Modding profile, launch or inspect the game, deploy an 
 
 ## Handoff
 
-The child MUST report the selected project, exact command, runner result, exit status, concise failure evidence when applicable, and next action. A passing xUnit run is automated evidence and MUST NOT be reported as gameplay proof. Any Real-profile or player-operated **Manual verification** phase remains separate and is handed back to the parent.
+The child MUST report the selected project, exact command, runner result, exit status, concise failure evidence when applicable, and next action. A passing xUnit run is automated evidence and MUST NOT be reported as gameplay proof. Any Real-profile or **Player-performed in-game verification** phase remains separate and is handed back to the parent.
 
 The parent retains ownership of code changes, route changes, interpretation, and any decision to rerun or select another phase.

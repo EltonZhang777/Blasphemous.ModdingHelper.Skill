@@ -180,9 +180,13 @@ _Avoid_: purge, wipe, full cleanup
 A target file that did not exist before the session deployed the package. Safe clean leaves this file by default.
 _Avoid_: temporary file
 
-**Manual verification**:
-The player-operated part of testing, where the user performs game actions and describes the observed behavior in natural language. It is not an automated CLI result.
-_Avoid_: automated gameplay test, pass status
+**Player-performed in-game verification**:
+The player performs in-game actions and reports the observed behavior as human-generated gameplay evidence.
+_Avoid_: Manual verification, Computer Use automated in-game test, startup evidence
+
+**Computer Use automated in-game test**:
+An automated test that uses Computer Use to interact with the game and produces in-game evidence, separate from player observations and Automated xUnit output.
+_Avoid_: Player-performed in-game verification, Automated xUnit test
 
 **Session data**:
 The per-Test-session temporary directory under the system temporary state root that contains the session manifest, rollback records, and any Test log snapshot.
@@ -197,7 +201,7 @@ The complete byte-preserving BepInEx and Unity log copies captured after the use
 _Avoid_: current log, startup evidence report, bounded evidence
 
 **Real-profile test**:
-A verification path that requires a real, disposable, or mirror Modding profile and the game process; it may include **Manual verification** after startup evidence is collected.
+A testing route that requires a real, disposable, or mirror Modding profile and game process. It names the execution environment, not the evidence source, and may include Player-performed in-game verification after startup evidence is collected.
 _Avoid_: treating `mod_loaded` or startup logs as proof of gameplay behavior
 
 **Automated xUnit test**:
