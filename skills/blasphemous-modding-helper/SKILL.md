@@ -27,6 +27,7 @@ After reading [Requirement levels](references/requirement-levels-definitions.md)
 | Need ModdingAPI documentation, source guidance, or framework conventions | [Referencing ModdingAPI](references/sub-skills/referencing-modding-api.md) | Agent MUST complete the command-context gate and MUST resolve one local or release-aware reference. Agent MUST report the selected reference/topic and next source or code action. |
 
 The localization row is the only configuration-free operational exception. Every other route MUST complete the shared entry gate before its specialized work, with the Automated xUnit branch's documented exception. A completion report MUST name the selected route and its authority, then report `status`, `completion evidence`, `blocked reason` when applicable, and the next document/action.
+After classifying a Blasphemous 1 modding request and completing any gate required by its selected route, the agent MUST consult the [Modding knowledge](references/modding-knowledge.md) index at task start. If a matching blocker arises later, the agent MUST repeat the lookup. This lookup is advisory and does not change the selected route or its gate. Blasphemous 2-only requests MUST NOT use these Blasphemous 1 notes.
 
 ## Shared entry gate
 
