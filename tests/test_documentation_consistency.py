@@ -33,6 +33,7 @@ NORMATIVE_HOST_DEPENDENCY = re.compile(
 ROUTE_DOCUMENTS = (
     "references/modding-knowledge.md",
     "references/sub-skills/experience-note-comparison.md",
+    "references/sub-skills/experience-note-local-save.md",
     "references/sub-skills/localization-lookup.md",
     "references/sub-skills/source-analyzer.md",
     "references/sub-skills/log-analyzer.md",

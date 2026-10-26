@@ -40,4 +40,4 @@ The main task MUST retain responsibility for the user's decisions, any later loc
 
 Done when the main task has received one outcome with the required handoff fields and can continue independently. A comparison that is uncertain or incomplete is complete only as a disclosed `deferred` result.
 
-The next action is to continue the main task; a `unique` candidate may be presented to the separately authorized local-save workflow after the main task reaches its review point.
+The next action is to continue the main task; a `unique` candidate may be presented to the separately authorized [Experience note local save](experience-note-local-save.md) workflow after the main task reaches its review point.

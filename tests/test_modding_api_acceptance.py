@@ -22,6 +22,7 @@ INSTALLER = REPOSITORY_ROOT / "bin" / "install.js"
 INSTALLER_TEST = REPOSITORY_ROOT / "tests" / "test_installer.js"
 WRAPPER_TEST = REPOSITORY_ROOT / "tests" / "test_install_wrappers.js"
 KNOWLEDGE_CANDIDATE_TEST = REPOSITORY_ROOT / "tests" / "test_modding_knowledge_candidates.py"
+EXPERIENCE_NOTE_LOCAL_SAVE_TEST = REPOSITORY_ROOT / "tests" / "test_experience_note_local_save_acceptance.py"
 
 
 class AcceptanceError(RuntimeError):
@@ -272,6 +273,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         run_command(
             "Modding knowledge candidate workflow tests",
             (args.python_executable, str(KNOWLEDGE_CANDIDATE_TEST)),
+        )
+        run_command(
+            "Experience note local-save workflow tests",
+            (args.python_executable, str(EXPERIENCE_NOTE_LOCAL_SAVE_TEST)),
         )
         run_python_surface(args.python_executable)
         run_installer_surface(args.node_executable)
