@@ -24,28 +24,31 @@ class NoteError(ValueError):
     pass
 
 
-def parse_note(path):
+def parse_note(path, repository_root=None):
+    repository_root = Path(repository_root or REPOSITORY_ROOT)
+    label = path.relative_to(repository_root)
     if path.is_symlink():
-        raise NoteError(f"{path.relative_to(REPOSITORY_ROOT)} must not be a symlink")
+        raise NoteError(f"{label} must not be a symlink")
     if not NOTE_NAME.fullmatch(path.name):
-        raise NoteError(f"{path.relative_to(REPOSITORY_ROOT)} must use a lowercase topic-slug filename")
+        raise NoteError(f"{label} must use a lowercase topic-slug filename")
 
     lines = path.read_text(encoding="utf-8").splitlines()
     if not lines or lines[0] != "---":
-        raise NoteError(f"{path.relative_to(REPOSITORY_ROOT)} is missing YAML frontmatter")
+        raise NoteError(f"{label} is missing YAML frontmatter")
     try:
         end = lines.index("---", 1)
     except ValueError as error:
-        raise NoteError(f"{path.relative_to(REPOSITORY_ROOT)} has unterminated YAML frontmatter") from error
+        raise NoteError(f"{label} has unterminated YAML frontmatter") from error
 
     metadata = {}
     for line in lines[1:end]:
-        if not line:
-            continue
         key, separator, value = line.partition(":")
         scalar = value[1:] if separator and value.startswith(" ") else ""
         invalid_title = key == "title" and (
-            scalar[:1] in ("'", '"', "[", "{") or ": " in scalar or " #" in scalar
+            scalar[:1] in ("'", '"', "[", "{", "&", "*", "!", "|", ">", "@", "%", "`")
+            or scalar.startswith(("#", "- ", "? ", ": "))
+            or ": " in scalar
+            or " #" in scalar
         )
         if (
             not separator
@@ -56,48 +59,62 @@ def parse_note(path):
             or "\t" in scalar
             or invalid_title
         ):
-            raise NoteError(f"{path.relative_to(REPOSITORY_ROOT)} has invalid frontmatter: {line}")
+            raise NoteError(f"{label} has invalid frontmatter: {line}")
         metadata[key] = scalar
     if tuple(metadata) != FIELDS:
-        raise NoteError(f"{path.relative_to(REPOSITORY_ROOT)} frontmatter must contain title, status, and date in that order")
+        raise NoteError(f"{label} frontmatter must contain title, status, and date in that order")
     if metadata["status"] not in STATUSES:
-        raise NoteError(f"{path.relative_to(REPOSITORY_ROOT)} has unsupported status: {metadata['status']}")
+        raise NoteError(f"{label} has unsupported status: {metadata['status']}")
     try:
         parsed_date = date.fromisoformat(metadata["date"])
     except ValueError as error:
-        raise NoteError(f"{path.relative_to(REPOSITORY_ROOT)} date must use YYYY-MM-DD") from error
+        raise NoteError(f"{label} date must use YYYY-MM-DD") from error
     if parsed_date.isoformat() != metadata["date"]:
-        raise NoteError(f"{path.relative_to(REPOSITORY_ROOT)} date must use YYYY-MM-DD")
+        raise NoteError(f"{label} date must use YYYY-MM-DD")
 
     body = lines[end + 1 :]
     sections = {}
     current = None
+    active_fence = None
     for line in body:
+        if active_fence is not None:
+            marker, minimum = active_fence
+            if re.fullmatch(r" {0,3}" + re.escape(marker) + r"{" + str(minimum) + r",}\s*", line):
+                active_fence = None
+            continue
+        fence = re.match(r"^ {0,3}(`{3,}|~{3,})", line)
+        if fence:
+            active_fence = (fence.group(1)[0], len(fence.group(1)))
+            continue
         if line.startswith("## "):
             current = line[3:]
             sections.setdefault(current, [])
         elif current is not None:
             sections[current].append(line)
+    if active_fence is not None:
+        raise NoteError(f"{label} has an unclosed fenced code block")
     for heading in REQUIRED_SECTIONS:
         if not "\n".join(sections.get(heading, ())).strip():
-            raise NoteError(f"{path.relative_to(REPOSITORY_ROOT)} needs a non-empty '## {heading}' section")
+            raise NoteError(f"{label} needs a non-empty '## {heading}' section")
 
     return metadata
 
 
-def build_entries():
+def build_entries(repository_root=None):
+    repository_root = Path(repository_root or REPOSITORY_ROOT)
+    knowledge_root = repository_root / "docs" / "modding-knowledge"
     entries = []
-    for path in sorted(KNOWLEDGE_ROOT.glob("*.md"), key=lambda item: item.name.casefold()):
+    for path in sorted(knowledge_root.glob("*.md"), key=lambda item: item.name.casefold()):
         if path.name.casefold() == "index.md":
             continue
-        metadata = parse_note(path)
+        metadata = parse_note(path, repository_root)
         if metadata["status"] == "verified":
             entries.append(
                 {
                     "title": metadata["title"],
                     "status": metadata["status"],
                     "date": metadata["date"],
-                    "path": path.relative_to(REPOSITORY_ROOT).as_posix(),
+                    "path": path.relative_to(repository_root).as_posix(),
                 }
             )
 
