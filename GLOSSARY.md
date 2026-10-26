@@ -260,6 +260,10 @@ _Avoid_: known warning, suppressed log, baseline fingerprint
 The evidence-based attribution of a log record to the target Mod, the framework, the session baseline, or an unknown source.
 _Avoid_: error blame, warning suppression
 
+**Modding experience note**:
+A concise, evidence-backed record of one reusable Blasphemous 1 modding finding, including its supporting source, reproduction steps, applicable versions, and workflow route.
+_Avoid_: one-off observation, raw log or configuration dump, authoritative Skill procedure
+
 ## Lifecycle vocabulary
 
 **`BlasMod` lifecycle**:
