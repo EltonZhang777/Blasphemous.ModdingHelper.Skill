@@ -21,6 +21,7 @@ ROOT_RUNNER = REPOSITORY_ROOT / "tests" / "run_blasphemous_modding_test.py"
 INSTALLER = REPOSITORY_ROOT / "bin" / "install.js"
 INSTALLER_TEST = REPOSITORY_ROOT / "tests" / "test_installer.js"
 WRAPPER_TEST = REPOSITORY_ROOT / "tests" / "test_install_wrappers.js"
+KNOWLEDGE_CANDIDATE_TEST = REPOSITORY_ROOT / "tests" / "test_modding_knowledge_candidates.py"
 
 
 class AcceptanceError(RuntimeError):
@@ -268,6 +269,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     print(f"Python: {args.python_executable}")
     print(f"Node installer boundary: {args.node_executable}")
     try:
+        run_command(
+            "Modding knowledge candidate workflow tests",
+            (args.python_executable, str(KNOWLEDGE_CANDIDATE_TEST)),
+        )
         run_python_surface(args.python_executable)
         run_installer_surface(args.node_executable)
         run_check("Markdown link check", check_markdown_links)

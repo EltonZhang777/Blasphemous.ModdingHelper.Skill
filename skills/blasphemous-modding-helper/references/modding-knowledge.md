@@ -26,6 +26,32 @@ The note body MUST include non-empty sections for:
 
 Notes MUST contain only evidence-backed claims and MUST keep localization evidence separate from gameplay evidence. Notes MUST NOT contain credentials, private paths, profiles, logs, or caller data.
 
+## Candidate review and promotion
+
+Prepare unapproved notes only as direct-child Markdown files under `docs/modding-knowledge/candidates/`, with `status: candidate`. Run the local preflight against the exact note paths or named batch:
+
+```text
+python ci/modding_knowledge_candidates.py preflight docs/modding-knowledge/candidates/<topic>.md
+```
+
+Preflight reuses the canonical note parser and checks the candidate path and lifecycle state, evidence sections, obvious private paths and credentials, repeated raw-log lines, embedded assets, and links to raw logs, game files, extracted assets, decompiled dumps, ROMs, or ISOs. It warns when a fenced code block exceeds 60 lines or a note exceeds 120 KiB, and rejects a fenced block over 150 lines. Preflight does not modify notes or indexes. Candidates remain outside the canonical index and read-only lookup.
+
+Before promotion, inspect the exact candidate content and proposed generated indexes together:
+
+```text
+python ci/modding_knowledge_candidates.py review docs/modding-knowledge/candidates/<topic>.md
+```
+
+For a named batch, pass every approved note path explicitly. The review output shows each note unchanged, its digest, and the generated `INDEX.md` and `index.json` diffs for that exact set. A human reviewer MUST check evidence accuracy, limitations, caller data, and the presence and adequacy of privacy redactions. The workflow does not apply or remove redactions automatically.
+
+Promotion requires explicit human approval for exactly the reviewed note or batch:
+
+```text
+python ci/modding_knowledge_candidates.py promote --approve --review-sha256 <review-sha256> docs/modding-knowledge/candidates/<topic>.md
+```
+
+Without `--approve`, or without the matching `--review-sha256` printed by `review`, promotion fails without writing. The digest binds the exact candidate contents and both proposed indexes, so a changed note or index requires another review. Promotion also requires the current generated indexes to be consistent, validates the complete selected set before writing, creates canonical copies with `status: verified`, and regenerates both indexes from verified canonical notes. If the current indexes are stale, regenerate them and repeat the exact review before approval. The original candidate drafts remain unchanged and excluded from retrieval. The command has no all-candidates mode and does not commit, push, or publish.
+
 ## Generated indexes
 
 `docs/modding-knowledge/INDEX.md` and `docs/modding-knowledge/index.json` are generated from canonical-note frontmatter. Each JSON entry contains `title`, `status`, `date`, and a repository-relative `path`. `python ci/generate_modding_knowledge_index.py` regenerates both; `python ci/generate_modding_knowledge_index.py --check` fails on missing or mismatched output. The check does not rewrite stale files.
