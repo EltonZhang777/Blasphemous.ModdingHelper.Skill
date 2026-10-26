@@ -16,7 +16,7 @@ SCRIPTS_ROOT = SKILL_ROOT / "scripts"
 sys.path.insert(0, str(SCRIPTS_ROOT))
 sys.path.insert(0, str(SCRIPTS_ROOT.parent))
 
-from save_experience_note import NoteSaveError, _is_link_or_junction, save_approved_note
+from save_experience_note import NoteSaveError, _is_link_or_junction, _validate_note, save_approved_note
 from blasphemous_modding_helper.preferences import load_preferences
 
 
@@ -30,13 +30,16 @@ date: 2026-10-26
 The generalized finding.
 
 ## Applicable Blasphemous 1 version
-The relevant game version is unknown.
+Version: Unknown.
+
+## Applicable Mod version
+Version: Not applicable.
 
 ## Route
 The relevant Skill route and how to use this finding.
 
 ## Evidence
-Source: an authoritative reference. Summary: it establishes the finding.
+Static source inspection: an authoritative reference establishes the finding.
 
 ## Reproduction steps
 1. Follow the documented setup.
@@ -44,6 +47,9 @@ Source: an authoritative reference. Summary: it establishes the finding.
 
 ## Verification result
 The stated method reproduced the result.
+
+## Evidence history
+- 2026-10-26: Initial verification from the authoritative reference.
 
 ## Limitations
 The evidence does not establish behavior in other versions.
@@ -59,6 +65,18 @@ class StubStorage:
 
 
 class ExperienceNoteLocalSaveAcceptanceTests(unittest.TestCase):
+    def test_note_schema_matches_public_candidate_preflight(self):
+        invalid_notes = (
+            NOTE.replace("Version: Not applicable.", "Version: Pending."),
+            NOTE.replace("Static source inspection:", "Source:"),
+            NOTE.replace("- 2026-10-26:", "- 2026-10-27:"),
+            NOTE.replace("Version: Unknown.", "Version: Blasphemous 2 v1."),
+        )
+        for content in invalid_notes:
+            with self.subTest(content=content):
+                with self.assertRaises(NoteSaveError):
+                    _validate_note(content)
+
     def test_windows_reparse_points_are_rejected_as_junctions(self):
         metadata = SimpleNamespace(st_mode=stat.S_IFDIR, st_file_attributes=0x400)
         with patch.object(Path, "lstat", return_value=metadata):

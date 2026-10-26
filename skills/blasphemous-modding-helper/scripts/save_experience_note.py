@@ -8,7 +8,7 @@ import os
 import re
 import stat
 import sys
-from datetime import datetime
+from datetime import date
 from pathlib import Path
 from typing import Callable, Optional
 
@@ -20,11 +20,19 @@ _RESERVED_SLUGS = {"con", "prn", "aux", "nul"} | {
 _REQUIRED_SECTIONS = (
     "Finding",
     "Applicable Blasphemous 1 version",
+    "Applicable Mod version",
     "Route",
     "Evidence",
     "Reproduction steps",
     "Verification result",
+    "Evidence history",
     "Limitations",
+)
+_EVIDENCE_TYPES = (
+    "Static source inspection:",
+    "Runtime evidence:",
+    "Manual/in-game evidence:",
+    "Localization evidence:",
 )
 
 
@@ -67,11 +75,14 @@ def _validate_note(content: str) -> None:
     if re.fullmatch(r"\d{4}-\d{2}-\d{2}", values["date"]) is None:
         raise NoteSaveError("frontmatter date must use YYYY-MM-DD")
     try:
-        datetime.strptime(values["date"], "%Y-%m-%d")
+        note_date = date.fromisoformat(values["date"])
     except ValueError as error:
         raise NoteSaveError("frontmatter date must be a real calendar date") from error
+    if note_date.isoformat() != values["date"]:
+        raise NoteSaveError("frontmatter date must use YYYY-MM-DD")
 
     body = "\n".join(lines[end + 1 :])
+    sections = {}
     for section in _REQUIRED_SECTIONS:
         match = re.search(r"(?m)^## " + re.escape(section) + r"\s*$", body)
         if match is None:
@@ -80,6 +91,34 @@ def _validate_note(content: str) -> None:
         section_body = body[match.end() : match.end() + next_heading.start() if next_heading else None]
         if not section_body.strip():
             raise NoteSaveError(f"note section '## {section}' must not be empty")
+        sections[section] = [line.strip() for line in section_body.splitlines() if line.strip()]
+
+    for section in _REQUIRED_SECTIONS[1:3]:
+        version_lines = sections[section]
+        if not version_lines[0].startswith("Version:"):
+            raise NoteSaveError(f"note section '## {section}' must begin with 'Version:'")
+        version = version_lines[0][len("Version:") :].strip()
+        if not version or re.search(r"\b(?:tbd|todo|pending)\b", version, re.IGNORECASE):
+            raise NoteSaveError(f"note section '## {section}' must name a version or say Unknown/Not applicable")
+        if section == _REQUIRED_SECTIONS[1] and re.search(r"\b(?:blasphemous\s*2|b2)\b", version, re.IGNORECASE):
+            raise NoteSaveError("Blasphemous 1 experience notes must not name Blasphemous 2")
+
+    if any(
+        not any(line.startswith(kind) and line[len(kind) :].strip() for kind in _EVIDENCE_TYPES)
+        for line in sections["Evidence"]
+    ):
+        raise NoteSaveError("each evidence source must have a recognized type label and source detail")
+
+    for entry in sections["Evidence history"]:
+        match = re.fullmatch(r"- (\d{4}-\d{2}-\d{2}): (.+)", entry)
+        if match is None:
+            raise NoteSaveError("evidence history entries must use '- YYYY-MM-DD: correction and evidence' format")
+        try:
+            history_date = date.fromisoformat(match.group(1))
+        except ValueError as error:
+            raise NoteSaveError("evidence history dates must be valid YYYY-MM-DD values") from error
+        if history_date.isoformat() != match.group(1) or history_date > note_date:
+            raise NoteSaveError("evidence history dates must be valid and no later than the note date")
 
 
 def _write_new_note(path: Path, content: str) -> None:

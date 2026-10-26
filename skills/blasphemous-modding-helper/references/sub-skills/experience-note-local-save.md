@@ -12,7 +12,7 @@ This reference owns user approval and local storage for unique Blasphemous 1 exp
 
 ## Note content and storage
 
-Each proposed note MUST use a lowercase topic-slug `.md` filename that is not a Windows-reserved device name, and the canonical three-field frontmatter, with `status: candidate`. The body MUST contain non-empty sections for the finding, applicable Blasphemous 1 version, route, evidence, reproduction steps, verification result, and limitations. The evidence section MUST identify and summarize the evidence source. The version section MUST say when the version is unknown. The date MUST represent when the current evidence was verified, not merely when the note was saved.
+Each proposed note MUST use a lowercase topic-slug `.md` filename that is not a Windows-reserved device name, and the canonical three-field frontmatter, with `status: candidate`. The body MUST contain non-empty sections for the finding, applicable Blasphemous 1 version, applicable Mod version, route, evidence, reproduction steps, verification result, evidence history, and limitations. Each version section MUST begin with `Version:` and give a version or say `Unknown`/`Not applicable`; Blasphemous 1 notes MUST NOT claim Blasphemous 2 scope. Every evidence line MUST begin with `Static source inspection:`, `Runtime evidence:`, `Manual/in-game evidence:`, or `Localization evidence:`, followed by non-empty source detail. Evidence history entries MUST use `- YYYY-MM-DD: correction and evidence` and MUST NOT postdate the note. The date MUST represent when the current evidence was verified, not merely when the note was saved.
 
 Before showing the note, the main task MUST generalize the finding and remove raw logs or configuration, credentials, personal or machine identifiers, and absolute paths. Evidence references MUST use safe source identifiers, repository-relative paths, or public URLs. Reproduction steps MUST be sufficient to repeat the observation, or state why the available evidence cannot be reproduced.
 
@@ -34,10 +34,10 @@ NOTE
 '@ | & $PYTHON3 (Join-Path $SkillRoot 'scripts\save_experience_note.py') --preferences-file $PreferencesFile --slug topic-slug --comparison-outcome unique --decision yes
 ```
 
-The main task MUST NOT invoke the save command for declined or unapproved candidates. Saving one or more local notes completes this workflow; it does not start publication review.
+The main task MUST NOT invoke the save command for declined or unapproved candidates. After saving, the main task MUST pass only the path(s) returned by an explicit yes to [Experience note pull requests](experience-note-pull-requests.md). Local-save approval does not approve a PR; each proposed PR requires its own explicit yes. A declined PR leaves the local note in place.
 
 ## Completion criteria
 
 Done when all unique candidates have been shown together, each has a separate decision, every explicit yes has been saved under the selected configuration directory, and no other candidate has been written. The main task MUST report saved filenames and any declined or failed saves. If no unique candidates remain, the main task MUST NOT prompt for approval.
 
-The next action is to finish the main task. Local notes remain candidate material outside the repository's canonical indexes and read-only lookup until maintainer review.
+The next action is to finish the main task and, for saved paths, prepare a separate PR proposal batch. Local notes remain candidate material outside the repository's canonical indexes and read-only lookup until maintainer review.
