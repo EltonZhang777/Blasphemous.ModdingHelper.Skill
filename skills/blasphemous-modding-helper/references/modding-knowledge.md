@@ -18,13 +18,24 @@ date: YYYY-MM-DD
 
 The note body MUST include non-empty sections for:
 
-- `## Applicable Blasphemous 1 version` — name the supported game build/version, or explicitly say when the evidence does not identify one.
+- `## Applicable Blasphemous 1 version` and `## Applicable Mod version` — each section's first non-empty line MUST start with `Version:` and name the supported build/version or explicitly say `unknown` or `not applicable`; name the Mod when one applies.
 - `## Route` — identify the relevant Skill route and how to use the finding.
-- `## Evidence` — cite the exact source path or record and label the evidence type.
+- `## Evidence` — cite each exact source path or record on its own line beginning with `Static source inspection:`, `Runtime evidence:`, `Manual/in-game evidence:`, or `Localization evidence:` as applicable.
 - `## Verification result` — state the method and outcome, including checks that were not performed.
+- `## Evidence history` — include dated verification/correction entries; later corrections MUST be appended without removing earlier evidence history.
 - `## Limitations` — identify versions, behavior, or inferences the evidence does not establish.
 
 Notes MUST contain only evidence-backed claims and MUST keep localization evidence separate from gameplay evidence. Notes MUST NOT contain credentials, private paths, profiles, logs, or caller data.
+
+## Versioned evidence and screenshots
+
+Agents MUST compare a note's game version, Mod version, route, and task with the user's request and environment before applying its claims. A note MUST state exact versions or explicitly mark a version unknown or not applicable. If its evidence does not cover the user's version or task, the agent MUST say so and MUST NOT present the claim as verified for that case. The agent MUST use the selected route's direct evidence or report what remains unverified. Blasphemous 1 notes MUST NOT be applied to Blasphemous 2.
+
+Evidence labels MUST remain distinct: static source inspection establishes what the inspected source says; runtime evidence establishes only the observed runtime output; manual/in-game evidence establishes the observed gameplay result; localization evidence establishes text in the cited localization source. Logs alone MUST NOT be presented as gameplay proof. The verification result MUST identify its method and outcome and name unperformed checks.
+
+Dated corrections MUST preserve earlier entries and their evidence. When behavior materially differs by game or Mod version, the note MUST scope the behavior explicitly or use separate notes.
+
+Notes MAY include relevant screenshots of Blasphemous 1 gameplay, BepInEx console output, error dialogs, or other supporting pages. Candidate screenshots MUST be stored under `docs/modding-knowledge/screenshots/` and linked from a candidate note with a relative Markdown image link whose destination is `../screenshots/<topic>/gameplay.png`. Each PNG, JPEG, or WebP file MUST be strictly smaller than 1.5 MiB. Promotion normalizes the link to `screenshots/<topic>/gameplay.png` when the note moves to the canonical directory. Screenshot preflight requires the optional maintainer dependency in `ci/requirements-image-validation.txt`; it fully decodes each file and checks the format against its extension. Screenshots MUST be minimally cropped to retain relevant context and MUST follow the same privacy and redaction rules as inline evidence: remove credentials, private/user-specific paths, and unrelated caller-owned data. Human review MUST confirm the redactions; the workflow MUST NOT redact automatically. Standalone extracted game assets and raw log attachments remain prohibited.
 
 ## Candidate review and promotion
 
@@ -34,9 +45,9 @@ Prepare unapproved notes only as direct-child Markdown files under `docs/modding
 python ci/modding_knowledge_candidates.py preflight docs/modding-knowledge/candidates/<topic>.md
 ```
 
-Preflight reuses the canonical note parser and checks the candidate path and lifecycle state, evidence sections, obvious private paths and credentials, repeated raw-log lines, embedded assets, and links to raw logs, game files, extracted assets, decompiled dumps, ROMs, or ISOs. It warns when a fenced code block exceeds 60 lines or a note exceeds 120 KiB, and rejects a fenced block over 150 lines. Preflight does not modify notes or indexes. Candidates remain outside the canonical index and read-only lookup.
+Preflight reuses the canonical note parser and checks the candidate path and lifecycle state, evidence sections and dated history, screenshot links, local image files and size limit, obvious private paths and credentials, repeated raw-log lines, and links to raw logs, game files, extracted assets, decompiled dumps, ROMs, or ISOs. It warns when a fenced code block exceeds 60 lines or a note exceeds 120 KiB, and rejects a fenced block over 150 lines. Preflight does not modify notes or indexes. Candidates remain outside the canonical index and read-only lookup.
 
-Before promotion, inspect the exact candidate content and proposed generated indexes together:
+Before promotion, inspect the exact candidate content, each screenshot's path, size, and digest, and the proposed generated indexes together:
 
 ```text
 python ci/modding_knowledge_candidates.py review docs/modding-knowledge/candidates/<topic>.md

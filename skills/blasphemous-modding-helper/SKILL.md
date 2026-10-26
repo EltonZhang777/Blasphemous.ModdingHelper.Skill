@@ -28,6 +28,7 @@ After reading [Requirement levels](references/requirement-levels-definitions.md)
 
 The localization row is the only configuration-free operational exception. Every other route MUST complete the shared entry gate before its specialized work, with the Automated xUnit branch's documented exception. A completion report MUST name the selected route and its authority, then report `status`, `completion evidence`, `blocked reason` when applicable, and the next document/action.
 After classifying a Blasphemous 1 modding request and completing any gate required by its selected route, the agent MUST consult the [Modding knowledge](references/modding-knowledge.md) index at task start. If a matching blocker arises later, the agent MUST repeat the lookup. This lookup is advisory and does not change the selected route or its gate. Blasphemous 2-only requests MUST NOT use these Blasphemous 1 notes.
+Before applying a retrieved note, the agent MUST compare its game version, Mod version, route, and task with the user's case. If the note does not cover that version or task, or leaves coverage unknown, the agent MUST tell the user and MUST NOT present the claim as verified for that case. Logs alone MUST NOT be described as proof of gameplay behavior.
 
 ## Shared entry gate
 

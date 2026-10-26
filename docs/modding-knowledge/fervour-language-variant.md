@@ -8,7 +8,11 @@ date: 2026-10-26
 
 ## Applicable Blasphemous 1 version
 
-The Blasphemous 1 localization corpus bundled with this Skill. The corpus does not record the game's build number, so this finding is not scoped to a specific game patch.
+Version: Unknown. The Blasphemous 1 localization corpus bundled with this Skill does not record the game's build number, so this finding is not scoped to a specific game patch.
+
+## Applicable Mod version
+
+Version: Not applicable. This finding concerns base-game localization and does not describe a Mod.
 
 ## Route
 
@@ -21,6 +25,10 @@ Localization evidence: The `en` value in `skills/blasphemous-modding-helper/refe
 ## Verification result
 
 Both language values were checked directly in the bundled TSV row for `PROPS/MSG_FERVOR_TUTORIAL_0`. This verifies the published localization text; no in-game UI run was performed.
+
+## Evidence history
+
+- 2026-10-26: Initial verification against the bundled localization row; no game build or Mod version is recorded by this source.
 
 ## Limitations
 

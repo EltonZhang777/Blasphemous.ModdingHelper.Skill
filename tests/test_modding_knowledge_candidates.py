@@ -1,10 +1,14 @@
 import contextlib
+import base64
 import io
 import json
+import stat
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
@@ -16,15 +20,31 @@ import modding_knowledge_candidates as candidates
 
 REQUIRED_SECTIONS = (
     "Applicable Blasphemous 1 version",
+    "Applicable Mod version",
     "Route",
     "Evidence",
     "Verification result",
+    "Evidence history",
     "Limitations",
 )
 
 
 def note(title="Synthetic candidate", status="candidate", body_suffix=""):
-    sections = "\n\n".join(f"## {heading}\n\nSynthetic evidence-backed text." for heading in REQUIRED_SECTIONS)
+    sections = "\n\n".join(
+        f"## {heading}\n\n"
+        + (
+            "Version: Blasphemous 1 1.0.0 (synthetic build)."
+            if heading == "Applicable Blasphemous 1 version"
+            else "Version: SyntheticMod 1.0.0."
+            if heading == "Applicable Mod version"
+            else "Static source inspection: synthetic source location."
+            if heading == "Evidence"
+            else "- 2026-10-26: Initial verification; synthetic evidence recorded."
+            if heading == "Evidence history"
+            else "Synthetic evidence-backed text."
+        )
+        for heading in REQUIRED_SECTIONS
+    )
     return (
         f"---\ntitle: {title}\nstatus: {status}\ndate: 2026-10-26\n---\n\n"
         f"# {title}\n\n{sections}{body_suffix}\n"
@@ -183,7 +203,20 @@ class ModdingKnowledgeCandidateTests(unittest.TestCase):
             note().replace("title: Synthetic candidate\n", "", 1),
             note().replace("status: candidate", "status: draft", 1),
             note().replace("date: 2026-10-26", "date: 2026-02-30", 1),
+            note().replace("Version: Blasphemous 1 1.0.0", "No version identified", 1),
+            note().replace("Version: Blasphemous 1 1.0.0", "Version: TBD", 1),
+            note().replace("Version: Blasphemous 1 1.0.0", "Version: Blasphemous 2 1.0.0", 1),
+            note().replace("Version: SyntheticMod 1.0.0", "Version: TODO", 1),
             note().replace("## Route\n\nSynthetic evidence-backed text.", "## Route\n\n", 1),
+            note().replace("## Evidence history\n\n- 2026-10-26: Initial verification; synthetic evidence recorded.", "## Evidence history\n\nNo dated record.", 1),
+            note().replace("- 2026-10-26: Initial verification", "- 2026-10-27: Future verification", 1),
+            note().replace("Static source inspection:", "Unlabeled source:", 1),
+            note().replace("Static source inspection: synthetic source location.", "Static source inspection:", 1),
+            note().replace(
+                "Static source inspection: synthetic source location.",
+                "Static source inspection: synthetic source location.\nAn unlabelled additional claim.",
+                1,
+            ),
             note().replace("title: Synthetic candidate\n", "title: Synthetic candidate\n\n", 1),
             note().replace("title: Synthetic candidate", "title: &anchor Synthetic candidate", 1),
             note(body_suffix="\n\n```text\nunclosed"),
@@ -196,6 +229,141 @@ class ModdingKnowledgeCandidateTests(unittest.TestCase):
                 code, _output, errors = self.run_command(["preflight", str(path)])
                 self.assertNotEqual(code, 0)
                 self.assertTrue(errors.startswith("knowledge candidate error:"))
+
+    def test_screenshot_size_is_strict_and_images_must_be_relative(self):
+        screenshot_root = self.knowledge / "screenshots" / "synthetic"
+        screenshot_root.mkdir(parents=True)
+        screenshot = screenshot_root / "gameplay.png"
+        linked_note = "\n\n![Gameplay](../screenshots/synthetic/gameplay.png)"
+
+        valid_png = base64.b64decode(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC"
+        )
+        screenshot.write_bytes(valid_png)
+        path = self.write_candidate("small-image.md", note("Small image", body_suffix=linked_note))
+        code, output, errors = self.run_command(["preflight", str(path)])
+        self.assertEqual((code, errors), (0, ""))
+        self.assertIn("Screenshot:", output)
+        self.assertIn("minimal cropping", output)
+
+        screenshot.write_bytes(b"x" * candidates.MAX_SCREENSHOT_BYTES)
+        code, _output, errors = self.run_command(["preflight", str(path)])
+        self.assertNotEqual(code, 0)
+        self.assertIn("strictly below 1.5 MiB", errors)
+
+        screenshot.write_bytes(b"\x89PNG\r\n\x1a\n" + b"x" * 32)
+        code, _output, errors = self.run_command(["preflight", str(path)])
+        self.assertNotEqual(code, 0)
+        self.assertIn("complete, valid image", errors)
+
+        path.write_text(note("Remote image", body_suffix="\n\n![Gameplay](https://example.com/gameplay.png)"), encoding="utf-8")
+        code, _output, errors = self.run_command(["preflight", str(path)])
+        self.assertNotEqual(code, 0)
+        self.assertIn("relative local path", errors)
+
+        path.write_text(
+            note("Reference image", body_suffix="\n\n![Gameplay]\n\n[Gameplay]: https://example.com/gameplay.png"),
+            encoding="utf-8",
+        )
+        code, _output, errors = self.run_command(["preflight", str(path)])
+        self.assertNotEqual(code, 0)
+        self.assertIn("relative Markdown image links", errors)
+
+    def test_supported_screenshot_formats_are_decoded_and_match_their_extensions(self):
+        try:
+            from PIL import Image
+        except ImportError:
+            self.skipTest("Pillow is optional outside screenshot candidate validation")
+
+        def make_image(image_format):
+            buffer = io.BytesIO()
+            Image.new("RGB", (2, 2), "red").save(buffer, format=image_format)
+            return buffer.getvalue()
+
+        png = base64.b64decode(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC"
+        )
+        fixtures = {
+            ".png": png,
+            ".jpg": make_image("JPEG"),
+            ".jpeg": make_image("JPEG"),
+            ".webp": make_image("WEBP"),
+        }
+        screenshot_root = self.knowledge / "screenshots" / "synthetic"
+        screenshot_root.mkdir(parents=True)
+        for index, (suffix, payload) in enumerate(fixtures.items()):
+            with self.subTest(suffix=suffix):
+                filename = f"capture{suffix}"
+                (screenshot_root / filename).write_bytes(payload)
+                path = self.write_candidate(
+                    f"format-{index}.md",
+                    note(body_suffix=f"\n\n![Gameplay](../screenshots/synthetic/{filename})"),
+                )
+                code, _output, errors = self.run_command(["preflight", str(path)])
+                self.assertEqual((code, errors), (0, ""))
+
+        (screenshot_root / "mismatch.jpg").write_bytes(png)
+        path = self.write_candidate(
+            "mismatch.md",
+            note(body_suffix="\n\n![Gameplay](../screenshots/synthetic/mismatch.jpg)"),
+        )
+        code, _output, errors = self.run_command(["preflight", str(path)])
+        self.assertNotEqual(code, 0)
+        self.assertIn("do not match the image extension", errors)
+
+    def test_screenshot_review_fingerprint_covers_image_and_promotion_keeps_relative_link(self):
+        screenshot_root = self.knowledge / "screenshots" / "synthetic"
+        screenshot_root.mkdir(parents=True)
+        screenshot = screenshot_root / "gameplay.png"
+        original_png = base64.b64decode(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC"
+        )
+        changed_png = base64.b64decode(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGNgYPgPAAEDAQAIicLsAAAAAElFTkSuQmCC"
+        )
+        screenshot.write_bytes(original_png)
+        content = note("Screenshot note", body_suffix="\n\n![Gameplay](../screenshots/synthetic/gameplay.png)")
+        content = content.replace(
+            "- 2026-10-26: Initial verification; synthetic evidence recorded.",
+            "- 2026-10-25: Initial verification; synthetic evidence recorded.\n"
+            "- 2026-10-26: Correction verified against the screenshot; earlier evidence retained.",
+        )
+        path = self.write_candidate(
+            "screenshot-note.md",
+            content,
+        )
+        self.write_current_indexes()
+
+        code, output, errors = self.run_command(["review", str(path)])
+        self.assertEqual((code, errors), (0, ""))
+        review_sha256 = output.split("Review SHA-256: ", 1)[1].splitlines()[0]
+        self.assertIn("canonical link: screenshots/synthetic/gameplay.png", output)
+
+        screenshot.write_bytes(changed_png)
+        code, _output, errors = self.run_command(
+            ["promote", "--approve", "--review-sha256", review_sha256, str(path)]
+        )
+        self.assertNotEqual(code, 0)
+        self.assertIn("review the exact batch again", errors)
+        self.assertFalse((self.knowledge / path.name).exists())
+
+        code, output, errors = self.run_command(["review", str(path)])
+        self.assertEqual((code, errors), (0, ""))
+        review_sha256 = output.split("Review SHA-256: ", 1)[1].splitlines()[0]
+        code, _output, errors = self.run_command(
+            ["promote", "--approve", "--review-sha256", review_sha256, str(path)]
+        )
+        self.assertEqual((code, errors), (0, ""))
+        canonical = (self.knowledge / path.name).read_text(encoding="utf-8")
+        self.assertIn("![Gameplay](screenshots/synthetic/gameplay.png)", canonical)
+        self.assertIn("- 2026-10-25: Initial verification", canonical)
+        self.assertIn("- 2026-10-26: Correction verified", canonical)
+        self.assertTrue(screenshot.is_file())
+
+    def test_reparse_points_are_treated_as_junctions(self):
+        metadata = SimpleNamespace(st_mode=stat.S_IFDIR, st_file_attributes=0x400)
+        with patch.object(Path, "lstat", return_value=metadata):
+            self.assertTrue(indexer._is_link_or_junction(Path("synthetic-junction")))
 
     def test_code_block_and_note_size_thresholds(self):
         sixty_one = "\n```text\n" + "\n".join("line" for _ in range(61)) + "\n```"
