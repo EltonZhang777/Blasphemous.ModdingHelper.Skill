@@ -191,7 +191,7 @@ class ModdingKnowledgeAcceptanceTests(unittest.TestCase):
         main = MAIN_SKILL.read_text(encoding="utf-8")
         reference = KNOWLEDGE_REFERENCE.read_text(encoding="utf-8").casefold()
         lookup = reference.split("## read-only lookup", 1)[1].split("## completion", 1)[0]
-        failure = reference.split("if commit resolution", 1)[1].split("## completion", 1)[0]
+        failure = reference.split("if a lookup command exits unsuccessfully", 1)[1].split("## completion", 1)[0]
         markers = list(re.finditer(r"(?m)^(\d+)\. ", lookup))
         steps = {
             marker.group(1): lookup[marker.end() : markers[index + 1].start() if index + 1 < len(markers) else len(lookup)]
@@ -201,17 +201,18 @@ class ModdingKnowledgeAcceptanceTests(unittest.TestCase):
         self.assertIn("references/modding-knowledge.md", main)
         self.assertIn("task start", main.casefold())
         self.assertIn("matching blocker", main.casefold())
-        self.assertEqual(list(steps), ["1", "2", "3", "4", "5"])
-        self.assertIn("api.github.com/repos/eltonzhang777/blasphemous.moddinghelper.skill/commits/main", steps["1"])
+        self.assertEqual(list(steps), ["1", "2", "3", "4"])
+        self.assertIn("modding_knowledge_lookup.py\" resolve", steps["1"])
         self.assertIn("current `main` exactly once", steps["1"])
+        self.assertIn("docs/modding-knowledge/index.json", steps["1"])
         self.assertIn("must not resolve `main` again", steps["1"])
-        self.assertIn("docs/modding-knowledge/index.json", steps["2"])
-        self.assertIn("<sha>/docs/modding-knowledge/index.json", steps["2"])
-        self.assertIn("at most one clearly matching entry", steps["3"])
-        self.assertIn("must not fetch a note", steps["3"])
-        self.assertIn("same raw url with the same sha", steps["4"])
-        self.assertIn("must not read other note bodies", steps["4"])
-        self.assertIn("full commit sha and repository-relative note path", steps["5"])
+        self.assertIn("verified index metadata", steps["1"])
+        self.assertIn("at most one clearly matching entry", steps["2"])
+        self.assertIn("must not fetch a note", steps["2"])
+        self.assertIn("modding_knowledge_lookup.py\" note", steps["3"])
+        self.assertIn("exact sha", steps["3"])
+        self.assertIn("must not read other note bodies", steps["3"])
+        self.assertIn("full commit sha and repository-relative note path", steps["4"])
         self.assertIn("blasphemous 2", reference)
         self.assertIn("advisory", reference)
         for evidence_type in ("static source inspection:", "runtime evidence:", "manual/in-game evidence:", "localization evidence:"):
