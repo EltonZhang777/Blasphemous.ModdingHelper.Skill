@@ -69,17 +69,36 @@ Without `--approve`, or without the matching `--review-sha256` printed by `revie
 
 ## Read-only lookup
 
-For a relevant Blasphemous 1 task, lookup follows request classification and any gate required by its selected route:
+For a relevant Blasphemous 1 task, lookup follows request classification and any gate required by its selected route. The agent MUST use the resolved Python interpreter and installed Skill root from invocation preflight. The lookup script makes public unauthenticated GET requests only and does not cache or write retrieved content.
 
-1. The agent MUST resolve the repository's current `main` exactly once with a public read-only request, without credentials, to `https://api.github.com/repos/EltonZhang777/Blasphemous.ModdingHelper.Skill/commits/main`. The agent MUST record the returned full commit SHA and MUST NOT resolve `main` again during this lookup.
-2. The agent MUST read only `docs/modding-knowledge/index.json` from `https://raw.githubusercontent.com/EltonZhang777/Blasphemous.ModdingHelper.Skill/<SHA>/docs/modding-knowledge/index.json` using that SHA.
-3. From the index, the agent MUST choose at most one clearly matching entry with `status: verified` and a direct-child lowercase topic-slug `.md` path under `docs/modding-knowledge/`. When no title clearly matches, the agent MUST report that no note matched and continue without note context. For an ambiguous match, the agent MUST report the ambiguity and MUST NOT fetch a note.
-4. The agent MUST read only the selected note, from the same raw URL with the same SHA. The agent MUST confirm its `title`, `status`, and `date` match the index entry and MUST NOT read other note bodies.
-5. When using a note, the agent MUST record its provenance as the full commit SHA and repository-relative note path.
+1. The agent MUST resolve the repository's current `main` exactly once and read its index with the lookup command:
+
+   ```bash
+   "$PYTHON3" "$SKILL_ROOT/scripts/modding_knowledge_lookup.py" resolve
+   ```
+
+   ```powershell
+   & $PYTHON3 (Join-Path $SkillRoot 'scripts\modding_knowledge_lookup.py') resolve
+   ```
+
+   The command reads only `docs/modding-knowledge/index.json` after resolving `main`, then returns the full commit SHA and verified index metadata without reading note bodies. The agent MUST retain that SHA for the rest of the lookup and MUST NOT resolve `main` again.
+2. From the returned index, the agent MUST choose at most one clearly matching entry with `status: verified` and a direct-child lowercase topic-slug `.md` path under `docs/modding-knowledge/`. When no title clearly matches, the agent MUST report that no note matched and continue without note context. For an ambiguous match, the agent MUST report the ambiguity and MUST NOT fetch a note.
+3. For one selected entry, the agent MUST fetch only that note with the exact SHA, path, title, and date returned by the index:
+
+   ```bash
+   "$PYTHON3" "$SKILL_ROOT/scripts/modding_knowledge_lookup.py" note --commit-sha "$COMMIT_SHA" --path "$INDEX_PATH" --title "$INDEX_TITLE" --date "$INDEX_DATE"
+   ```
+
+   ```powershell
+   & $PYTHON3 (Join-Path $SkillRoot 'scripts\modding_knowledge_lookup.py') note --commit-sha $CommitSha --path $IndexPath --title $IndexTitle --date $IndexDate
+   ```
+
+   The command confirms the note's `title`, `status`, and `date` against the index and returns the note with its full SHA and repository-relative path. The agent MUST NOT read other note bodies.
+4. When using a note, the agent MUST record its provenance as the full commit SHA and repository-relative note path.
 
 Retrieved notes are advisory; authoritative Skill instructions and stronger direct evidence MUST take precedence. This index contains Blasphemous 1 material only. Blasphemous 2 is not supported and MUST NOT use this lookup.
 
-If commit resolution, index retrieval/parsing, or matched-note retrieval/validation fails, the agent MUST disclose the failure and MUST NOT fall back to local, cached, or previously fetched note content. Dependent work MUST pause unless sufficient independent evidence is available to proceed safely; if it is, the agent MUST name that evidence and the retrieval failure.
+If a lookup command exits unsuccessfully during commit resolution, index retrieval/parsing, or matched-note retrieval/validation, the agent MUST disclose the reported failure and MUST NOT fall back to local, cached, or previously fetched note content. Dependent work MUST pause unless sufficient independent evidence is available to proceed safely; if it is, the agent MUST name that evidence and the retrieval failure.
 
 ## Completion
 
