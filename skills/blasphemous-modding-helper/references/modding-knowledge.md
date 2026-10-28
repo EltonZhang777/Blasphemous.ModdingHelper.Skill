@@ -31,7 +31,7 @@ Notes MUST contain only evidence-backed claims and MUST keep localization eviden
 
 Agents MUST compare a note's game version, Mod version, route, and task with the user's request and environment before applying its claims. A note MUST state exact versions or explicitly mark a version unknown or not applicable. If its evidence does not cover the user's version or task, the agent MUST say so and MUST NOT present the claim as verified for that case. The agent MUST use the selected route's direct evidence or report what remains unverified. Blasphemous 1 notes MUST NOT be applied to Blasphemous 2.
 
-Evidence labels MUST remain distinct: static source inspection establishes what the inspected source says; runtime evidence establishes only the observed runtime output; manual/in-game evidence establishes the observed gameplay result; localization evidence establishes text in the cited localization source. Logs alone MUST NOT be presented as gameplay proof. The verification result MUST identify its method and outcome and name unperformed checks.
+Evidence labels MUST remain distinct: static source inspection establishes what the inspected source says; runtime evidence establishes only the observed runtime output; manual/in-game evidence establishes the observed gameplay result; localization evidence establishes text in the cited localization source. Short evidence excerpts MAY quote cited source or localization text, but MUST NOT reproduce logs; log observations MUST be paraphrased or supported by a screenshot. Logs alone MUST NOT be presented as gameplay proof. The verification result MUST identify its method and outcome and name unperformed checks.
 
 Dated corrections MUST preserve earlier entries and their evidence. When behavior materially differs by game or Mod version, the note MUST scope the behavior explicitly or use separate notes.
 
@@ -45,7 +45,7 @@ Prepare unapproved notes only as direct-child Markdown files under `docs/modding
 python ci/modding_knowledge_candidates.py preflight docs/modding-knowledge/candidates/<topic>.md
 ```
 
-Preflight reuses the canonical note parser and checks the candidate path and lifecycle state, evidence sections and dated history, screenshot links, local image files and size limit, obvious private paths and credentials, repeated raw-log lines, and links to raw logs, game files, extracted assets, decompiled dumps, ROMs, or ISOs. It warns when a fenced code block exceeds 60 lines or a note exceeds 120 KiB, and rejects a fenced block over 150 lines. Preflight does not modify notes or indexes. Candidates remain outside the canonical index and read-only lookup.
+Preflight reuses the canonical note parser and checks the candidate path and lifecycle state, evidence sections and dated history, screenshot links, local image files and size limit, obvious private paths and credentials, bracketed or timestamped severity lines (including Markdown block quotes and list items), and links to raw logs, game files, extracted assets, decompiled dumps, ROMs, or ISOs. It warns when a fenced code block exceeds 60 lines or a note exceeds 120 KiB, and rejects a fenced block over 150 lines. Preflight does not modify notes or indexes. Candidates remain outside the canonical index and read-only lookup.
 
 Before promotion, inspect the exact candidate content, each screenshot's path, size, and digest, and the proposed generated indexes together:
 

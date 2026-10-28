@@ -460,7 +460,7 @@ class ModdingKnowledgeCandidateTests(unittest.TestCase):
         self.assertEqual((code, errors), (0, ""))
         self.assertIn(">120 KiB", output)
 
-    def test_raw_artifacts_credentials_and_private_paths_are_rejected(self):
+    def test_raw_artifacts_credentials_private_paths_and_logs_are_rejected(self):
         raw_log = self.candidate_root / "player.log"
         raw_log.write_text("synthetic log", encoding="utf-8")
         code, _output, errors = self.run_command(["preflight", str(raw_log)])
@@ -506,11 +506,31 @@ class ModdingKnowledgeCandidateTests(unittest.TestCase):
         self.assertNotEqual(code, 0)
         self.assertIn("credential-like content", errors)
 
-        raw_logs = "\n\n2026-10-26 10:00:00.001 [Info] first\n2026-10-26 10:00:00.002 [Warning] second\n2026-10-26 10:00:00.003 [Error] third"
-        log_note = self.write_candidate("raw-logs.md", note(body_suffix=raw_logs))
-        code, _output, errors = self.run_command(["preflight", str(log_note)])
-        self.assertNotEqual(code, 0)
-        self.assertIn("raw log excerpts", errors)
+        log_lines = (
+            "2026-10-26 10:00:00.001 [Info] first",
+            "2026-10-26 10:00:00.002 [Warning] second",
+            "2026-10-26 10:00:00.003 [Error] third",
+        )
+        log_samples = (
+            "\n\n" + log_lines[0],
+            "\n\n" + "\n".join(log_lines[:2]),
+            "\n\n" + "\n".join(log_lines),
+            "\n\n" + "\n".join(f"> {line}" for line in log_lines),
+            "\n\n" + "\n".join(f"- {line}" for line in log_lines),
+            "\n\n[Info : ExampleMod] startup complete",
+        )
+        for index, raw_logs in enumerate(log_samples):
+            log_note = self.write_candidate(f"raw-logs-{index}.md", note(body_suffix=raw_logs))
+            code, _output, errors = self.run_command(["preflight", str(log_note)])
+            self.assertNotEqual(code, 0)
+            self.assertIn("raw log excerpts", errors)
+
+        manual_note = self.write_candidate(
+            "manual-observation.md",
+            note(body_suffix="\n\n2026-10-26 10:00:00 [Manual] observed the route in game"),
+        )
+        code, errors_output, errors = self.run_command(["preflight", str(manual_note)])
+        self.assertEqual((code, errors), (0, ""), errors_output)
 
 
 if __name__ == "__main__":
