@@ -1,7 +1,11 @@
+import importlib.util
+import io
 import subprocess
 import sys
 import unittest
+from contextlib import redirect_stdout
 from pathlib import Path
+from unittest.mock import patch
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
@@ -68,6 +72,31 @@ class PythonAcceptanceEntryPointTests(unittest.TestCase):
         self.assertEqual(result.returncode, 2)
         self.assertIn("opt-in", result.stderr)
         self.assertEqual(result.stdout, "")
+
+    def test_workflow_tests_are_scheduled_once_through_unittest_discovery(self):
+        spec = importlib.util.spec_from_file_location("acceptance_runner", ACCEPTANCE_RUNNER)
+        runner = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(runner)
+        invocations = []
+
+        def capture(label, command, **kwargs):
+            invocations.append((label, list(command)))
+            return subprocess.CompletedProcess(command, 0, "", "")
+
+        with patch.object(runner, "run_command", side_effect=capture), \
+                patch.object(runner, "run_installer_surface"), \
+                patch.object(runner, "run_check"), \
+                redirect_stdout(io.StringIO()):
+            self.assertEqual(runner.main(["--python", sys.executable]), 0)
+
+        root_runs = [
+            command
+            for label, command in invocations
+            if label == "Python deterministic contract surface"
+        ]
+        self.assertEqual(len(root_runs), 1)
+        self.assertIn(str(ROOT_RUNNER), root_runs[0])
+        self.assertEqual(len(invocations), 1)
 
     def test_repository_only_tools_are_outside_the_packaged_skill(self):
         for name in (

@@ -1,11 +1,25 @@
 import json
 import re
+import sys
+import tempfile
 import unittest
 from pathlib import Path
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 SKILL_ROOT = REPOSITORY_ROOT / "skills" / "blasphemous-modding-helper"
+SCRIPTS_ROOT = SKILL_ROOT / "scripts"
+sys.path.insert(0, str(SCRIPTS_ROOT))
+sys.path.insert(0, str(SCRIPTS_ROOT.parent))
+
+from experience_note_pull_requests import (  # noqa: E402
+    build_pull_request_proposals,
+    create_approved_pull_requests,
+    format_proposals,
+)
+from save_experience_note import NoteSaveError, save_approved_note  # noqa: E402
+
+
 MAIN_SKILL = SKILL_ROOT / "SKILL.md"
 COMPARISON = SKILL_ROOT / "references" / "sub-skills" / "experience-note-comparison.md"
 LOCAL_SAVE = SKILL_ROOT / "references" / "sub-skills" / "experience-note-local-save.md"
@@ -112,6 +126,66 @@ class ExperienceNoteComparisonAcceptanceTests(unittest.TestCase):
                 "## Limitations",
             ):
                 self.assertIn(heading, body)
+
+    def test_comparison_outcomes_do_not_write_notes_or_create_prs(self):
+        candidate = (FIXTURE_ROOT / "candidate.md").read_text(encoding="utf-8")
+        local_duplicate = (FIXTURE_ROOT / "local" / "duplicate.md").read_text(encoding="utf-8")
+        public_index = json.loads((FIXTURE_ROOT / "public" / "index.json").read_text(encoding="utf-8"))
+        public_note = (FIXTURE_ROOT / "public" / "fervour-language-variant.md").read_text(encoding="utf-8")
+        possible_match = json.loads(
+            (FIXTURE_ROOT / "public" / "differently-titled-possible-match-index.json").read_text(encoding="utf-8")
+        )[0]
+        stale_note = (FIXTURE_ROOT / "local" / "stale.md").read_text(encoding="utf-8")
+        conflicting_note = (FIXTURE_ROOT / "local" / "conflicting.md").read_text(encoding="utf-8")
+        malformed_note = (FIXTURE_ROOT / "local" / "malformed.md").read_text(encoding="utf-8")
+        candidate_title = next(
+            line.partition(": ")[2]
+            for line in candidate.splitlines()
+            if line.startswith("title: ")
+        )
+        self.assertEqual(split_note(candidate)[1], split_note(local_duplicate)[1])
+        self.assertEqual(split_note(candidate)[1], split_note(public_note)[1])
+        self.assertNotEqual(possible_match["title"], candidate_title)
+        self.assertEqual(public_index[0]["status"], "verified")
+        self.assertEqual(split_note(stale_note)[0], ["title", "status", "date"])
+        self.assertIn("status: superseded", stale_note)
+        self.assertNotEqual(split_note(conflicting_note)[1], split_note(candidate)[1])
+        self.assertEqual(split_note(malformed_note)[0], ["title", "status"])
+
+        corpus_files = tuple(path for path in FIXTURE_ROOT.rglob("*") if path.is_file())
+        before = {path: path.read_bytes() for path in corpus_files}
+        outcomes = (
+            ("exact-duplicate", "exact-duplicate"),
+            ("uncertain-match", "deferred"),
+            ("incomplete-corpus", "deferred"),
+            ("retrieval-failure", "deferred"),
+            ("stale-note", "stale"),
+            ("conflicting-note", "conflict"),
+        )
+        with tempfile.TemporaryDirectory(dir=REPOSITORY_ROOT) as temporary:
+            config = Path(temporary) / "config.yml"
+            config.write_text("lightweight_source_code_path: ./source\n", encoding="utf-8")
+            writes = []
+            for scenario, outcome in outcomes:
+                with self.subTest(scenario=scenario), self.assertRaises(NoteSaveError):
+                    save_approved_note(
+                        config.resolve(),
+                        scenario,
+                        outcome,
+                        "yes",
+                        "controlled candidate content",
+                        storage=lambda path, content: writes.append((path, content)),
+                    )
+
+            proposals = build_pull_request_proposals(config.resolve(), [])
+            created = []
+            self.assertEqual(format_proposals(proposals), "No saved experience notes are eligible for PR review.")
+            self.assertEqual(create_approved_pull_requests(proposals, {}, created.append), [])
+            self.assertEqual(writes, [])
+            self.assertEqual(created, [])
+            self.assertFalse((config.parent / "modding-knowledge").exists())
+
+        self.assertEqual(before, {path: path.read_bytes() for path in corpus_files})
 
 
 if __name__ == "__main__":
