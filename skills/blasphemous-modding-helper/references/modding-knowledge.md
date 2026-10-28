@@ -39,10 +39,12 @@ Notes MAY include relevant screenshots of Blasphemous 1 gameplay, BepInEx consol
 
 ## Candidate review and promotion
 
+These maintainer commands run from the Skill source repository root; their `ci/` scripts are not included in the installed Skill. Resolve Python 3 as `PYTHON3` using [Python Runtime](config/python-runtime.md), then replace `<python3>` below with `& $PYTHON3` in PowerShell or `"$PYTHON3"` in Bash.
+
 Prepare unapproved notes only as direct-child Markdown files under `docs/modding-knowledge/candidates/`, with `status: candidate`. Run the local preflight against the exact note paths or named batch:
 
 ```text
-python ci/modding_knowledge_candidates.py preflight docs/modding-knowledge/candidates/<topic>.md
+<python3> ci/modding_knowledge_candidates.py preflight docs/modding-knowledge/candidates/<topic>.md
 ```
 
 Preflight reuses the canonical note parser and checks the candidate path and lifecycle state, evidence sections and dated history, screenshot links, local image files and size limit, obvious private paths and credentials, BepInEx-style `[level: source]` and timestamped severity lines (including common Markdown wrappers), and links to raw logs, game files, extracted assets, decompiled dumps, ROMs, or ISOs. It warns when a fenced code block exceeds 60 lines or a note exceeds 120 KiB, and rejects a fenced block over 150 lines. Preflight does not modify notes or indexes. Candidates remain outside the canonical index and read-only lookup.
@@ -50,7 +52,7 @@ Preflight reuses the canonical note parser and checks the candidate path and lif
 Before promotion, inspect the exact candidate content, each screenshot's path, size, and digest, and the proposed generated indexes together:
 
 ```text
-python ci/modding_knowledge_candidates.py review docs/modding-knowledge/candidates/<topic>.md
+<python3> ci/modding_knowledge_candidates.py review docs/modding-knowledge/candidates/<topic>.md
 ```
 
 For a named batch, pass every approved note path explicitly. The review output shows each note unchanged, its digest, and the generated `INDEX.md` and `index.json` diffs for that exact set. A human reviewer MUST check evidence accuracy, limitations, caller data, and the presence and adequacy of privacy redactions. The workflow does not apply or remove redactions automatically.
@@ -58,18 +60,18 @@ For a named batch, pass every approved note path explicitly. The review output s
 Promotion requires explicit human approval for exactly the reviewed note or batch:
 
 ```text
-python ci/modding_knowledge_candidates.py promote --approve --review-sha256 <review-sha256> docs/modding-knowledge/candidates/<topic>.md
+<python3> ci/modding_knowledge_candidates.py promote --approve --review-sha256 <review-sha256> docs/modding-knowledge/candidates/<topic>.md
 ```
 
 Without `--approve`, or without the matching `--review-sha256` printed by `review`, promotion fails without writing. The digest binds the exact candidate contents and both proposed indexes, so a changed note or index requires another review. Promotion also requires the current generated indexes to be consistent, validates the complete selected set before writing, creates canonical copies with `status: verified`, and regenerates both indexes from verified canonical notes. If the current indexes are stale, regenerate them and repeat the exact review before approval. The original candidate drafts remain unchanged and excluded from retrieval. The command has no all-candidates mode and does not commit, push, or publish.
 
 ## Generated indexes
 
-`docs/modding-knowledge/INDEX.md` and `docs/modding-knowledge/index.json` are generated from canonical-note frontmatter. Each JSON entry contains `title`, `status`, `date`, and a repository-relative `path`. `python ci/generate_modding_knowledge_index.py` regenerates both; `python ci/generate_modding_knowledge_index.py --check` fails on missing or mismatched output. The check does not rewrite stale files.
+`docs/modding-knowledge/INDEX.md` and `docs/modding-knowledge/index.json` are generated from canonical-note frontmatter. Each JSON entry contains `title`, `status`, `date`, and a repository-relative `path`. `<python3> ci/generate_modding_knowledge_index.py` regenerates both; `<python3> ci/generate_modding_knowledge_index.py --check` fails on missing or mismatched output. The check does not rewrite stale files.
 
 ## Read-only lookup
 
-For a relevant Blasphemous 1 task, lookup follows request classification and any gate required by its selected route. The agent MUST use the resolved Python interpreter and installed Skill root from invocation preflight. The lookup script makes public unauthenticated GET requests only and does not cache or write retrieved content.
+For an operational Blasphemous 1 modding task, lookup follows request classification and any gate required by its selected route. The read-only Localization lookup route follows [Invocation preflight](config/invocation-preflight.md) and MUST NOT use this workflow. The agent MUST use the resolved Python interpreter and installed Skill root from invocation preflight. The lookup script makes public unauthenticated GET requests only and does not cache or write retrieved content.
 
 1. The agent MUST resolve the repository's current `main` exactly once and read its index with the lookup command:
 
