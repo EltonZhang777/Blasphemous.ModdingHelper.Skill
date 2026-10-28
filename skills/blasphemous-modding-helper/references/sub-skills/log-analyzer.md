@@ -37,7 +37,7 @@ When mod-test CLI reports missing Unity log directory or log:
 
 This step is complete only when CLI resolves Unity log or warning remains visible with exact missing path and configuration file to update. CLI reads existing BepInEx and Unity logs in place; it does not create persistent log copies.
 
-`launched`, `ready`, and `mod_loaded` are startup states. They MUST NOT be used to verify visual, input, combat, menu, save, or other gameplay behavior. After startup evidence is collected, agent MUST ask the player to operate the game and report observed behavior in natural language; agent MUST treat that report as **Player-performed in-game verification** evidence.
+`launched`, `ready`, and `mod_loaded` are startup states. They MUST NOT be used to verify visual, input, combat, menu, save, or other gameplay behavior. When gameplay verification is also requested, the agent MUST return to the shared [Mod-test entry](blasphemous-modding-test.md) and follow [In-game test coordination](blasphemous-modding-test-in-game-coordination.md) before using the selected Player-performed or Computer Use evidence guide. This log-analysis branch does not own in-game interaction.
 
 ## Startup diagnostic ownership
 
@@ -77,7 +77,7 @@ Agent MUST mark log analysis complete only when report contains all of these:
 1. `status`, completion evidence, and next action; include the exact blocked or failed reason when applicable.
 2. Active configuration file and every log source inspected, or exact missing path and required configuration-update handoff.
 3. Expected pattern, relevant log evidence, and conclusion tied to that evidence. If BepInEx log is sufficient, agent MUST state that Unity-log read was not required; otherwise, Unity-log result MUST be included.
-4. Concrete next action: code/configuration change, another evidence request, tracked-session operation, or Player-performed in-game verification.
+4. Concrete next action: code/configuration change, another evidence request, tracked-session operation, or the selected in-game evidence phase after coordination.
 
 Missing or unreadable evidence is not successful analysis. Analysis is complete in that case only when warning names missing source, active configuration file, and next action needed to recover.
 

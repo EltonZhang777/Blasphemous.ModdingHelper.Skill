@@ -122,7 +122,8 @@ class ModTestRoutingDocumentationTests(unittest.TestCase):
             "ask the user to clarify",
             "automated xunit first",
             "each phase",
-            "manual verification",
+            "player-performed in-game verification",
+            "computer use automated in-game test",
             "mod_loaded",
             "must not be reported as gameplay verification",
         ):
@@ -211,7 +212,7 @@ class ModTestRoutingDocumentationTests(unittest.TestCase):
         ):
             self.assertIn(phrase, text)
 
-    def test_real_profile_branch_owns_existing_runtime_workflow(self):
+    def test_real_profile_branch_owns_lifecycle_and_hands_off_gameplay(self):
         real = read(REAL_PROFILE).casefold()
         shared = read(SHARED).casefold()
 
@@ -224,7 +225,9 @@ class ModTestRoutingDocumentationTests(unittest.TestCase):
             "process tree",
             "newest-first",
             "mod_loaded",
-            "manual verification",
+            "profile operations and in-game evidence handoff",
+            "player-performed in-game verification",
+            "computer use automated in-game test",
         ):
             self.assertIn(phrase, real)
         self.assertNotIn("<test_cli> run", shared)
@@ -250,6 +253,7 @@ class ModTestRoutingDocumentationTests(unittest.TestCase):
             "failed",
             "blocked",
             "pending-manual",
+            "pending-computer-use",
             "next action",
         ):
             self.assertIn(phrase, text)
