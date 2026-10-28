@@ -1,6 +1,7 @@
 import argparse
 import json
 import re
+import stat
 import sys
 from datetime import date
 from pathlib import Path
@@ -18,10 +19,18 @@ STATUSES = {"candidate", "verified", "superseded", "withdrawn"}
 NOTE_NAME = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*\.md\Z")
 REQUIRED_SECTIONS = (
     "Applicable Blasphemous 1 version",
+    "Applicable Mod version",
     "Route",
     "Evidence",
     "Verification result",
+    "Evidence history",
     "Limitations",
+)
+EVIDENCE_TYPES = (
+    "Static source inspection:",
+    "Runtime evidence:",
+    "Manual/in-game evidence:",
+    "Localization evidence:",
 )
 
 
@@ -29,11 +38,24 @@ class NoteError(ValueError):
     pass
 
 
+def _is_link_or_junction(path):
+    try:
+        metadata = path.lstat()
+    except FileNotFoundError:
+        return False
+    except OSError:
+        return True
+    return stat.S_ISLNK(metadata.st_mode) or bool(
+        getattr(metadata, "st_file_attributes", 0)
+        & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400)
+    )
+
+
 def parse_note(path, repository_root=None):
     repository_root = Path(repository_root or REPOSITORY_ROOT)
     label = path.relative_to(repository_root)
-    if path.is_symlink():
-        raise NoteError(f"{label} must not be a symlink")
+    if _is_link_or_junction(path):
+        raise NoteError(f"{label} must not be a symlink or junction")
     if not NOTE_NAME.fullmatch(path.name):
         raise NoteError(f"{label} must use a lowercase topic-slug filename")
 
@@ -97,12 +119,47 @@ def parse_note(path, repository_root=None):
         if not "\n".join(sections.get(heading, ())).strip():
             raise NoteError(f"{label} needs a non-empty '## {heading}' section")
 
+    for heading in REQUIRED_SECTIONS[:2]:
+        version_lines = [line.strip() for line in sections[heading] if line.strip()]
+        if not version_lines or not version_lines[0].startswith("Version:"):
+            raise NoteError(f"{label} {heading} must begin with 'Version:' and name its scope")
+        version = version_lines[0][len("Version:") :].strip()
+        if not version or re.search(r"\b(?:tbd|todo|pending)\b", version, re.IGNORECASE):
+            raise NoteError(f"{label} {heading} must name a version or explicitly say Unknown/Not applicable")
+        if heading == REQUIRED_SECTIONS[0] and re.search(r"\b(?:blasphemous\s*2|b2)\b", version, re.IGNORECASE):
+            raise NoteError(f"{label} is a Blasphemous 1 note and must not name Blasphemous 2")
+
+    evidence_lines = [line.strip() for line in sections["Evidence"] if line.strip()]
+    if not evidence_lines or any(
+        not any(line.startswith(kind) and line[len(kind) :].strip() for kind in EVIDENCE_TYPES)
+        for line in evidence_lines
+    ):
+        raise NoteError(f"{label} each Evidence source must have a recognized type label")
+
+    history = [line.strip() for line in sections["Evidence history"] if line.strip()]
+    if not history:
+        raise NoteError(f"{label} Evidence history needs a dated entry")
+    for entry in history:
+        match = re.fullmatch(r"- (\d{4}-\d{2}-\d{2}): (.+)", entry)
+        if not match:
+            raise NoteError(f"{label} Evidence history entries must use '- YYYY-MM-DD: correction and evidence' format")
+        try:
+            history_date = date.fromisoformat(match.group(1))
+        except ValueError as error:
+            raise NoteError(f"{label} Evidence history dates must use YYYY-MM-DD") from error
+        if history_date.isoformat() != match.group(1) or history_date > parsed_date:
+            raise NoteError(f"{label} Evidence history dates must be valid and no later than the note date")
+
     return metadata
 
 
 def build_entries(repository_root=None):
     repository_root = Path(repository_root or REPOSITORY_ROOT)
+    if _is_link_or_junction(repository_root / "docs"):
+        raise NoteError("docs/modding-knowledge must not contain symlinked directories")
     knowledge_root = repository_root / "docs" / "modding-knowledge"
+    if _is_link_or_junction(knowledge_root):
+        raise NoteError("docs/modding-knowledge must not contain symlinked directories")
     entries = []
     for path in sorted(knowledge_root.glob("*.md"), key=lambda item: item.name.casefold()):
         if path.name.casefold() == "index.md":
@@ -150,12 +207,10 @@ def main(argv=None):
     args = parser.parse_args(argv)
 
     try:
-        if (REPOSITORY_ROOT / "docs").is_symlink() or KNOWLEDGE_ROOT.is_symlink():
-            raise NoteError("docs/modding-knowledge must not be a symlink")
         expected = render_indexes(build_entries())
-        symlinked = [name for name in expected if (KNOWLEDGE_ROOT / name).is_symlink()]
+        symlinked = [name for name in expected if _is_link_or_junction(KNOWLEDGE_ROOT / name)]
         if symlinked:
-            raise NoteError(f"generated output must not be a symlink: {', '.join(symlinked)}")
+            raise NoteError(f"generated output must not be a symlink or junction: {', '.join(symlinked)}")
         if args.check:
             stale = []
             for name, content in expected.items():

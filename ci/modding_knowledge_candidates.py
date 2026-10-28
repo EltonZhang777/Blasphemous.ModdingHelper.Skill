@@ -3,12 +3,14 @@
 import argparse
 import difflib
 import hashlib
+import io
 import os
 import re
 import sys
 import tempfile
+import warnings
 from pathlib import Path
-from urllib.parse import unquote, urlsplit
+from urllib.parse import quote, unquote, urlsplit
 
 import generate_modding_knowledge_index as indexer
 
@@ -16,13 +18,20 @@ import generate_modding_knowledge_index as indexer
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 CODE_FENCE = re.compile(r"^ {0,3}(`{3,}|~{3,})(.*)$")
 MARKDOWN_LINK = re.compile(r"!?\[[^\]]*\]\((<[^>]+>|[^)]*)\)")
-MARKDOWN_IMAGE = re.compile(r"!\[[^\]]*\]\s*(?:\([^)]*\)|\[[^]]*\])")
+MARKDOWN_IMAGE = re.compile(r"!\[[^\]]*\](?:\s*(?:\([^)]*\)|\[[^]]*\]))?")
+MARKDOWN_IMAGE_LINK = re.compile(
+    r"!\[(?P<alt>[^\]]*)\]\s*\((?P<destination><[^>]+>|[^)\s]+)"
+    r"(?P<title>\s+(?:\"[^\"]*\"|'[^']*'|\([^)]*\)))?\)"
+)
+HTML_IMAGE = re.compile(r"(?i)<\s*img\b")
+SCREENSHOT_SUFFIXES = {".jpg", ".jpeg", ".png", ".webp"}
+MAX_SCREENSHOT_BYTES = 1_572_864
 BLOCKED_SUFFIXES = {
     ".3ds", ".assets", ".assetbundle", ".asset", ".bank", ".bin", ".bundle", ".cia",
     ".cs", ".cso", ".data", ".dll", ".dmp", ".dump", ".exe", ".gb", ".gba", ".gbc",
     ".gif", ".img", ".iso", ".jpg", ".jpeg", ".log", ".manifest", ".mp3", ".n64",
     ".nds", ".nes", ".ogg", ".pak", ".png", ".psd", ".raw", ".resource", ".rom",
-    ".sfc", ".smc", ".tga", ".v64", ".wad", ".wav", ".webp", ".wem", ".z64",
+    ".sfc", ".smc", ".tga", ".txt", ".v64", ".wad", ".wav", ".webp", ".wem", ".z64",
 }
 BLOCKED_DIRECTORIES = {"assets", "decompiled", "dump", "dumps", "extracted-assets", "log", "logs"}
 LOG_LINE = re.compile(
@@ -30,7 +39,7 @@ LOG_LINE = re.compile(
     r"(?:\[[^\]]+\]|\[(?:info|warning|error|debug|trace)\]|(?:info|warning|error|debug|trace)\b)"
     r"|\[\d{2}:\d{2}:\d{2}(?:\.\d+)?\]\s*\[?(?:info|warning|error|debug|trace)\b)"
 )
-PRIVATE_PATH = re.compile(r"(?i)(?:\b[A-Z]:\\Users\\[^\\\s]+|/(?:Users|home)/[^/\s]+|~[/\\])")
+PRIVATE_PATH = re.compile(r"(?i)(?:\b[A-Z]:[\\/]+Users[\\/]+[^/\\\s]+|/(?:Users|home)/[^/\s]+|~[/\\])")
 SECRET_VALUE = re.compile(
     r"(?i)\b(?:api[_ -]?key|access[_ -]?token|password|passwd|secret|authorization)"
     r"\b\s*[:=]\s*(?!\[?(?:redacted|placeholder|example|dummy)\b)['\"]?[A-Za-z0-9_./+=:-]{6,}"
@@ -46,14 +55,14 @@ def _candidate_path(repository_root, value):
     root = Path(repository_root).resolve()
     knowledge_root = root / "docs" / "modding-knowledge"
     candidates_root = knowledge_root / "candidates"
-    if any(path.is_symlink() for path in (root / "docs", knowledge_root, candidates_root)):
+    if any(indexer._is_link_or_junction(path) for path in (root / "docs", knowledge_root, candidates_root)):
         raise CandidateError("docs/modding-knowledge/candidates must not contain symlinked directories")
 
     path = Path(value)
     if not path.is_absolute():
         path = root / path
-    if path.is_symlink():
-        raise CandidateError("candidate notes must not be symlinks")
+    if indexer._is_link_or_junction(path):
+        raise CandidateError("candidate notes must not be symlinks or junctions")
     try:
         path = path.resolve(strict=True)
         candidate_root = candidates_root.resolve(strict=True)
@@ -95,21 +104,108 @@ def _check_fenced_code(text, label):
     return warnings
 
 
-def _check_prohibited_content(text, label):
+def _check_screenshots(text, label, note_path, repository_root):
+    if HTML_IMAGE.search(text):
+        raise CandidateError(f"{label}: screenshots must use relative Markdown image links")
+
+    knowledge_root = repository_root / "docs" / "modding-knowledge"
+    screenshot_root = knowledge_root / "screenshots"
+    images = []
+    image_starts = set()
+    for match in MARKDOWN_IMAGE.finditer(text):
+        image_link = MARKDOWN_IMAGE_LINK.match(text, match.start())
+        if image_link is None:
+            raise CandidateError(f"{label}: screenshots must use relative Markdown image links")
+        destination = image_link.group("destination")
+        target = destination[1:-1] if destination.startswith("<") and destination.endswith(">") else destination
+        try:
+            parsed = urlsplit(target)
+        except ValueError as error:
+            raise CandidateError(f"{label}: malformed screenshot link") from error
+        if parsed.scheme or parsed.netloc or parsed.query or parsed.fragment or not parsed.path or "\\" in parsed.path:
+            raise CandidateError(f"{label}: screenshots must use a relative local path")
+        decoded_path = unquote(parsed.path)
+        suffix = Path(decoded_path).suffix.casefold()
+        if suffix not in SCREENSHOT_SUFFIXES:
+            raise CandidateError(f"{label}: screenshot links must use PNG, JPEG, or WebP images")
+
+        target_path = Path(os.path.abspath(note_path.parent / decoded_path))
+        try:
+            screenshot_relative = target_path.relative_to(screenshot_root)
+        except ValueError as error:
+            raise CandidateError(f"{label}: screenshots must be stored under docs/modding-knowledge/screenshots") from error
+        current = screenshot_root
+        if indexer._is_link_or_junction(current):
+            raise CandidateError(f"{label}: screenshot paths must not use symlinked directories")
+        for part in screenshot_relative.parts:
+            current /= part
+            if indexer._is_link_or_junction(current):
+                raise CandidateError(f"{label}: screenshot paths must not use symlinks")
+        if not target_path.is_file():
+            raise CandidateError(f"{label}: screenshot does not exist: {target_path.relative_to(repository_root).as_posix()}")
+        with target_path.open("rb") as stream:
+            raw = stream.read(MAX_SCREENSHOT_BYTES)
+        size = len(raw)
+        if size >= MAX_SCREENSHOT_BYTES:
+            raise CandidateError(f"{label}: each screenshot must be strictly below 1.5 MiB")
+        try:
+            from PIL import Image
+        except ImportError as error:
+            raise CandidateError(
+                f"{label}: screenshot validation requires Pillow; install ci/requirements-image-validation.txt"
+            ) from error
+        expected_format = {".png": "PNG", ".jpg": "JPEG", ".jpeg": "JPEG", ".webp": "WEBP"}[suffix]
+        try:
+            with warnings.catch_warnings():
+                warnings.simplefilter("error", Image.DecompressionBombWarning)
+                with Image.open(io.BytesIO(raw)) as decoded_image:
+                    if decoded_image.format != expected_format:
+                        raise CandidateError(f"{label}: screenshot bytes do not match the image extension")
+                    decoded_image.verify()
+                with Image.open(io.BytesIO(raw)) as decoded_image:
+                    if decoded_image.format != expected_format:
+                        raise CandidateError(f"{label}: screenshot bytes do not match the image extension")
+                    decoded_image.load()
+        except CandidateError:
+            raise
+        except (OSError, SyntaxError, ValueError, Image.DecompressionBombError, Image.DecompressionBombWarning) as error:
+            raise CandidateError(f"{label}: screenshot is not a complete, valid image") from error
+        canonical_path = target_path.relative_to(knowledge_root).as_posix()
+        canonical_destination = quote(canonical_path, safe="/-._~")
+        if destination.startswith("<") and destination.endswith(">"):
+            canonical_destination = f"<{canonical_destination}>"
+        image_starts.add(match.start())
+        images.append(
+            {
+                "destination_start": image_link.start("destination"),
+                "destination_end": image_link.end("destination"),
+                "destination": destination,
+                "canonical_destination": canonical_destination,
+                "relative": target_path.relative_to(repository_root).as_posix(),
+                "canonical_path": canonical_path,
+                "raw": raw,
+                "size": size,
+            }
+        )
+    return images, image_starts
+
+
+def _check_prohibited_content(text, label, note_path, repository_root):
     if any(ord(character) < 32 and character not in "\r\n\t" or ord(character) == 127 for character in text):
         raise CandidateError(f"{label}: terminal control characters are not accepted")
     if PRIVATE_PATH.search(text):
         raise CandidateError(f"{label}: private or user-specific paths must be removed before review")
     if SECRET_VALUE.search(text) or TOKEN_VALUE.search(text):
         raise CandidateError(f"{label}: credential-like content must be redacted before review")
-    if MARKDOWN_IMAGE.search(text):
-        raise CandidateError(f"{label}: embedded or extracted assets are not accepted")
+    images, image_starts = _check_screenshots(text, label, note_path, repository_root)
     consecutive_log_lines = 0
     for line in text.splitlines():
         consecutive_log_lines = consecutive_log_lines + 1 if LOG_LINE.match(line) else 0
         if consecutive_log_lines >= 3:
             raise CandidateError(f"{label}: raw log excerpts are not accepted")
     for match in MARKDOWN_LINK.finditer(text):
+        if match.start() in image_starts:
+            continue
         target = unquote(match.group(1).strip())
         if target.startswith("<") and target.endswith(">"):
             target = target[1:-1]
@@ -123,15 +219,12 @@ def _check_prohibited_content(text, label):
             raise CandidateError(f"{label}: embedded assets are not accepted")
         if parsed.scheme.casefold() == "file":
             raise CandidateError(f"{label}: private file URLs are not accepted")
-        if parsed.scheme and parsed.scheme.casefold() not in ("http", "https", "mailto") and not re.fullmatch(
-            r"[a-z]", parsed.scheme, flags=re.IGNORECASE
-        ):
-            continue
         target_path = target if re.fullmatch(r"[a-z]", parsed.scheme, flags=re.IGNORECASE) else parsed.path
         path_parts = {part.casefold() for part in target_path.replace("\\", "/").split("/")}
         suffix = Path(target_path).suffix.casefold()
         if suffix in BLOCKED_SUFFIXES or path_parts & BLOCKED_DIRECTORIES:
             raise CandidateError(f"{label}: links to raw logs, game files, extracted assets, or dumps are not accepted")
+    return images
 
 
 def preflight_candidates(repository_root, values):
@@ -152,12 +245,12 @@ def preflight_candidates(repository_root, values):
         metadata = indexer.parse_note(path, root)
         if metadata["status"] != "candidate":
             raise CandidateError(f"{relative}: preflight accepts only status: candidate notes")
-        _check_prohibited_content(text, relative)
+        images = _check_prohibited_content(text, relative, path, root)
         warnings = _check_fenced_code(text, relative)
         if len(raw) > 120 * 1024:
             warnings.append(f"{relative}: note is {len(raw)} bytes (>120 KiB)")
         canonical_path = knowledge_root / path.name
-        if canonical_path.exists() or canonical_path.is_symlink():
+        if canonical_path.exists() or indexer._is_link_or_junction(canonical_path):
             raise CandidateError(f"{relative}: canonical destination already exists: {canonical_path.relative_to(root).as_posix()}")
         candidates.append(
             {
@@ -166,6 +259,7 @@ def preflight_candidates(repository_root, values):
                 "raw": raw,
                 "text": text,
                 "metadata": metadata,
+                "images": images,
                 "warnings": warnings,
             }
         )
@@ -175,7 +269,14 @@ def preflight_candidates(repository_root, values):
 
 
 def _verified_text(candidate):
-    lines = candidate["text"].splitlines(keepends=True)
+    text = candidate["text"]
+    for image in reversed(candidate["images"]):
+        text = (
+            text[: image["destination_start"]]
+            + image["canonical_destination"]
+            + text[image["destination_end"] :]
+        )
+    lines = text.splitlines(keepends=True)
     for index in range(1, len(lines)):
         if lines[index].rstrip("\r\n") == "---":
             break
@@ -213,6 +314,11 @@ def _review_fingerprint(candidates, indexes):
         for item in sorted(candidates, key=lambda candidate: candidate["relative"])
     ]
     parts.extend(
+        b"screenshot\0" + image["relative"].encode("utf-8") + b"\0" + image["raw"]
+        for item in sorted(candidates, key=lambda candidate: candidate["relative"])
+        for image in item["images"]
+    )
+    parts.extend(
         b"index\0" + name.encode("utf-8") + b"\0" + content.encode("utf-8")
         for name, content in sorted(indexes.items())
     )
@@ -224,9 +330,16 @@ def _print_preflight(candidates):
     print(f"Preflight passed for {len(candidates)} candidate(s).")
     for candidate in candidates:
         print(f"- {candidate['relative']} (sha256 {hashlib.sha256(candidate['raw']).hexdigest()})")
+        for image in candidate["images"]:
+            print(
+                f"  Screenshot: {image['relative']} ({image['size']} bytes, "
+                f"sha256 {hashlib.sha256(image['raw']).hexdigest()}); canonical link: {image['canonical_path']}"
+            )
         for warning in candidate["warnings"]:
             print(f"  Warning: {warning}")
     print("Human review must check evidence, caller data, and privacy redactions; no content is redacted automatically.")
+    if any(candidate["images"] for candidate in candidates):
+        print("Review screenshots for minimal cropping, required privacy redactions, and confirmation they are not extracted assets.")
 
 
 def _review(repository_root, candidates):
@@ -255,12 +368,22 @@ def _review(repository_root, candidates):
     print("\nReview every listed note, its evidence and limitations, generated indexes, and the adequacy of each privacy redaction.")
 
 
-def _atomic_write(path, content):
-    descriptor, temporary_name = tempfile.mkstemp(prefix=".knowledge-promotion-", dir=path.parent)
+def _temporary_file(directory, content):
+    descriptor, temporary_name = tempfile.mkstemp(prefix=".knowledge-promotion-", dir=directory)
     temporary = Path(temporary_name)
     try:
         with os.fdopen(descriptor, "wb") as stream:
             stream.write(content)
+    except BaseException:
+        if temporary.exists():
+            temporary.unlink()
+        raise
+    return temporary
+
+
+def _atomic_write(path, content):
+    temporary = _temporary_file(path.parent, content)
+    try:
         os.replace(temporary, path)
     finally:
         if temporary.exists():
@@ -273,29 +396,63 @@ def promote_candidates(repository_root, values, approved=False, review_sha256=No
     root = Path(repository_root).resolve()
     candidates = preflight_candidates(root, values)
     knowledge_root = root / "docs" / "modding-knowledge"
-    if any(path.is_symlink() for path in (root / "docs", knowledge_root)):
+    if any(indexer._is_link_or_junction(path) for path in (root / "docs", knowledge_root)):
         raise CandidateError("docs/modding-knowledge must not contain symlinked directories")
 
     current_entries = indexer.build_entries(root)
     current_indexes = indexer.render_indexes(current_entries)
     for name, content in current_indexes.items():
         path = knowledge_root / name
-        if path.is_symlink() or not path.is_file() or path.read_text(encoding="utf-8") != content:
+        if indexer._is_link_or_junction(path) or not path.is_file() or path.read_text(encoding="utf-8") != content:
             raise CandidateError(f"{name} is stale; regenerate and review the current indexes before promotion")
     proposed = _preview_indexes(root, candidates)
     if not review_sha256 or review_sha256.casefold() != _review_fingerprint(candidates, proposed):
         raise CandidateError("candidate batch or generated indexes changed; review the exact batch again before promotion")
-    if any((knowledge_root / name).is_symlink() for name in proposed):
-        raise CandidateError("generated index outputs must not be symlinks")
-    promoted = []
-    for candidate in candidates:
-        target = knowledge_root / candidate["path"].name
-        with target.open("xb") as stream:
-            stream.write(_verified_text(candidate).encode("utf-8"))
-        promoted.append(target.relative_to(root).as_posix())
-    for name, content in proposed.items():
-        _atomic_write(knowledge_root / name, content.encode("utf-8"))
-    return promoted
+    if any(indexer._is_link_or_junction(knowledge_root / name) for name in proposed):
+        raise CandidateError("generated index outputs must not be symlinks or junctions")
+    index_backups = {}
+    created_notes = []
+    updated_indexes = []
+    preserve_backups = set()
+    try:
+        for name in proposed:
+            path = knowledge_root / name
+            index_backups[name] = _temporary_file(knowledge_root, path.read_bytes())
+        for candidate in candidates:
+            target = knowledge_root / candidate["path"].name
+            with target.open("xb") as stream:
+                created_notes.append(target)
+                stream.write(_verified_text(candidate).encode("utf-8"))
+        for name, content in proposed.items():
+            _atomic_write(knowledge_root / name, content.encode("utf-8"))
+            updated_indexes.append(name)
+    except Exception as error:
+        rollback_failures = []
+        for name in reversed(updated_indexes):
+            backup = index_backups[name]
+            try:
+                os.replace(backup, knowledge_root / name)
+            except OSError as rollback_error:
+                preserve_backups.add(name)
+                rollback_failures.append(f"{name} backup retained at {backup}: {rollback_error}")
+        for path in reversed(created_notes):
+            try:
+                path.unlink()
+            except OSError as rollback_error:
+                rollback_failures.append(f"created note {path} could not be removed: {rollback_error}")
+        if rollback_failures:
+            raise CandidateError(
+                f"promotion failed and rollback was incomplete: {'; '.join(rollback_failures)}"
+            ) from error
+        raise
+    finally:
+        for name, backup in index_backups.items():
+            if name not in preserve_backups and backup.exists():
+                try:
+                    backup.unlink()
+                except OSError as cleanup_error:
+                    print(f"warning: could not remove temporary promotion backup {backup}: {cleanup_error}", file=sys.stderr)
+    return [target.relative_to(root).as_posix() for target in created_notes]
 
 
 def main(argv=None, repository_root=None):

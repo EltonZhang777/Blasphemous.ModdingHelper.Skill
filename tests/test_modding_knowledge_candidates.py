@@ -1,10 +1,14 @@
 import contextlib
+import base64
 import io
 import json
+import stat
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
@@ -16,15 +20,31 @@ import modding_knowledge_candidates as candidates
 
 REQUIRED_SECTIONS = (
     "Applicable Blasphemous 1 version",
+    "Applicable Mod version",
     "Route",
     "Evidence",
     "Verification result",
+    "Evidence history",
     "Limitations",
 )
 
 
 def note(title="Synthetic candidate", status="candidate", body_suffix=""):
-    sections = "\n\n".join(f"## {heading}\n\nSynthetic evidence-backed text." for heading in REQUIRED_SECTIONS)
+    sections = "\n\n".join(
+        f"## {heading}\n\n"
+        + (
+            "Version: Blasphemous 1 1.0.0 (synthetic build)."
+            if heading == "Applicable Blasphemous 1 version"
+            else "Version: SyntheticMod 1.0.0."
+            if heading == "Applicable Mod version"
+            else "Static source inspection: synthetic source location."
+            if heading == "Evidence"
+            else "- 2026-10-26: Initial verification; synthetic evidence recorded."
+            if heading == "Evidence history"
+            else "Synthetic evidence-backed text."
+        )
+        for heading in REQUIRED_SECTIONS
+    )
     return (
         f"---\ntitle: {title}\nstatus: {status}\ndate: 2026-10-26\n---\n\n"
         f"# {title}\n\n{sections}{body_suffix}\n"
@@ -178,12 +198,61 @@ class ModdingKnowledgeCandidateTests(unittest.TestCase):
         self.assertFalse((self.knowledge / "invalid.md").exists())
         self.assertEqual(indexer.build_entries(self.root), [])
 
+    def test_promotion_write_failure_restores_indexes_and_removes_created_notes(self):
+        candidate = self.write_candidate("atomic.md", note("Atomic candidate"))
+        existing = self.knowledge / "existing.md"
+        existing.write_text(note("Existing note", "verified"), encoding="utf-8")
+        self.write_current_indexes()
+        original_note = existing.read_bytes()
+        original_indexes = {
+            name: (self.knowledge / name).read_bytes()
+            for name in indexer.render_indexes(indexer.build_entries(self.root))
+        }
+        code, output, errors = self.run_command(["review", str(candidate)])
+        self.assertEqual((code, errors), (0, ""))
+        review_sha256 = output.split("Review SHA-256: ", 1)[1].splitlines()[0]
+        atomic_write = candidates._atomic_write
+        writes = 0
+
+        def fail_second_index_write(path, content):
+            nonlocal writes
+            writes += 1
+            if writes == 2:
+                raise OSError("simulated mid-batch index write failure")
+            atomic_write(path, content)
+
+        with patch.object(candidates, "_atomic_write", side_effect=fail_second_index_write):
+            code, _output, errors = self.run_command(
+                ["promote", "--approve", "--review-sha256", review_sha256, str(candidate)]
+            )
+
+        self.assertNotEqual(code, 0)
+        self.assertIn("simulated mid-batch index write failure", errors)
+        self.assertFalse((self.knowledge / candidate.name).exists())
+        self.assertEqual(existing.read_bytes(), original_note)
+        for name, content in original_indexes.items():
+            self.assertEqual((self.knowledge / name).read_bytes(), content)
+        self.assertEqual(list(self.knowledge.glob(".knowledge-promotion-*")), [])
+
     def test_metadata_status_and_authoritative_sections_are_required(self):
         invalid_notes = (
             note().replace("title: Synthetic candidate\n", "", 1),
             note().replace("status: candidate", "status: draft", 1),
             note().replace("date: 2026-10-26", "date: 2026-02-30", 1),
+            note().replace("Version: Blasphemous 1 1.0.0", "No version identified", 1),
+            note().replace("Version: Blasphemous 1 1.0.0", "Version: TBD", 1),
+            note().replace("Version: Blasphemous 1 1.0.0", "Version: Blasphemous 2 1.0.0", 1),
+            note().replace("Version: SyntheticMod 1.0.0", "Version: TODO", 1),
             note().replace("## Route\n\nSynthetic evidence-backed text.", "## Route\n\n", 1),
+            note().replace("## Evidence history\n\n- 2026-10-26: Initial verification; synthetic evidence recorded.", "## Evidence history\n\nNo dated record.", 1),
+            note().replace("- 2026-10-26: Initial verification", "- 2026-10-27: Future verification", 1),
+            note().replace("Static source inspection:", "Unlabeled source:", 1),
+            note().replace("Static source inspection: synthetic source location.", "Static source inspection:", 1),
+            note().replace(
+                "Static source inspection: synthetic source location.",
+                "Static source inspection: synthetic source location.\nAn unlabelled additional claim.",
+                1,
+            ),
             note().replace("title: Synthetic candidate\n", "title: Synthetic candidate\n\n", 1),
             note().replace("title: Synthetic candidate", "title: &anchor Synthetic candidate", 1),
             note(body_suffix="\n\n```text\nunclosed"),
@@ -196,6 +265,181 @@ class ModdingKnowledgeCandidateTests(unittest.TestCase):
                 code, _output, errors = self.run_command(["preflight", str(path)])
                 self.assertNotEqual(code, 0)
                 self.assertTrue(errors.startswith("knowledge candidate error:"))
+
+    def test_screenshot_size_is_strict_and_images_must_be_relative(self):
+        screenshot_root = self.knowledge / "screenshots" / "synthetic"
+        screenshot_root.mkdir(parents=True)
+        screenshot = screenshot_root / "gameplay.png"
+        linked_note = "\n\n![Gameplay](../screenshots/synthetic/gameplay.png)"
+
+        valid_png = base64.b64decode(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC"
+        )
+        screenshot.write_bytes(valid_png)
+        path = self.write_candidate("small-image.md", note("Small image", body_suffix=linked_note))
+        code, output, errors = self.run_command(["preflight", str(path)])
+        self.assertEqual((code, errors), (0, ""))
+        self.assertIn("Screenshot:", output)
+        self.assertIn("minimal cropping", output)
+
+        screenshot.write_bytes(b"x" * candidates.MAX_SCREENSHOT_BYTES)
+        code, _output, errors = self.run_command(["preflight", str(path)])
+        self.assertNotEqual(code, 0)
+        self.assertIn("strictly below 1.5 MiB", errors)
+
+        screenshot.write_bytes(b"\x89PNG\r\n\x1a\n" + b"x" * 32)
+        code, _output, errors = self.run_command(["preflight", str(path)])
+        self.assertNotEqual(code, 0)
+        self.assertIn("complete, valid image", errors)
+
+        path.write_text(note("Remote image", body_suffix="\n\n![Gameplay](https://example.com/gameplay.png)"), encoding="utf-8")
+        code, _output, errors = self.run_command(["preflight", str(path)])
+        self.assertNotEqual(code, 0)
+        self.assertIn("relative local path", errors)
+
+        path.write_text(
+            note("Reference image", body_suffix="\n\n![Gameplay]\n\n[Gameplay]: https://example.com/gameplay.png"),
+            encoding="utf-8",
+        )
+        code, _output, errors = self.run_command(["preflight", str(path)])
+        self.assertNotEqual(code, 0)
+        self.assertIn("relative Markdown image links", errors)
+
+    def test_supported_screenshot_formats_are_decoded_and_match_their_extensions(self):
+        try:
+            from PIL import Image
+        except ImportError:
+            self.skipTest("Pillow is optional outside screenshot candidate validation")
+
+        def make_image(image_format):
+            buffer = io.BytesIO()
+            Image.new("RGB", (2, 2), "red").save(buffer, format=image_format)
+            return buffer.getvalue()
+
+        png = base64.b64decode(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC"
+        )
+        fixtures = {
+            ".png": png,
+            ".jpg": make_image("JPEG"),
+            ".jpeg": make_image("JPEG"),
+            ".webp": make_image("WEBP"),
+        }
+        screenshot_root = self.knowledge / "screenshots" / "synthetic"
+        screenshot_root.mkdir(parents=True)
+        for index, (suffix, payload) in enumerate(fixtures.items()):
+            with self.subTest(suffix=suffix):
+                filename = f"capture{suffix}"
+                (screenshot_root / filename).write_bytes(payload)
+                path = self.write_candidate(
+                    f"format-{index}.md",
+                    note(body_suffix=f"\n\n![Gameplay](../screenshots/synthetic/{filename})"),
+                )
+                code, _output, errors = self.run_command(["preflight", str(path)])
+                self.assertEqual((code, errors), (0, ""))
+
+        (screenshot_root / "mismatch.jpg").write_bytes(png)
+        path = self.write_candidate(
+            "mismatch.md",
+            note(body_suffix="\n\n![Gameplay](../screenshots/synthetic/mismatch.jpg)"),
+        )
+        code, _output, errors = self.run_command(["preflight", str(path)])
+        self.assertNotEqual(code, 0)
+        self.assertIn("do not match the image extension", errors)
+
+    def test_screenshot_review_fingerprint_covers_image_and_promotion_keeps_relative_link(self):
+        screenshot_root = self.knowledge / "screenshots" / "synthetic"
+        screenshot_root.mkdir(parents=True)
+        screenshot = screenshot_root / "gameplay.png"
+        original_png = base64.b64decode(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC"
+        )
+        changed_png = base64.b64decode(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGNgYPgPAAEDAQAIicLsAAAAAElFTkSuQmCC"
+        )
+        screenshot.write_bytes(original_png)
+        content = note("Screenshot note", body_suffix="\n\n![Gameplay](../screenshots/synthetic/gameplay.png)")
+        content = content.replace(
+            "- 2026-10-26: Initial verification; synthetic evidence recorded.",
+            "- 2026-10-25: Initial verification; synthetic evidence recorded.\n"
+            "- 2026-10-26: Correction verified against the screenshot; earlier evidence retained.",
+        )
+        path = self.write_candidate(
+            "screenshot-note.md",
+            content,
+        )
+        self.write_current_indexes()
+
+        code, output, errors = self.run_command(["review", str(path)])
+        self.assertEqual((code, errors), (0, ""))
+        review_sha256 = output.split("Review SHA-256: ", 1)[1].splitlines()[0]
+        self.assertIn("canonical link: screenshots/synthetic/gameplay.png", output)
+
+        screenshot.write_bytes(changed_png)
+        code, _output, errors = self.run_command(
+            ["promote", "--approve", "--review-sha256", review_sha256, str(path)]
+        )
+        self.assertNotEqual(code, 0)
+        self.assertIn("review the exact batch again", errors)
+        self.assertFalse((self.knowledge / path.name).exists())
+
+        code, output, errors = self.run_command(["review", str(path)])
+        self.assertEqual((code, errors), (0, ""))
+        review_sha256 = output.split("Review SHA-256: ", 1)[1].splitlines()[0]
+        code, _output, errors = self.run_command(
+            ["promote", "--approve", "--review-sha256", review_sha256, str(path)]
+        )
+        self.assertEqual((code, errors), (0, ""))
+        canonical = (self.knowledge / path.name).read_text(encoding="utf-8")
+        self.assertIn("![Gameplay](screenshots/synthetic/gameplay.png)", canonical)
+        self.assertIn("- 2026-10-25: Initial verification", canonical)
+        self.assertIn("- 2026-10-26: Correction verified", canonical)
+        self.assertTrue(screenshot.is_file())
+
+    def test_reparse_points_are_treated_as_junctions(self):
+        metadata = SimpleNamespace(st_mode=stat.S_IFDIR, st_file_attributes=0x400)
+        with patch.object(Path, "lstat", return_value=metadata):
+            self.assertTrue(indexer._is_link_or_junction(Path("synthetic-junction")))
+
+    def test_index_generation_and_promotion_reject_junctioned_knowledge_root(self):
+        candidate = self.write_candidate()
+        self.write_current_indexes()
+        original_indexes = {
+            name: (self.knowledge / name).read_bytes()
+            for name in indexer.render_indexes(indexer.build_entries(self.root))
+        }
+
+        with patch.object(indexer, "_is_link_or_junction", side_effect=lambda path: path == self.knowledge):
+            with self.assertRaises(indexer.NoteError):
+                indexer.build_entries(self.root)
+            code, _output, errors = self.run_command(["promote", "--approve", str(candidate)])
+
+        self.assertNotEqual(code, 0)
+        self.assertIn("symlinked directories", errors)
+        self.assertFalse((self.knowledge / candidate.name).exists())
+        for name, content in original_indexes.items():
+            self.assertEqual((self.knowledge / name).read_bytes(), content)
+
+    def test_index_generation_and_promotion_reject_junctioned_outputs(self):
+        candidate = self.write_candidate()
+        self.write_current_indexes()
+        original_indexes = {
+            name: (self.knowledge / name).read_bytes()
+            for name in indexer.render_indexes(indexer.build_entries(self.root))
+        }
+        output_paths = {self.knowledge / name for name in original_indexes}
+
+        with patch.object(indexer, "REPOSITORY_ROOT", self.root), patch.object(indexer, "KNOWLEDGE_ROOT", self.knowledge):
+            with patch.object(indexer, "_is_link_or_junction", side_effect=lambda path: path in output_paths):
+                with contextlib.redirect_stderr(io.StringIO()):
+                    self.assertNotEqual(indexer.main([]), 0)
+                code, _output, errors = self.run_command(["promote", "--approve", str(candidate)])
+
+        self.assertNotEqual(code, 0)
+        self.assertIn("stale", errors)
+        self.assertFalse((self.knowledge / candidate.name).exists())
+        for name, content in original_indexes.items():
+            self.assertEqual((self.knowledge / name).read_bytes(), content)
 
     def test_code_block_and_note_size_thresholds(self):
         sixty_one = "\n```text\n" + "\n".join("line" for _ in range(61)) + "\n```"
@@ -223,11 +467,36 @@ class ModdingKnowledgeCandidateTests(unittest.TestCase):
         self.assertNotEqual(code, 0)
         self.assertIn("Markdown notes", errors)
 
-        for index, suffix in enumerate(("Player.log", "Assembly-CSharp.dll", "dump.cs", "capture.iso", "game.rom", "sprite.png", "decompiled/dump.txt")):
-            path = self.write_candidate(f"linked-{index}.md", note(body_suffix=f"\n\n[artifact](evidence/{suffix})"))
+        for index, target in enumerate((
+            "evidence/Player.log",
+            "evidence/Assembly-CSharp.dll",
+            "evidence/dump.cs",
+            "evidence/capture.iso",
+            "evidence/game.rom",
+            "evidence/sprite.png",
+            "evidence/decompiled/dump.txt",
+            "evidence/player.txt",
+            "ftp://example.com/Player.log",
+        )):
+            path = self.write_candidate(
+                f"linked-{index}.md",
+                note(body_suffix=f"\n\n[artifact]({target})"),
+            )
             code, _output, errors = self.run_command(["preflight", str(path)])
             self.assertNotEqual(code, 0)
             self.assertIn("raw logs, game files", errors)
+
+        for index, private_path in enumerate((
+            r"C:\Users\alice\profile\config.yml",
+            "C:/Users/alice/profile/config.yml",
+        )):
+            path = self.write_candidate(
+                f"private-path-{index}.md",
+                note(body_suffix=f"\n\nPrivate path: {private_path}"),
+            )
+            code, _output, errors = self.run_command(["preflight", str(path)])
+            self.assertNotEqual(code, 0)
+            self.assertIn("private or user-specific paths", errors)
 
         secret = self.write_candidate(
             "secret.md",

@@ -3,12 +3,14 @@ import io
 import json
 import re
 import runpy
+import stat
 import subprocess
 import sys
 import tempfile
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
+from types import SimpleNamespace
 from unittest import mock
 
 
@@ -105,11 +107,13 @@ class ModdingKnowledgeAcceptanceTests(unittest.TestCase):
                 namespace["REPOSITORY_ROOT"] = root
                 namespace["KNOWLEDGE_ROOT"] = knowledge
                 path_type = type(linked_output)
-                real_is_symlink = path_type.is_symlink
+                real_lstat = path_type.lstat
                 with mock.patch.object(
                     path_type,
-                    "is_symlink",
-                    lambda path: path == linked_output or real_is_symlink(path),
+                    "lstat",
+                    lambda path: SimpleNamespace(st_mode=stat.S_IFLNK, st_file_attributes=0x400)
+                    if path == linked_output
+                    else real_lstat(path),
                 ):
                     with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
                         result = generator["main"]([])
@@ -150,12 +154,19 @@ class ModdingKnowledgeAcceptanceTests(unittest.TestCase):
         body = "\n".join(lines[end + 1 :])
         for heading in (
             "## Applicable Blasphemous 1 version",
+            "## Applicable Mod version",
             "## Route",
             "## Evidence",
             "## Verification result",
+            "## Evidence history",
             "## Limitations",
         ):
             self.assertIn(heading, body)
+
+        game_version = body.split("## Applicable Blasphemous 1 version", 1)[1].split("## ", 1)[0]
+        mod_version = body.split("## Applicable Mod version", 1)[1].split("## ", 1)[0]
+        self.assertIn("unknown", game_version.casefold())
+        self.assertIn("not applicable", mod_version.casefold())
 
     def test_canonical_note_claim_matches_bundled_localization_row(self):
         with LOCALIZATION_INDEX.open(encoding="utf-8", newline="") as stream:
@@ -171,6 +182,7 @@ class ModdingKnowledgeAcceptanceTests(unittest.TestCase):
         self.assertIn("Localization evidence", note)
         self.assertIn(row["en"], note)
         self.assertIn(row["es"], note)
+        self.assertIn("no in-game UI run was performed", note)
         for target in re.findall(r"\]\(([^)]+)\)", note):
             if not target.startswith(("http://", "https://", "mailto:")):
                 self.assertTrue((NOTE_FILE.parent / target).resolve().is_file(), target)
@@ -202,6 +214,16 @@ class ModdingKnowledgeAcceptanceTests(unittest.TestCase):
         self.assertIn("full commit sha and repository-relative note path", steps["5"])
         self.assertIn("blasphemous 2", reference)
         self.assertIn("advisory", reference)
+        for evidence_type in ("static source inspection:", "runtime evidence:", "manual/in-game evidence:", "localization evidence:"):
+            self.assertIn(evidence_type, reference)
+        self.assertIn("logs alone must not be presented as gameplay proof", reference)
+        self.assertIn("does not cover the user's version or task", reference)
+        self.assertIn("game version, mod version, route, and task", main.casefold())
+        self.assertIn("must not present the claim as verified for that case", main.casefold())
+        self.assertIn("candidate screenshots must be stored under `docs/modding-knowledge/screenshots/`", reference)
+        self.assertIn("strictly smaller than 1.5 mib", reference)
+        self.assertIn("fully decodes each file", reference)
+        self.assertIn("human review must confirm the redactions", reference)
         self.assertIn("must not fall back to local, cached, or previously fetched note content", failure)
         self.assertIn("dependent work must pause", failure)
         self.assertIn("sufficient independent evidence", failure)
