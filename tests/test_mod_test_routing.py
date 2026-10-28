@@ -122,7 +122,7 @@ class ModTestRoutingDocumentationTests(unittest.TestCase):
             "ask the user to clarify",
             "automated xunit first",
             "each phase",
-            "manual verification",
+            "player-performed in-game verification",
             "mod_loaded",
             "must not be reported as gameplay verification",
         ):
@@ -224,7 +224,7 @@ class ModTestRoutingDocumentationTests(unittest.TestCase):
             "process tree",
             "newest-first",
             "mod_loaded",
-            "manual verification",
+            "player-performed in-game verification",
         ):
             self.assertIn(phrase, real)
         self.assertNotIn("<test_cli> run", shared)

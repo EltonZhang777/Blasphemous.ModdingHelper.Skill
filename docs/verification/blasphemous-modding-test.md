@@ -4,6 +4,14 @@ This record is the evidence surface for issue #19. It separates fixture evidence
 
 ## Automated fixture gate
 
+These repository suites include screenshot validation for knowledge-note candidates. Install the optional maintainer dependency into the Python environment that will run the suites:
+
+```text
+<python3> -m pip install -r ci/requirements-image-validation.txt
+```
+
+Pillow is used only for repository maintainer checks and is not part of the installed Skill runtime.
+
 Run from the repository root:
 
 ```text
