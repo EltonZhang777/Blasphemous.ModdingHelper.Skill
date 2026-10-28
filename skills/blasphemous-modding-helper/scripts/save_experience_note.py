@@ -12,6 +12,8 @@ from datetime import date
 from pathlib import Path
 from typing import Callable, Optional
 
+from blasphemous_modding_helper.note_title import is_canonical_title_scalar
+
 
 _SLUG = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*\Z")
 _RESERVED_SLUGS = {"con", "prn", "aux", "nul"} | {
@@ -69,6 +71,10 @@ def _validate_note(content: str) -> None:
         or [key for key, _, _ in metadata] != ["title", "status", "date"]
     ):
         raise NoteSaveError("frontmatter must contain only title, status, and date in that order")
+    title_value = metadata[0][2]
+    title_scalar = title_value[1:] if title_value.startswith(" ") else ""
+    if not is_canonical_title_scalar(title_scalar):
+        raise NoteSaveError("frontmatter title must use a canonical plain scalar")
     values = {key: value.strip() for key, _, value in metadata}
     if not values["title"] or values["status"] != "candidate":
         raise NoteSaveError("note must have a title and status: candidate")

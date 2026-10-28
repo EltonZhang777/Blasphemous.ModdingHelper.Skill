@@ -77,6 +77,29 @@ class ExperienceNoteLocalSaveAcceptanceTests(unittest.TestCase):
                 with self.assertRaises(NoteSaveError):
                     _validate_note(content)
 
+    def test_noncanonical_plain_title_is_rejected_before_local_save(self):
+        content = NOTE.replace(
+            "title: A representative reusable finding",
+            "title: Finding: A detail",
+        )
+        with tempfile.TemporaryDirectory(dir=REPOSITORY_ROOT) as temp:
+            config_path = Path(temp) / "config.yml"
+            config_path.write_text("lightweight_source_code_path: ./source\n", encoding="utf-8")
+            storage = StubStorage()
+
+            with self.assertRaises(NoteSaveError):
+                save_approved_note(
+                    config_path.resolve(),
+                    "noncanonical-title",
+                    "unique",
+                    "yes",
+                    content,
+                    storage=storage.write,
+                )
+
+            self.assertFalse(storage.writes)
+            self.assertFalse((config_path.parent / "modding-knowledge").exists())
+
     def test_windows_reparse_points_are_rejected_as_junctions(self):
         metadata = SimpleNamespace(st_mode=stat.S_IFDIR, st_file_attributes=0x400)
         with patch.object(Path, "lstat", return_value=metadata):

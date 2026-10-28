@@ -23,6 +23,7 @@ from experience_note_pull_requests import (
     create_approved_pull_requests,
     format_proposals,
 )
+from generate_modding_knowledge_index import NoteError, parse_note
 from modding_knowledge_candidates import preflight_candidates
 from save_experience_note import NoteSaveError, save_approved_note
 
@@ -93,6 +94,29 @@ class StubPullRequestOperations:
 
 
 class ExperienceNotePullRequestAcceptanceTests(unittest.TestCase):
+    def test_noncanonical_title_is_rejected_by_pr_preparation_and_promotion_parser(self):
+        content = NOTE.format(slug="noncanonical-title").replace(
+            "title: Reusable finding about noncanonical-title",
+            "title: Finding: A detail",
+        )
+        with tempfile.TemporaryDirectory(dir=REPOSITORY_ROOT) as temp:
+            root = Path(temp)
+            config_path = root / "config.yml"
+            config_path.write_text("lightweight_source_code_path: ./source\n", encoding="utf-8")
+            note_directory = root / "modding-knowledge"
+            note_directory.mkdir()
+            saved_note = note_directory / "noncanonical-title.md"
+            saved_note.write_text(content, encoding="utf-8")
+
+            with self.assertRaises(NoteSaveError):
+                build_pull_request_proposals(config_path.resolve(), [saved_note.resolve()])
+
+            candidate = root / "docs" / "modding-knowledge" / "candidates" / saved_note.name
+            candidate.parent.mkdir(parents=True)
+            candidate.write_text(content, encoding="utf-8")
+            with self.assertRaises(NoteError):
+                parse_note(candidate, root)
+
     def test_one_failed_pr_does_not_skip_other_explicit_yes_items(self):
         proposals = [
             ExperienceNotePullRequest("first", "title", "body", "branch", "path.md", "content"),

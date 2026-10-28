@@ -7,6 +7,11 @@ from pathlib import Path
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPOSITORY_ROOT / "skills" / "blasphemous-modding-helper" / "scripts"))
+
+from blasphemous_modding_helper.note_title import is_canonical_title_scalar
+
+
 KNOWLEDGE_ROOT = REPOSITORY_ROOT / "docs" / "modding-knowledge"
 FIELDS = ("title", "status", "date")
 STATUSES = {"candidate", "verified", "superseded", "withdrawn"}
@@ -44,12 +49,7 @@ def parse_note(path, repository_root=None):
     for line in lines[1:end]:
         key, separator, value = line.partition(":")
         scalar = value[1:] if separator and value.startswith(" ") else ""
-        invalid_title = key == "title" and (
-            scalar[:1] in ("'", '"', "[", "{", "&", "*", "!", "|", ">", "@", "%", "`")
-            or scalar.startswith(("#", "- ", "? ", ": "))
-            or ": " in scalar
-            or " #" in scalar
-        )
+        invalid_title = key == "title" and not is_canonical_title_scalar(scalar)
         if (
             not separator
             or key not in FIELDS
