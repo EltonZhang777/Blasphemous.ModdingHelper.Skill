@@ -31,7 +31,7 @@ BLOCKED_SUFFIXES = {
     ".cs", ".cso", ".data", ".dll", ".dmp", ".dump", ".exe", ".gb", ".gba", ".gbc",
     ".gif", ".img", ".iso", ".jpg", ".jpeg", ".log", ".manifest", ".mp3", ".n64",
     ".nds", ".nes", ".ogg", ".pak", ".png", ".psd", ".raw", ".resource", ".rom",
-    ".sfc", ".smc", ".tga", ".v64", ".wad", ".wav", ".webp", ".wem", ".z64",
+    ".sfc", ".smc", ".tga", ".txt", ".v64", ".wad", ".wav", ".webp", ".wem", ".z64",
 }
 BLOCKED_DIRECTORIES = {"assets", "decompiled", "dump", "dumps", "extracted-assets", "log", "logs"}
 LOG_LINE = re.compile(
@@ -39,7 +39,7 @@ LOG_LINE = re.compile(
     r"(?:\[[^\]]+\]|\[(?:info|warning|error|debug|trace)\]|(?:info|warning|error|debug|trace)\b)"
     r"|\[\d{2}:\d{2}:\d{2}(?:\.\d+)?\]\s*\[?(?:info|warning|error|debug|trace)\b)"
 )
-PRIVATE_PATH = re.compile(r"(?i)(?:\b[A-Z]:\\Users\\[^\\\s]+|/(?:Users|home)/[^/\s]+|~[/\\])")
+PRIVATE_PATH = re.compile(r"(?i)(?:\b[A-Z]:[\\/]+Users[\\/]+[^/\\\s]+|/(?:Users|home)/[^/\s]+|~[/\\])")
 SECRET_VALUE = re.compile(
     r"(?i)\b(?:api[_ -]?key|access[_ -]?token|password|passwd|secret|authorization)"
     r"\b\s*[:=]\s*(?!\[?(?:redacted|placeholder|example|dummy)\b)['\"]?[A-Za-z0-9_./+=:-]{6,}"
@@ -219,10 +219,6 @@ def _check_prohibited_content(text, label, note_path, repository_root):
             raise CandidateError(f"{label}: embedded assets are not accepted")
         if parsed.scheme.casefold() == "file":
             raise CandidateError(f"{label}: private file URLs are not accepted")
-        if parsed.scheme and parsed.scheme.casefold() not in ("http", "https", "mailto") and not re.fullmatch(
-            r"[a-z]", parsed.scheme, flags=re.IGNORECASE
-        ):
-            continue
         target_path = target if re.fullmatch(r"[a-z]", parsed.scheme, flags=re.IGNORECASE) else parsed.path
         path_parts = {part.casefold() for part in target_path.replace("\\", "/").split("/")}
         suffix = Path(target_path).suffix.casefold()

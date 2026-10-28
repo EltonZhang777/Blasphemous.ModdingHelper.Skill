@@ -391,11 +391,36 @@ class ModdingKnowledgeCandidateTests(unittest.TestCase):
         self.assertNotEqual(code, 0)
         self.assertIn("Markdown notes", errors)
 
-        for index, suffix in enumerate(("Player.log", "Assembly-CSharp.dll", "dump.cs", "capture.iso", "game.rom", "sprite.png", "decompiled/dump.txt")):
-            path = self.write_candidate(f"linked-{index}.md", note(body_suffix=f"\n\n[artifact](evidence/{suffix})"))
+        for index, target in enumerate((
+            "evidence/Player.log",
+            "evidence/Assembly-CSharp.dll",
+            "evidence/dump.cs",
+            "evidence/capture.iso",
+            "evidence/game.rom",
+            "evidence/sprite.png",
+            "evidence/decompiled/dump.txt",
+            "evidence/player.txt",
+            "ftp://example.com/Player.log",
+        )):
+            path = self.write_candidate(
+                f"linked-{index}.md",
+                note(body_suffix=f"\n\n[artifact]({target})"),
+            )
             code, _output, errors = self.run_command(["preflight", str(path)])
             self.assertNotEqual(code, 0)
             self.assertIn("raw logs, game files", errors)
+
+        for index, private_path in enumerate((
+            r"C:\Users\alice\profile\config.yml",
+            "C:/Users/alice/profile/config.yml",
+        )):
+            path = self.write_candidate(
+                f"private-path-{index}.md",
+                note(body_suffix=f"\n\nPrivate path: {private_path}"),
+            )
+            code, _output, errors = self.run_command(["preflight", str(path)])
+            self.assertNotEqual(code, 0)
+            self.assertIn("private or user-specific paths", errors)
 
         secret = self.write_candidate(
             "secret.md",
