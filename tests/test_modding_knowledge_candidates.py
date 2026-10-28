@@ -518,6 +518,9 @@ class ModdingKnowledgeCandidateTests(unittest.TestCase):
             "\n\n" + "\n".join(f"> {line}" for line in log_lines),
             "\n\n" + "\n".join(f"- {line}" for line in log_lines),
             "\n\n[Info : ExampleMod] startup complete",
+            "\n\n[Fatal: BepInEx] startup failed",
+            "\n\n> `[Message: MyMod] initialization complete`",
+            "\n\n    - [Info: MyMod] nested list item",
         )
         for index, raw_logs in enumerate(log_samples):
             log_note = self.write_candidate(f"raw-logs-{index}.md", note(body_suffix=raw_logs))
@@ -527,7 +530,7 @@ class ModdingKnowledgeCandidateTests(unittest.TestCase):
 
         manual_note = self.write_candidate(
             "manual-observation.md",
-            note(body_suffix="\n\n2026-10-26 10:00:00 [Manual] observed the route in game"),
+            note(body_suffix="\n\n2026-10-26 10:00:00 [Manual] observed the route in game\n[Info] Section title"),
         )
         code, errors_output, errors = self.run_command(["preflight", str(manual_note)])
         self.assertEqual((code, errors), (0, ""), errors_output)

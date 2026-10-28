@@ -45,7 +45,7 @@ Prepare unapproved notes only as direct-child Markdown files under `docs/modding
 python ci/modding_knowledge_candidates.py preflight docs/modding-knowledge/candidates/<topic>.md
 ```
 
-Preflight reuses the canonical note parser and checks the candidate path and lifecycle state, evidence sections and dated history, screenshot links, local image files and size limit, obvious private paths and credentials, bracketed or timestamped severity lines (including Markdown block quotes and list items), and links to raw logs, game files, extracted assets, decompiled dumps, ROMs, or ISOs. It warns when a fenced code block exceeds 60 lines or a note exceeds 120 KiB, and rejects a fenced block over 150 lines. Preflight does not modify notes or indexes. Candidates remain outside the canonical index and read-only lookup.
+Preflight reuses the canonical note parser and checks the candidate path and lifecycle state, evidence sections and dated history, screenshot links, local image files and size limit, obvious private paths and credentials, BepInEx-style `[level: source]` and timestamped severity lines (including common Markdown wrappers), and links to raw logs, game files, extracted assets, decompiled dumps, ROMs, or ISOs. It warns when a fenced code block exceeds 60 lines or a note exceeds 120 KiB, and rejects a fenced block over 150 lines. Preflight does not modify notes or indexes. Candidates remain outside the canonical index and read-only lookup.
 
 Before promotion, inspect the exact candidate content, each screenshot's path, size, and digest, and the proposed generated indexes together:
 
