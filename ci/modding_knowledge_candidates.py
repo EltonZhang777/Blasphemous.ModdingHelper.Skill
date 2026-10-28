@@ -34,11 +34,11 @@ BLOCKED_SUFFIXES = {
     ".sfc", ".smc", ".tga", ".txt", ".v64", ".wad", ".wav", ".webp", ".wem", ".z64",
 }
 BLOCKED_DIRECTORIES = {"assets", "decompiled", "dump", "dumps", "extracted-assets", "log", "logs"}
-LOG_LEVEL = r"(?:info|warning|error|debug|trace)"
-# shortcut: match bracketed severity and timestamped severity lines, expand when accepting other formats.
-MARKDOWN_LOG_PREFIX = re.compile(r"^(?: {0,3}>[ \t]*| {0,3}(?:[-+*]|\d+[.)])[ \t]+)*")
+LOG_LEVEL = r"(?:fatal|error|warning|message|info|debug|trace)"
+# shortcut: match BepInEx [level: source] and timestamped severity lines, expand for other formats.
+MARKDOWN_LOG_PREFIX = re.compile(r"^(?:\s*(?:>\s*|(?:[-+*]|\d+[.)])\s+|`{1,3}\s*))*")
 LOG_LINE = re.compile(
-    rf"^\s*(?:\[{LOG_LEVEL}\b[^\]]*\]|"
+    rf"^\s*(?:\[{LOG_LEVEL}\b\s*:\s*[^\]]+\]|"
     rf"\d{{4}}[.-]\d{{2}}[.-]\d{{2}}[ T]\d{{2}}:\d{{2}}:\d{{2}}(?:[.,]\d+)?\s*"
     rf"(?:\[{LOG_LEVEL}\b[^\]]*\]|{LOG_LEVEL}\b)"
     rf"|\[\d{{2}}:\d{{2}}:\d{{2}}(?:\.\d+)?\]\s*\[?{LOG_LEVEL}\b)",
