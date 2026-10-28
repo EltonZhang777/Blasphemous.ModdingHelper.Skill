@@ -34,10 +34,15 @@ BLOCKED_SUFFIXES = {
     ".sfc", ".smc", ".tga", ".txt", ".v64", ".wad", ".wav", ".webp", ".wem", ".z64",
 }
 BLOCKED_DIRECTORIES = {"assets", "decompiled", "dump", "dumps", "extracted-assets", "log", "logs"}
+LOG_LEVEL = r"(?:info|warning|error|debug|trace)"
+# shortcut: match bracketed severity and timestamped severity lines, expand when accepting other formats.
+MARKDOWN_LOG_PREFIX = re.compile(r"^(?: {0,3}>[ \t]*| {0,3}(?:[-+*]|\d+[.)])[ \t]+)*")
 LOG_LINE = re.compile(
-    r"(?i)^\s*(?:\d{4}[.-]\d{2}[.-]\d{2}[ T]\d{2}:\d{2}:\d{2}(?:[.,]\d+)?\s*"
-    r"(?:\[[^\]]+\]|\[(?:info|warning|error|debug|trace)\]|(?:info|warning|error|debug|trace)\b)"
-    r"|\[\d{2}:\d{2}:\d{2}(?:\.\d+)?\]\s*\[?(?:info|warning|error|debug|trace)\b)"
+    rf"^\s*(?:\[{LOG_LEVEL}\b[^\]]*\]|"
+    rf"\d{{4}}[.-]\d{{2}}[.-]\d{{2}}[ T]\d{{2}}:\d{{2}}:\d{{2}}(?:[.,]\d+)?\s*"
+    rf"(?:\[{LOG_LEVEL}\b[^\]]*\]|{LOG_LEVEL}\b)"
+    rf"|\[\d{{2}}:\d{{2}}:\d{{2}}(?:\.\d+)?\]\s*\[?{LOG_LEVEL}\b)",
+    re.IGNORECASE,
 )
 PRIVATE_PATH = re.compile(r"(?i)(?:\b[A-Z]:[\\/]+Users[\\/]+[^/\\\s]+|/(?:Users|home)/[^/\s]+|~[/\\])")
 SECRET_VALUE = re.compile(
@@ -198,11 +203,8 @@ def _check_prohibited_content(text, label, note_path, repository_root):
     if SECRET_VALUE.search(text) or TOKEN_VALUE.search(text):
         raise CandidateError(f"{label}: credential-like content must be redacted before review")
     images, image_starts = _check_screenshots(text, label, note_path, repository_root)
-    consecutive_log_lines = 0
-    for line in text.splitlines():
-        consecutive_log_lines = consecutive_log_lines + 1 if LOG_LINE.match(line) else 0
-        if consecutive_log_lines >= 3:
-            raise CandidateError(f"{label}: raw log excerpts are not accepted")
+    if any(LOG_LINE.match(MARKDOWN_LOG_PREFIX.sub("", line, count=1)) for line in text.splitlines()):
+        raise CandidateError(f"{label}: raw log excerpts are not accepted")
     for match in MARKDOWN_LINK.finditer(text):
         if match.start() in image_starts:
             continue
