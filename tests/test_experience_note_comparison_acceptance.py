@@ -8,6 +8,8 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 SKILL_ROOT = REPOSITORY_ROOT / "skills" / "blasphemous-modding-helper"
 MAIN_SKILL = SKILL_ROOT / "SKILL.md"
 COMPARISON = SKILL_ROOT / "references" / "sub-skills" / "experience-note-comparison.md"
+LOCAL_SAVE = SKILL_ROOT / "references" / "sub-skills" / "experience-note-local-save.md"
+PULL_REQUESTS = SKILL_ROOT / "references" / "sub-skills" / "experience-note-pull-requests.md"
 FIXTURE_ROOT = REPOSITORY_ROOT / "tests" / "fixtures" / "experience-note-comparison"
 
 
@@ -54,6 +56,35 @@ class ExperienceNoteComparisonAcceptanceTests(unittest.TestCase):
         self.assertRegex(reference, r"(?is)same (?:full )?sha")
         self.assertIn("completion criteria", reference)
         self.assertRegex(reference, r"next (?:action|step)")
+
+    def test_differently_titled_possible_public_match_is_deferred(self):
+        candidate = (FIXTURE_ROOT / "candidate.md").read_text(encoding="utf-8")
+        candidate_title = next(
+            line.partition(": ")[2] for line in candidate.splitlines() if line.startswith("title: ")
+        )
+        possible_entry = json.loads(
+            (FIXTURE_ROOT / "public" / "differently-titled-possible-match-index.json").read_text(encoding="utf-8")
+        )[0]
+        reference = COMPARISON.read_text(encoding="utf-8").casefold()
+        local_save = LOCAL_SAVE.read_text(encoding="utf-8").casefold()
+        pull_requests = PULL_REQUESTS.read_text(encoding="utf-8").casefold()
+
+        self.assertNotEqual(possible_entry["title"], candidate_title)
+        self.assertEqual(possible_entry["status"], "verified")
+        self.assertIn("review every verified index entry", reference)
+        self.assertIn("a title mismatch must not establish that an entry is distinct", reference)
+        self.assertIn("could describe the same reusable finding under another title", reference)
+        self.assertIn("must return `deferred`", reference)
+        self.assertIn("must not fetch that ambiguous note", reference)
+        self.assertIn("must not infer `unique` solely because no public title clearly matches", reference)
+        self.assertIn("must not pass the candidate to local-save or pr approval", reference)
+        self.assertIn("deferred candidates", local_save)
+        self.assertIn("must not be offered for saving", local_save)
+        self.assertIn("deferred findings", pull_requests)
+        self.assertIn("must not scan for or submit", pull_requests)
+        self.assertIn("at most one clearly matching", reference)
+        self.assertIn("or use cached or previously fetched content", reference)
+        self.assertIn("must not use fallback content", reference)
 
     def test_controlled_corpora_follow_the_canonical_note_contract(self):
         candidate = (FIXTURE_ROOT / "candidate.md").read_text(encoding="utf-8")
