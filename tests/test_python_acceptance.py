@@ -1,7 +1,11 @@
+import importlib.util
+import io
 import subprocess
 import sys
 import unittest
+from contextlib import redirect_stdout
 from pathlib import Path
+from unittest.mock import patch
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
@@ -68,6 +72,67 @@ class PythonAcceptanceEntryPointTests(unittest.TestCase):
         self.assertEqual(result.returncode, 2)
         self.assertIn("opt-in", result.stderr)
         self.assertEqual(result.stdout, "")
+
+    def test_workflow_tests_are_scheduled_once_through_unittest_discovery(self):
+        spec = importlib.util.spec_from_file_location("acceptance_runner", ACCEPTANCE_RUNNER)
+        runner = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(runner)
+        invocations = []
+
+        def capture(label, command, **kwargs):
+            invocations.append((label, [str(part) for part in command]))
+            return subprocess.CompletedProcess(command, 0, "", "")
+
+        with patch.object(runner, "run_command", side_effect=capture), \
+                patch.object(runner, "run_installer_surface"), \
+                patch.object(runner, "run_check"), \
+                redirect_stdout(io.StringIO()):
+            self.assertEqual(runner.main(["--python", sys.executable]), 0)
+
+        root_runs = [
+            command
+            for label, command in invocations
+            if label == "Python deterministic contract surface"
+        ]
+        self.assertEqual(len(root_runs), 1)
+        self.assertIn(str(ROOT_RUNNER), root_runs[0])
+        self.assertEqual(len(invocations), 1)
+
+    def test_lifecycle_behavior_runs_in_discovery_and_help_is_checked_once(self):
+        spec = importlib.util.spec_from_file_location("root_acceptance_runner", ROOT_RUNNER)
+        runner = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(runner)
+        invocations = []
+
+        def capture(label, command, **kwargs):
+            invocations.append((label, [str(part) for part in command]))
+            return subprocess.CompletedProcess(command, 0, "", "")
+
+        with patch.object(runner, "run_command", side_effect=capture), \
+                redirect_stdout(io.StringIO()):
+            runner.run_fixture_suite(sys.executable)
+
+        discovery = [
+            command
+            for label, command in invocations
+            if label == "Python unittest contract suite"
+        ]
+        self.assertEqual(len(discovery), 1)
+        self.assertIn("test_*.py", discovery[0])
+        lifecycle = str(ROOT_TESTS / "test_modding_api_lifecycle.py")
+        lifecycle_tests = [
+            command
+            for label, command in invocations
+            if label == "Python script-local test test_modding_api_lifecycle.py"
+        ]
+        lifecycle_help = [
+            command
+            for label, command in invocations
+            if label == "Python script-local help test_modding_api_lifecycle.py"
+        ]
+        self.assertEqual(lifecycle_tests, [])
+        self.assertEqual(len(lifecycle_help), 1)
+        self.assertEqual(lifecycle_help[0][1:], [lifecycle, "--help"])
 
     def test_repository_only_tools_are_outside_the_packaged_skill(self):
         for name in (

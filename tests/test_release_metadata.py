@@ -52,10 +52,11 @@ class ReleaseMetadataTests(unittest.TestCase):
         ]
         self.assertEqual(
             {row[0] for row in dependency_rows},
-            {"`PyYAML>=6.0`", "`ilspycmd`", "BepInEx", "ModdingAPI", "Git"},
+            {"`PyYAML>=6.0`", "`Pillow>=10.0`", "`ilspycmd`", "BepInEx", "ModdingAPI", "Git"},
         )
         expected_columns = {
             "`PyYAML>=6.0`": 4,
+            "`Pillow>=10.0`": 3,
             "`ilspycmd`": 3,
             "BepInEx": 3,
             "ModdingAPI": 3,
