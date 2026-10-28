@@ -198,6 +198,42 @@ class ModdingKnowledgeCandidateTests(unittest.TestCase):
         self.assertFalse((self.knowledge / "invalid.md").exists())
         self.assertEqual(indexer.build_entries(self.root), [])
 
+    def test_promotion_write_failure_restores_indexes_and_removes_created_notes(self):
+        candidate = self.write_candidate("atomic.md", note("Atomic candidate"))
+        existing = self.knowledge / "existing.md"
+        existing.write_text(note("Existing note", "verified"), encoding="utf-8")
+        self.write_current_indexes()
+        original_note = existing.read_bytes()
+        original_indexes = {
+            name: (self.knowledge / name).read_bytes()
+            for name in indexer.render_indexes(indexer.build_entries(self.root))
+        }
+        code, output, errors = self.run_command(["review", str(candidate)])
+        self.assertEqual((code, errors), (0, ""))
+        review_sha256 = output.split("Review SHA-256: ", 1)[1].splitlines()[0]
+        atomic_write = candidates._atomic_write
+        writes = 0
+
+        def fail_second_index_write(path, content):
+            nonlocal writes
+            writes += 1
+            if writes == 2:
+                raise OSError("simulated mid-batch index write failure")
+            atomic_write(path, content)
+
+        with patch.object(candidates, "_atomic_write", side_effect=fail_second_index_write):
+            code, _output, errors = self.run_command(
+                ["promote", "--approve", "--review-sha256", review_sha256, str(candidate)]
+            )
+
+        self.assertNotEqual(code, 0)
+        self.assertIn("simulated mid-batch index write failure", errors)
+        self.assertFalse((self.knowledge / candidate.name).exists())
+        self.assertEqual(existing.read_bytes(), original_note)
+        for name, content in original_indexes.items():
+            self.assertEqual((self.knowledge / name).read_bytes(), content)
+        self.assertEqual(list(self.knowledge.glob(".knowledge-promotion-*")), [])
+
     def test_metadata_status_and_authoritative_sections_are_required(self):
         invalid_notes = (
             note().replace("title: Synthetic candidate\n", "", 1),
@@ -364,6 +400,46 @@ class ModdingKnowledgeCandidateTests(unittest.TestCase):
         metadata = SimpleNamespace(st_mode=stat.S_IFDIR, st_file_attributes=0x400)
         with patch.object(Path, "lstat", return_value=metadata):
             self.assertTrue(indexer._is_link_or_junction(Path("synthetic-junction")))
+
+    def test_index_generation_and_promotion_reject_junctioned_knowledge_root(self):
+        candidate = self.write_candidate()
+        self.write_current_indexes()
+        original_indexes = {
+            name: (self.knowledge / name).read_bytes()
+            for name in indexer.render_indexes(indexer.build_entries(self.root))
+        }
+
+        with patch.object(indexer, "_is_link_or_junction", side_effect=lambda path: path == self.knowledge):
+            with self.assertRaises(indexer.NoteError):
+                indexer.build_entries(self.root)
+            code, _output, errors = self.run_command(["promote", "--approve", str(candidate)])
+
+        self.assertNotEqual(code, 0)
+        self.assertIn("symlinked directories", errors)
+        self.assertFalse((self.knowledge / candidate.name).exists())
+        for name, content in original_indexes.items():
+            self.assertEqual((self.knowledge / name).read_bytes(), content)
+
+    def test_index_generation_and_promotion_reject_junctioned_outputs(self):
+        candidate = self.write_candidate()
+        self.write_current_indexes()
+        original_indexes = {
+            name: (self.knowledge / name).read_bytes()
+            for name in indexer.render_indexes(indexer.build_entries(self.root))
+        }
+        output_paths = {self.knowledge / name for name in original_indexes}
+
+        with patch.object(indexer, "REPOSITORY_ROOT", self.root), patch.object(indexer, "KNOWLEDGE_ROOT", self.knowledge):
+            with patch.object(indexer, "_is_link_or_junction", side_effect=lambda path: path in output_paths):
+                with contextlib.redirect_stderr(io.StringIO()):
+                    self.assertNotEqual(indexer.main([]), 0)
+                code, _output, errors = self.run_command(["promote", "--approve", str(candidate)])
+
+        self.assertNotEqual(code, 0)
+        self.assertIn("stale", errors)
+        self.assertFalse((self.knowledge / candidate.name).exists())
+        for name, content in original_indexes.items():
+            self.assertEqual((self.knowledge / name).read_bytes(), content)
 
     def test_code_block_and_note_size_thresholds(self):
         sixty_one = "\n```text\n" + "\n".join("line" for _ in range(61)) + "\n```"

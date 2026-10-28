@@ -368,12 +368,22 @@ def _review(repository_root, candidates):
     print("\nReview every listed note, its evidence and limitations, generated indexes, and the adequacy of each privacy redaction.")
 
 
-def _atomic_write(path, content):
-    descriptor, temporary_name = tempfile.mkstemp(prefix=".knowledge-promotion-", dir=path.parent)
+def _temporary_file(directory, content):
+    descriptor, temporary_name = tempfile.mkstemp(prefix=".knowledge-promotion-", dir=directory)
     temporary = Path(temporary_name)
     try:
         with os.fdopen(descriptor, "wb") as stream:
             stream.write(content)
+    except BaseException:
+        if temporary.exists():
+            temporary.unlink()
+        raise
+    return temporary
+
+
+def _atomic_write(path, content):
+    temporary = _temporary_file(path.parent, content)
+    try:
         os.replace(temporary, path)
     finally:
         if temporary.exists():
@@ -399,16 +409,50 @@ def promote_candidates(repository_root, values, approved=False, review_sha256=No
     if not review_sha256 or review_sha256.casefold() != _review_fingerprint(candidates, proposed):
         raise CandidateError("candidate batch or generated indexes changed; review the exact batch again before promotion")
     if any(indexer._is_link_or_junction(knowledge_root / name) for name in proposed):
-        raise CandidateError("generated index outputs must not be symlinks")
-    promoted = []
-    for candidate in candidates:
-        target = knowledge_root / candidate["path"].name
-        with target.open("xb") as stream:
-            stream.write(_verified_text(candidate).encode("utf-8"))
-        promoted.append(target.relative_to(root).as_posix())
-    for name, content in proposed.items():
-        _atomic_write(knowledge_root / name, content.encode("utf-8"))
-    return promoted
+        raise CandidateError("generated index outputs must not be symlinks or junctions")
+    index_backups = {}
+    created_notes = []
+    updated_indexes = []
+    preserve_backups = set()
+    try:
+        for name in proposed:
+            path = knowledge_root / name
+            index_backups[name] = _temporary_file(knowledge_root, path.read_bytes())
+        for candidate in candidates:
+            target = knowledge_root / candidate["path"].name
+            with target.open("xb") as stream:
+                created_notes.append(target)
+                stream.write(_verified_text(candidate).encode("utf-8"))
+        for name, content in proposed.items():
+            _atomic_write(knowledge_root / name, content.encode("utf-8"))
+            updated_indexes.append(name)
+    except Exception as error:
+        rollback_failures = []
+        for name in reversed(updated_indexes):
+            backup = index_backups[name]
+            try:
+                os.replace(backup, knowledge_root / name)
+            except OSError as rollback_error:
+                preserve_backups.add(name)
+                rollback_failures.append(f"{name} backup retained at {backup}: {rollback_error}")
+        for path in reversed(created_notes):
+            try:
+                path.unlink()
+            except OSError as rollback_error:
+                rollback_failures.append(f"created note {path} could not be removed: {rollback_error}")
+        if rollback_failures:
+            raise CandidateError(
+                f"promotion failed and rollback was incomplete: {'; '.join(rollback_failures)}"
+            ) from error
+        raise
+    finally:
+        for name, backup in index_backups.items():
+            if name not in preserve_backups and backup.exists():
+                try:
+                    backup.unlink()
+                except OSError as cleanup_error:
+                    print(f"warning: could not remove temporary promotion backup {backup}: {cleanup_error}", file=sys.stderr)
+    return [target.relative_to(root).as_posix() for target in created_notes]
 
 
 def main(argv=None, repository_root=None):
