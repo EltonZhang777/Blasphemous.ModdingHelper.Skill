@@ -127,7 +127,7 @@ class ExperienceNoteComparisonAcceptanceTests(unittest.TestCase):
             ):
                 self.assertIn(heading, body)
 
-    def test_comparison_outcomes_do_not_write_notes_or_create_prs(self):
+    def test_reported_non_unique_outcomes_block_save_and_pr_side_effects(self):
         candidate = (FIXTURE_ROOT / "candidate.md").read_text(encoding="utf-8")
         local_duplicate = (FIXTURE_ROOT / "local" / "duplicate.md").read_text(encoding="utf-8")
         public_index = json.loads((FIXTURE_ROOT / "public" / "index.json").read_text(encoding="utf-8"))
@@ -154,6 +154,7 @@ class ExperienceNoteComparisonAcceptanceTests(unittest.TestCase):
 
         corpus_files = tuple(path for path in FIXTURE_ROOT.rglob("*") if path.is_file())
         before = {path: path.read_bytes() for path in corpus_files}
+        # The comparison is an agent task; exercise its reported outcomes at the write boundaries.
         outcomes = (
             ("exact-duplicate", "exact-duplicate"),
             ("uncertain-match", "deferred"),

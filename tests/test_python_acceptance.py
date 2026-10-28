@@ -80,7 +80,7 @@ class PythonAcceptanceEntryPointTests(unittest.TestCase):
         invocations = []
 
         def capture(label, command, **kwargs):
-            invocations.append((label, list(command)))
+            invocations.append((label, [str(part) for part in command]))
             return subprocess.CompletedProcess(command, 0, "", "")
 
         with patch.object(runner, "run_command", side_effect=capture), \
@@ -97,6 +97,42 @@ class PythonAcceptanceEntryPointTests(unittest.TestCase):
         self.assertEqual(len(root_runs), 1)
         self.assertIn(str(ROOT_RUNNER), root_runs[0])
         self.assertEqual(len(invocations), 1)
+
+    def test_lifecycle_behavior_runs_in_discovery_and_help_is_checked_once(self):
+        spec = importlib.util.spec_from_file_location("root_acceptance_runner", ROOT_RUNNER)
+        runner = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(runner)
+        invocations = []
+
+        def capture(label, command, **kwargs):
+            invocations.append((label, [str(part) for part in command]))
+            return subprocess.CompletedProcess(command, 0, "", "")
+
+        with patch.object(runner, "run_command", side_effect=capture), \
+                redirect_stdout(io.StringIO()):
+            runner.run_fixture_suite(sys.executable)
+
+        discovery = [
+            command
+            for label, command in invocations
+            if label == "Python unittest contract suite"
+        ]
+        self.assertEqual(len(discovery), 1)
+        self.assertIn("test_*.py", discovery[0])
+        lifecycle = str(ROOT_TESTS / "test_modding_api_lifecycle.py")
+        lifecycle_tests = [
+            command
+            for label, command in invocations
+            if label == "Python script-local test test_modding_api_lifecycle.py"
+        ]
+        lifecycle_help = [
+            command
+            for label, command in invocations
+            if label == "Python script-local help test_modding_api_lifecycle.py"
+        ]
+        self.assertEqual(lifecycle_tests, [])
+        self.assertEqual(len(lifecycle_help), 1)
+        self.assertEqual(lifecycle_help[0][1:], [lifecycle, "--help"])
 
     def test_repository_only_tools_are_outside_the_packaged_skill(self):
         for name in (
