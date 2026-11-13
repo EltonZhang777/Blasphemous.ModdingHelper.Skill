@@ -1,15 +1,17 @@
 # `/blasphemous-modding-test`
 
-The top-level `blasphemous-modding-helper` Skill routes every Mod test request through this shared entry. This document owns request classification, common prerequisites, evidence vocabulary, ambiguity handling, combined-request sequencing, and the boundary between automated evidence and **Player-performed in-game verification**.
+The top-level `blasphemous-modding-helper` Skill routes every Mod test request through this shared entry. This document owns request classification, common prerequisites, evidence vocabulary, ambiguity handling, combined-request sequencing, and the boundary between automated evidence and **Player-performed in-game verification** or **Computer Use automated in-game testing**.
 
 The branch documents own their workflows. The shared entry MUST NOT duplicate their operational steps or treat their evidence as interchangeable:
 
 - [Automated xUnit branch](blasphemous-modding-test-automated-xunit.md) is the sole authoritative owner of deterministic non-game tests.
-- [Real-profile branch](blasphemous-modding-test-real-profile.md) is the sole authoritative owner of Real-profile operations and Player-performed in-game verification.
+- [Real-profile branch](blasphemous-modding-test-real-profile.md) remains the sole authority for Real-profile commands and lifecycle safeguards.
+- [In-game test coordination](blasphemous-modding-test-in-game-coordination.md) owns in-game planning, Computer Use suitability, method choice before setup, and handoff.
+- [Player-performed in-game verification](blasphemous-modding-test-player-verification.md) and [Computer Use automated in-game testing](blasphemous-modding-test-computer-use.md) own their evidence procedures. The [manual Rewired keybinding guide](blasphemous-modding-test-rewired-keybindings.md) supports Computer Use planning.
 
 ## Test-route and evidence vocabulary
 
-The following terms are distinct and MUST be used consistently in route and completion reports. Player-performed and Computer Use terms name in-game evidence sources; Real-profile names the execution environment and lifecycle. Profile setup, deployment, launch, log collection, process tracking, stop, and cleanup are operational work, not in-game evidence.
+The following terms are distinct and MUST be used consistently in route and completion reports. Player-performed and Computer Use terms name in-game evidence sources; Real-profile names the execution environment and lifecycle. Profile setup, deployment, launch, log collection, process tracking, stop, and cleanup are operational work, not in-game evidence. In-game test coordination is orchestration, not an evidence source.
 
 | Term | Meaning and boundary |
 | --- | --- |
@@ -25,7 +27,7 @@ The following terms are distinct and MUST be used consistently in route and comp
 ## Shared entry conditions
 
 1. Agent MUST classify the request through this entry before choosing a test branch. Real-profile and other Skill-owned operations MUST complete the shared [Invocation preflight](../config/invocation-preflight.md); caller-owned Automated xUnit classification and execution do not wait for that gate.
-2. Agent MUST identify whether the request needs a real or mirror **Modding profile**, a game process, runtime startup, BepInEx or Unity logs, actual Unity lifecycle or scene state, or player actions.
+2. Agent MUST identify whether the request needs a real or mirror **Modding profile**, a game process, runtime startup, BepInEx or Unity logs, actual Unity lifecycle or scene state, in-game behavior, player actions, or a specified visible state.
 3. Agent MUST preserve the distinction between caller Mod repositories, the Skill repository, Mod-owned code, generated output, and external game artifacts.
 4. Agent MUST keep **Player-performed in-game verification**, **Computer Use automated in-game test**, and Automated xUnit output distinct. Startup logs are not in-game evidence.
 
@@ -35,18 +37,22 @@ Classification happens before branch-specific gates. A caller-owned Automated xU
 
 | Signal / condition | Destination | Boundary / next action |
 | --- | --- | --- |
-| Needs a real or mirror Modding profile, game process, runtime startup/lifecycle, BepInEx or Unity logs, or player actions | [Real-profile branch](blasphemous-modding-test-real-profile.md) | The branch MUST own build/package/deploy/launch/log/stop/cleanup; Agent MUST keep startup evidence separate from **Player-performed in-game verification** and **Computer Use automated in-game test** evidence. |
+| Needs a real or mirror Modding profile, game process, runtime startup/lifecycle, BepInEx or Unity logs, in-game behavior, player actions, or a specified visible state | [In-game test coordination](blasphemous-modding-test-in-game-coordination.md) for in-game behavior or a specified visible state; [Real-profile branch](blasphemous-modding-test-real-profile.md) for lifecycle-only work | Agent MUST route in-game behavior and specified visible-state checks through coordination and lifecycle-only work directly to Real-profile; Real-profile MUST own build/package/deploy/launch/log/stop/cleanup; Agent MUST keep startup evidence separate from **Player-performed in-game verification** and **Computer Use automated in-game test** evidence. |
 | Is deterministic and can run without a game process, Modding profile, runtime startup/lifecycle, startup logs, or player action | [Automated xUnit branch](blasphemous-modding-test-automated-xunit.md) | Agent MUST use the standard xUnit/.NET runner; its output MUST remain automated evidence and MUST NOT be reported as gameplay proof. |
-| Explicitly requests both kinds of test | Both branch owners | Agent MUST run Automated xUnit first when available, then Real-profile; Agent MUST keep each phase's status and evidence separate. |
+| Explicitly requests both kinds of test | Both branch owners | Agent MUST run Automated xUnit first when available, then the Real-profile phase; if it requires in-game behavior or a specified visible state, Agent MUST use coordination before setup and hand off to one selected evidence guide. Agent MUST keep each phase's status and evidence separate. |
 | Runtime or evidence conditions are unclear or conflicting | Ambiguous result | Agent MUST ask the user to clarify before routing and MUST run no branch command until clarified. |
 
 ## Route result contract
 
 The agent MUST return exactly one route result: `Real-profile`, `xUnit`, `both`, or `ambiguous`. `ambiguous` is a no-execution result: the agent MUST NOT execute a branch command until the user clarifies the required runtime conditions and evidence.
 
+An in-game behavior or specified visible-state request returns Real-profile and MUST pass through In-game test coordination before setup; lifecycle-only Real-profile requests go directly to the Real-profile branch.
+
 ## Both-phase and final report contract
 
 For a `both` result, the xUnit phase first runs; the Real-profile phase second runs. The xUnit phase does not wait for Real-profile configuration; the Real-profile phase runs its own branch gate independently.
+
+For any Real-profile phase requiring in-game behavior or a specified visible state, the agent MUST obtain the method choice before preparation, run common preparation once, and hand off to one selected evidence guide. Lifecycle-only Real-profile work stays direct.
 
 Each phase records independent commands, independent evidence, and independent statuses. A failure or block in one phase does not fabricate the other phase result. Both is complete only after all required phases complete.
 
@@ -59,6 +65,7 @@ Test doubles, mocks, and stubs remain compatible with the Automated xUnit route 
 - `mod_loaded` and other startup logs show startup evidence only. They MUST NOT be reported as gameplay verification.
 - **Player-performed in-game verification** is player-operated evidence. It records the scene or save state, exact actions, expected result, observed result, and visible errors or approximate failure time.
 - **Computer Use automated in-game test** is automated in-game evidence and MUST remain distinct from player-operated evidence and Real-profile setup or lifecycle operations.
+- Reports MUST keep Player-performed, Computer Use, startup, Current log, Test log snapshot, profile-lifecycle, and Automated xUnit evidence separate.
 - A combined request is complete only when each selected phase has its own state and evidence, or a warning names the exact blocked phase.
 - Existing caller architecture takes precedence. The route MUST NOT trigger a repository-wide migration, create a concrete current-Mod test, or require a Test Mod for every standalone Mod.
 - The Skill repository's Python CLI and fixture tests remain under their existing Python test contract. The caller-Mod xUnit convention does not redirect or replace them.

@@ -1,12 +1,12 @@
 # `/blasphemous-modding-test` — Real-profile branch
 
-The shared [Mod-test entry](blasphemous-modding-test.md) routes here when a request needs a real or mirror Modding profile, game process, runtime startup, logs, or player actions. This document is the sole authoritative owner of the Real-profile build, package, deployment, launch, evidence, stop, cleanup, and **Player-performed in-game verification** workflow.
+The shared [Mod-test entry](blasphemous-modding-test.md) routes lifecycle-only requests here. For requests that need in-game behavior or a specified visible state, follow [In-game test coordination](blasphemous-modding-test-in-game-coordination.md) first; this document remains authoritative for Real-profile setup and lifecycle operations.
 
 The top-level `blasphemous-modding-helper` Skill remains the normal entry point. The documented `/blasphemous-modding-test stop SESSION_ID` path is a safety exception for stopping a recorded session.
 
-This is authoritative workflow for repeatable local Blasphemous mod tests. Agent MUST use it when task needs to build or select mod package, deploy it to modding profile, launch profile-local game, inspect startup evidence, stop tracked session, clean deployment, or collect Player-performed in-game verification, including when no new automated run is requested.
+This is the authoritative workflow for repeatable local Blasphemous mod setup and lifecycle operations. Agent MUST use it to build or select a mod package, deploy it to a Modding profile, launch a profile-local game, inspect startup evidence, stop a tracked session, or clean a deployment. In-game verification follows the coordination and evidence guide selected before setup.
 
-Python CLI automates filesystem, build, process, and log operations. It does not control game through MCP and it does not verify visual, input, combat, menu, save, or other in-game behavior. Keep automated evidence and **Player-performed in-game verification** as separate evidence sources.
+Python CLI automates filesystem, build, process, and log operations. It does not control game through MCP and it does not verify visual, input, combat, menu, save, or other in-game behavior. Keep operational output separate from **Player-performed in-game verification** and **Computer Use automated in-game test** evidence.
 
 ## Entry conditions
 
@@ -19,7 +19,7 @@ Done when: agent can name active configuration file, project, profile, Python in
 
 ## Subagent delegation
 
-Delegated Real-profile work MUST follow the shared [General subagent delegation guidelines](../subagent-delegation/subagent-delegation-general-guidelines.md) and [Real-profile testing delegation](../subagent-delegation/real-profile-testing-delegation.md). The parent agent MUST complete the entry conditions and assign the exact profile, Test session or session-creating operation, permitted CLI actions, and any user approval for a gated action. Delegation does not authorize a child to infer **Player-performed in-game verification**.
+Delegated Real-profile work MUST follow the shared [General subagent delegation guidelines](../subagent-delegation/subagent-delegation-general-guidelines.md) and [Real-profile testing delegation](../subagent-delegation/real-profile-testing-delegation.md). The parent agent MUST complete the entry conditions and assign the exact profile, Test session or session-creating operation, permitted CLI actions, and any user approval for a gated action. Delegation does not authorize a child to choose the in-game evidence method, infer **Player-performed in-game verification**, or perform Computer Use without the selected guide and user-authorized plan.
 
 ## CLI entry point
 
@@ -218,16 +218,17 @@ Completion criterion: agent reports state, current/stale/missing status of both 
 
 ## Report status and evidence boundary
 
-Reports keep build, artifact, deployment, launch, startup, and process evidence separate. The overall status is exactly one of `complete`, `failed`, `blocked`, or `pending-manual`:
+Reports keep build, artifact, deployment, launch, startup, and process evidence separate. The overall status is exactly one of `complete`, `failed`, `blocked`, `pending-manual`, or `pending-computer-use`:
 
-- `complete`: the requested automated and startup operations finished and any required Player-performed in-game verification is recorded.
+- `complete`: the requested Real-profile operations and startup evidence finished, and any requested in-game evidence from the selected Player-performed or Computer Use guide is recorded.
 - `failed`: the operation ran and returned a failure that needs repair.
 - `blocked`: a gate, profile, session, or safety condition prevented execution; the report includes the concrete next action.
-- `pending-manual`: startup evidence exists, but Player-performed in-game verification is still required.
+- `pending-manual`: startup evidence exists, but the selected Player-performed in-game verification is still pending.
+- `pending-computer-use`: startup evidence exists, but the selected Computer Use evidence phase is still in progress or awaiting its assigned result; the report names the current handoff and next action.
 
-Every Real-profile test or verification report MUST include `status`, `completion evidence`, the blocked or failed reason when applicable, and `next action`. Completion evidence MUST identify the Test session and keep Current log, Test log snapshot, startup evidence, and Player-performed in-game verification separate.
+Every Real-profile test or verification report MUST include `status`, `completion evidence`, the blocked or failed reason when applicable, and `next action`. Completion evidence MUST identify the Test session and keep Current log, Test log snapshot, startup evidence, Player-performed in-game verification, and Computer Use evidence separate.
 
-`mod_loaded` remains startup evidence only and never changes into gameplay success without a separate Player-performed in-game verification record.
+`mod_loaded` remains startup evidence only and never changes into gameplay success without a separate result from the selected Player-performed or Computer Use evidence method.
 
 ### `snapshot`: preserve completed-session logs
 
@@ -289,19 +290,11 @@ Explicit CLI options override selected configuration for that invocation: `--pro
 
 The session/process boundary is strict: each `SESSION_ID` binds one lifecycle, profile, deployment manifest, and tracked process tree. A command with another session ID cannot cross session identity, attach to its process, or use its rollback state.
 
-## Profile operations and Player-performed in-game verification
+## Profile operations and in-game evidence handoff
 
 The CLI's Real-profile workflow handles build, package, deployment, launch, log collection, process tracking, stop, and safe cleanup. Its output and startup logs are operational or startup evidence, not in-game evidence. Agent MUST NOT claim that `mod_loaded` proves game behavior.
 
-After startup evidence is available, ask the player to perform the requested in-game scenario. Collect **Player-performed in-game verification** in natural language:
-
-- scene or save state used;
-- exact player actions;
-- expected result;
-- observed result, including visual, input, combat, menu, save, or other behavior;
-- any visible error or approximate time at which it occurred.
-
-Combine that Player-performed in-game verification record with CLI state and the session snapshot when analyzing a completed test. Use `logs SESSION_ID --current` only when the user explicitly requests live diagnosis. No gameplay transcript or generated test report is required by this workflow. Use the existing [log analyzer](log-analyzer.md) for interpretation after test evidence is collected.
+After startup evidence is available, the coordinator hands off to the selected [Player-performed verification guide](blasphemous-modding-test-player-verification.md) or [Computer Use guide](blasphemous-modding-test-computer-use.md). Keep its in-game evidence separate from CLI state and session snapshots. Use `logs SESSION_ID --current` only when the user explicitly requests live diagnosis. No gameplay transcript or generated test report is required by this workflow. Use the existing [log analyzer](log-analyzer.md) for interpretation after test evidence is collected.
 
 ## Stable failures and recovery
 
@@ -316,14 +309,14 @@ CLI prints `Error [category]` and returns stable categories. Route recovery by e
 | `30` | package artifact | Missing/empty package, unsafe directory/archive entry, missing `<TargetName>`, or explicit artifact is not a directory/zip. | Inspect `publish/<TargetName>`, pass the exact package directory with `--artifact`, or explicitly use a validated recovery zip. |
 | `40` | deployment | Destination preflight, copy, hash verification, or transaction rollback failed. | The agent MUST NOT manually delete profile files. If rollback succeeded, retry after fixing the cause. If rollback failed, retain the printed session ID, inspect the manifest/status, and resolve protected files with the user before any further deployment. |
 | `50` | launch | A matching game is already running, launcher start failed, or process identity could not be safely tracked. | Stop only the known session if applicable, verify the profile-local launcher, then rerun. Never attach to or kill an untracked process. |
-| `60` | logs/readiness | Current BepInEx log missing/unreadable or startup timeout. | Keep the session alive; run `logs SESSION_ID --current`, configure `unity_log_dir`, inspect current BepInEx output, ask for Player-performed in-game verification, then stop and clean when diagnosis is complete. |
+| `60` | logs/readiness | Current BepInEx log missing/unreadable or startup timeout. | Keep the session alive; run `logs SESSION_ID --current`, configure `unity_log_dir`, inspect current BepInEx output, then return to the shared [Mod-test entry](blasphemous-modding-test.md) and use [In-game test coordination](blasphemous-modding-test-in-game-coordination.md) before gameplay verification. Stop and clean when diagnosis is complete. |
 | `70` | stop/clean | Unknown session/process state, running tracked process, newer session, changed file, or invalid rollback manifest. | Use `status`, stop the tracked process, clean newest-first, and preserve changed files. Retry only after the reported guard is resolved. |
 
 Deployment failures are transactional: partial copy is rolled back automatically when possible. failed rollback is hard stop with session identifier; it is not permission to remove whole `Modding` root. failure to archive previous sessions also attempts to roll back new deployment and reports whether that recovery succeeded.
 
 ## Acceptance criteria
 
-Agent MUST use this checklist for complete implementation or Player-performed in-game verification:
+Agent MUST use this checklist for complete implementation or Real-profile operations:
 
 - [ ] Agent can invoke `run`, `stop`, `clean`, `logs`, and `status` with the documented argument contract through the same Python entry point on native Windows, Linux, and macOS.
 - [ ] Project selection is explicit when ambiguous; default builds use Debug; Release requires explicit option.
@@ -337,5 +330,5 @@ Agent MUST use this checklist for complete implementation or Player-performed in
 - [ ] Current BepInEx and configured Unity logs produce bounded output by default and full output only with `--full`; missing Unity configuration produces visible handoff warning.
 - [ ] `logs` requires explicit `--current` or `--snapshot`; completed-session analysis never uses an implicit live-log mode.
 - [ ] A snapshot is requested only after a clear completion result is bound to one session; ambiguous results or session identity remain unresolved.
-- [ ] Automated startup evidence is reported as `launched`, `ready`, `mod_loaded`, or `timeout`; Player-performed in-game verification is collected from the player in natural language.
+- [ ] Automated startup evidence is reported as `launched`, `ready`, `mod_loaded`, or `timeout`; in-game verification follows the guide selected by [In-game test coordination](blasphemous-modding-test-in-game-coordination.md).
 - [ ] Missing profile, build, artifact, launcher, log, timeout, deployment, and rollback conditions map to stable failure categories and recovery steps above.
