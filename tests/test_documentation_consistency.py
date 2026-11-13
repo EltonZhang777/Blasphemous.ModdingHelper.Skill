@@ -31,6 +31,10 @@ NORMATIVE_HOST_DEPENDENCY = re.compile(
 )
 
 ROUTE_DOCUMENTS = (
+    "references/modding-knowledge.md",
+    "references/sub-skills/experience-note-comparison.md",
+    "references/sub-skills/experience-note-local-save.md",
+    "references/sub-skills/experience-note-pull-requests.md",
     "references/sub-skills/localization-lookup.md",
     "references/sub-skills/source-analyzer.md",
     "references/sub-skills/log-analyzer.md",
@@ -161,7 +165,7 @@ ROUTING_CONTRACTS = (
             ("**Level.**", "level.md", "matching level mechanic within the selected `Assembly-CSharp/` tree"),
             ("**Tools.**", "tools.md", "matching tool family as the search entry within the selected `Assembly-CSharp/` tree"),
             ("**Localization.**", "localization.md", "I2 localization or the game LocalizationManager as indicated within the selected `Assembly-CSharp/` tree"),
-            ("**Lifecycle.**", "core.md", "Start at `Framework/Managers/Core.cs`, `LogicManager.cs`, or `LevelManager.cs` for system or scene flow"),
+            ("**Lifecycle.**", "core.md", "Agent MUST start at `Framework/Managers/Core.cs`, `LogicManager.cs`, or `LevelManager.cs` for system or scene flow"),
         ),
     ),
 )
