@@ -8,6 +8,7 @@ import json
 import re
 import sys
 from datetime import date
+from http.client import HTTPException
 from typing import Callable, Dict, List, Mapping, Optional
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
@@ -46,7 +47,7 @@ def _http_get_text(url: str) -> str:
 def _fetch_json(fetch_text: Callable[[str], str], url: str, phase: str):
     try:
         return json.loads(fetch_text(url))
-    except (HTTPError, URLError, TimeoutError, OSError, UnicodeError, ValueError) as error:
+    except (HTTPException, HTTPError, URLError, TimeoutError, OSError, UnicodeError, ValueError) as error:
         raise KnowledgeLookupError(phase, f"could not retrieve or parse response: {error}") from error
 
 
@@ -140,7 +141,7 @@ def fetch_note(
     url = f"{_RAW_BASE}{commit_sha}/{entry['path']}"
     try:
         content = fetch_text(url)
-    except (HTTPError, URLError, TimeoutError, OSError, UnicodeError, ValueError) as error:
+    except (HTTPException, HTTPError, URLError, TimeoutError, OSError, UnicodeError, ValueError) as error:
         raise KnowledgeLookupError("note", f"could not retrieve selected note: {error}") from error
     metadata = _note_metadata(content)
     if any(metadata.get(key) != entry[key] for key in ("title", "status", "date")):
