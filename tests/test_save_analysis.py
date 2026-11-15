@@ -337,6 +337,190 @@ class SaveAnalysisTests(unittest.TestCase):
             ['{"open": true', "not-json"],
         )
 
+    def test_directory_analyzes_every_supported_role_without_recursing(self):
+        source = self.root / "save directory"
+        source.mkdir()
+        vanilla = self.vanilla_bytes({"value": "值"})
+        modding = self.modding_bytes(("demo.mod", {"ok": True}))
+        expected_roles = {
+            "app_settings": ("vanilla-global-settings", "vanilla-base64-json"),
+            "app_settings_backup": (
+                "vanilla-global-settings-backup",
+                "vanilla-base64-json",
+            ),
+            "app_settings_modded": (
+                "moddingapi-global-settings",
+                "moddingapi-records",
+            ),
+            "app_settings_modded_backup": (
+                "moddingapi-global-settings-backup",
+                "moddingapi-records",
+            ),
+            "savegame_0.save": ("vanilla-player-save", "vanilla-base64-json"),
+            "savegame_0.save_backup": (
+                "vanilla-player-save-backup",
+                "vanilla-base64-json",
+            ),
+            "savegame_0_modded.save": (
+                "moddingapi-slot-companion",
+                "moddingapi-records",
+            ),
+            "savegame_0_modded.save_backup": (
+                "moddingapi-slot-companion-backup",
+                "moddingapi-records",
+            ),
+        }
+        for name, (_, detected_format) in expected_roles.items():
+            content = vanilla if detected_format == "vanilla-base64-json" else modding
+            (source / name).write_bytes(content)
+        before = {
+            name: hashlib.sha256((source / name).read_bytes()).hexdigest()
+            for name in expected_roles
+        }
+
+        for name in ("notes.txt", "savegame_0.save.bak", "app_settings_copy"):
+            (source / name).write_bytes(vanilla)
+        nested = source / "nested"
+        nested.mkdir()
+        (nested / "savegame_1.save").write_bytes(vanilla)
+
+        result = self.run_cli(str(source))
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        run_root = Path(result.stdout.strip())
+        manifest = json.loads((run_root / "manifest.json").read_text(encoding="utf-8"))
+        self.assertEqual(manifest["input_mode"], "directory")
+        by_name = {
+            item["source"]["name"]: item for item in manifest["inputs"]
+        }
+        self.assertEqual(set(by_name), set(expected_roles))
+        for name, (role, detected_format) in expected_roles.items():
+            item = by_name[name]
+            self.assertEqual(item["role"], role)
+            self.assertEqual(item["format"], detected_format)
+            self.assertTrue(item["role_match"])
+            self.assertTrue((run_root / item["artifacts"]["chunk"]).is_file())
+            self.assertTrue((run_root / item["artifacts"]["full"]).is_file())
+        self.assertEqual(
+            before,
+            {
+                name: hashlib.sha256((source / name).read_bytes()).hexdigest()
+                for name in expected_roles
+            },
+        )
+
+        summary = (run_root / "summary.txt").read_text(encoding="utf-8")
+        for name in expected_roles:
+            self.assertIn(str(source / name).casefold(), summary.casefold())
+        self.assertNotIn("notes.txt", summary)
+        self.assertNotIn("savegame_1.save", summary)
+
+    def test_directory_reports_filename_and_content_mismatches(self):
+        source = self.root / "mismatched directory"
+        source.mkdir()
+        (source / "savegame_0.save").write_bytes(
+            self.modding_bytes(("demo.mod", {"ok": True}))
+        )
+        (source / "app_settings_modded").write_bytes(
+            self.vanilla_bytes({"value": 1})
+        )
+
+        result = self.run_cli(str(source))
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        run_root = Path(result.stdout.strip())
+        manifest = json.loads((run_root / "manifest.json").read_text(encoding="utf-8"))
+        by_name = {item["source"]["name"]: item for item in manifest["inputs"]}
+        slot = by_name["savegame_0.save"]
+        global_settings = by_name["app_settings_modded"]
+        self.assertEqual(slot["role"], "vanilla-player-save")
+        self.assertEqual(slot["expected_format"], "vanilla-base64-json")
+        self.assertEqual(slot["format"], "moddingapi-records")
+        self.assertFalse(slot["role_match"])
+        self.assertIn("Role mismatch", slot["warnings"][0])
+        self.assertEqual(global_settings["role"], "moddingapi-global-settings")
+        self.assertEqual(global_settings["expected_format"], "moddingapi-records")
+        self.assertEqual(global_settings["format"], "vanilla-base64-json")
+        self.assertFalse(global_settings["role_match"])
+
+        summary = (run_root / "summary.txt").read_text(encoding="utf-8")
+        self.assertEqual(summary.count("Role match: no"), 2)
+
+    def test_directory_preserves_valid_siblings_when_supported_file_is_corrupt(self):
+        source = self.root / "partly corrupt directory"
+        source.mkdir()
+        valid = source / "app_settings"
+        valid.write_bytes(self.vanilla_bytes({"value": 1}))
+        corrupt = source / "savegame_0.save"
+        corrupt.write_bytes(b"not a save")
+
+        result = self.run_cli(str(source))
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        run_root = Path(result.stdout.strip())
+        manifest = json.loads((run_root / "manifest.json").read_text(encoding="utf-8"))
+        by_name = {item["source"]["name"]: item for item in manifest["inputs"]}
+        self.assertEqual(set(by_name), {"app_settings", "savegame_0.save"})
+        self.assertEqual(by_name["app_settings"]["parse_status"], "ok")
+        failed = by_name["savegame_0.save"]
+        self.assertEqual(failed["role"], "vanilla-player-save")
+        self.assertEqual(failed["expected_format"], "vanilla-base64-json")
+        self.assertEqual(failed["format"], "unknown")
+        self.assertEqual(failed["parse_status"], "failed")
+        self.assertEqual(failed["error"]["reason"], "unsupported-format")
+        self.assertIsNone(failed["artifacts"]["full"])
+        self.assertEqual(failed["full_artifact_status"], "unavailable")
+        chunk = json.loads(
+            (run_root / failed["artifacts"]["chunk"]).read_text(encoding="utf-8")
+        )
+        self.assertEqual(chunk["parse_status"], "failed")
+        self.assertEqual(chunk["error"]["reason"], "unsupported-format")
+
+        summary = (run_root / "summary.txt").read_text(encoding="utf-8")
+        self.assertIn("Status: ok", summary)
+        self.assertIn("Status: failed", summary)
+        self.assertIn("Error: unsupported-format", summary)
+        self.assertIn("Full artifact: unavailable", summary)
+
+    def test_directory_does_not_follow_supported_name_symlink(self):
+        source = self.root / "linked directory"
+        source.mkdir()
+        (source / "app_settings").write_bytes(self.vanilla_bytes({"value": 1}))
+        external = self.root / "external save"
+        external.write_bytes(self.vanilla_bytes({"external": True}))
+        link = source / "savegame_1.save"
+        try:
+            os.symlink(external, link)
+        except OSError as error:
+            self.skipTest(f"file symlinks unavailable: {error}")
+
+        result = self.run_cli(str(source))
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        run_root = Path(result.stdout.strip())
+        manifest = json.loads((run_root / "manifest.json").read_text(encoding="utf-8"))
+        self.assertEqual(
+            [item["source"]["name"] for item in manifest["inputs"]],
+            ["app_settings"],
+        )
+        summary = (run_root / "summary.txt").read_text(encoding="utf-8")
+        self.assertNotIn("savegame_1.save", summary)
+
+    def test_directory_with_no_supported_files_fails_clearly(self):
+        source = self.root / "unsupported directory"
+        source.mkdir()
+        (source / "notes.txt").write_text("not a save", encoding="utf-8")
+        nested = source / "nested"
+        nested.mkdir()
+        (nested / "savegame_1.save").write_bytes(self.vanilla_bytes({"value": 1}))
+
+        result = self.run_cli(str(source))
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("Reason: no-supported-files", result.stderr)
+        analysis_root = self.temp_root / "blasphemous-save-analysis"
+        self.assertFalse(analysis_root.exists())
+
 
 if __name__ == "__main__":
     unittest.main()

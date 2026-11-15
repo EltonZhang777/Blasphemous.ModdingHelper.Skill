@@ -7,11 +7,17 @@ This reference describes the line-oriented files written by Blasphemous 1 Moddin
 | File | Role |
 | --- | --- |
 | `<Savegames>/app_settings_modded` | Global ModdingAPI persistence shared across save slots |
+| `<Savegames>/app_settings_modded_backup` | Backup of global ModdingAPI persistence |
 | `<Savegames>/<steam-id>/savegame_<slot>_modded.save` | Slot-scoped ModdingAPI persistence companion |
+| `<Savegames>/<steam-id>/savegame_<slot>_modded.save_backup` | Backup of the slot-scoped ModdingAPI companion |
 | `<Savegames>/app_settings` | Vanilla game global settings; not the ModdingAPI record stream |
+| `<Savegames>/app_settings_backup` | Backup of vanilla game global settings |
 | `<Savegames>/<steam-id>/savegame_<slot>.save` | Vanilla slot save; not the ModdingAPI record stream |
+| `<Savegames>/<steam-id>/savegame_<slot>.save_backup` | Backup of a vanilla slot save |
 
 The exact platform save root and any version-specific location remain host- and version-dependent and are outside the Save analysis scope. This reference adds no dependency on a ModdingAPI checkout. For one explicit file, the analyzer MUST identify the format from content and MUST NOT infer global or slot scope from the filename.
+
+In directory analysis, the exact names in the table supply the expected role and format. A filename/content mismatch MUST retain that role and report the mismatch rather than silently reassigning the file. Only the documented `_backup` suffix is a supported backup marker.
 
 `app_settings_modded` and the slot `_modded.save` companion are written only for Mods that implement ModdingAPI global or slot persistence. Their absence can mean no persistent Mod data exists; it MUST NOT be treated as proof that no Mods are installed.
 

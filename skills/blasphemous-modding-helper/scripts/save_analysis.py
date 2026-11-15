@@ -276,7 +276,102 @@ def _modding_warnings(counts: Dict[str, int]) -> list:
     return warnings
 
 
-def _analyze_file(path: Path, input_id: str):
+def _directory_role(name: str) -> Optional[tuple]:
+    roles = {
+        "app_settings": ("vanilla-global-settings", "vanilla-base64-json"),
+        "app_settings_backup": (
+            "vanilla-global-settings-backup",
+            "vanilla-base64-json",
+        ),
+        "app_settings_modded": (
+            "moddingapi-global-settings",
+            "moddingapi-records",
+        ),
+        "app_settings_modded_backup": (
+            "moddingapi-global-settings-backup",
+            "moddingapi-records",
+        ),
+    }
+    if name in roles:
+        return roles[name]
+
+    match = re.fullmatch(r"savegame_\d+(_modded)?\.save(_backup)?", name)
+    if match is None:
+        return None
+    moddingapi = match.group(1) is not None
+    backup = match.group(2) is not None
+    if moddingapi:
+        role = (
+            "moddingapi-slot-companion-backup"
+            if backup
+            else "moddingapi-slot-companion"
+        )
+        return role, "moddingapi-records"
+    role = "vanilla-player-save-backup" if backup else "vanilla-player-save"
+    return role, "vanilla-base64-json"
+
+
+def _apply_role(
+    item: Dict[str, Any],
+    chunk: Dict[str, Any],
+    role_hint: tuple,
+) -> None:
+    role, expected_format = role_hint
+    role_match = item["format"] == expected_format
+    item["role"] = role
+    item["expected_format"] = expected_format
+    item["role_match"] = role_match
+    chunk["role"] = role
+    chunk["expected_format"] = expected_format
+    chunk["role_match"] = role_match
+    if not role_match:
+        item["warnings"].append(
+            f"Role mismatch: expected {expected_format} for {role}; "
+            f"detected {item['format']}."
+        )
+
+
+def _failed_analysis(
+    source: Dict[str, Any],
+    input_id: str,
+    role_hint: tuple,
+    error: SaveAnalysisError,
+):
+    role, expected_format = role_hint
+    detail = {"reason": error.reason, "message": error.message}
+    item = {
+        "id": input_id,
+        "source": source,
+        "role": role,
+        "format": "unknown",
+        "expected_format": expected_format,
+        "parse_status": "failed",
+        "warnings": [],
+        "bytes": source["bytes"],
+        "sha256": source["sha256"],
+        "error": detail,
+        "artifacts": {
+            "chunk": f"structured/{input_id}.json",
+            "full": None,
+        },
+        "full_artifact_status": "unavailable",
+    }
+    chunk = {
+        "source": source,
+        "role": role,
+        "format": "unknown",
+        "expected_format": expected_format,
+        "parse_status": "failed",
+        "error": detail,
+    }
+    return item, chunk, None
+
+
+def _analyze_file(
+    path: Path,
+    input_id: str,
+    role_hint: Optional[tuple] = None,
+):
     try:
         value = path.read_bytes()
     except OSError as error:
@@ -320,6 +415,8 @@ def _analyze_file(path: Path, input_id: str):
             "counts": counts,
             "records": _modding_chunk_records(records),
         }
+        if role_hint is not None:
+            _apply_role(item, chunk, role_hint)
         return item, chunk, _format_modding_full(records)
     if vanilla_error is not None:
         raise vanilla_error
@@ -346,6 +443,8 @@ def _analyze_file(path: Path, input_id: str):
         "format": "vanilla-base64-json",
         "data_shape": _value_shape(parsed),
     }
+    if role_hint is not None:
+        _apply_role(item, chunk, role_hint)
     return (
         item,
         chunk,
@@ -394,54 +493,99 @@ def _write_text(path: Path, value: str) -> None:
         stream.write(value)
 
 
-def _summary(run_id: str, run_root: Path, item: Dict[str, Any], status: str) -> str:
+def _summary(
+    run_id: str,
+    run_root: Path,
+    items: Sequence[Dict[str, Any]],
+    status: str,
+) -> str:
     lines = [
         "Blasphemous 1 save analysis",
         f"Run: {run_id}",
         f"Status: {status}",
+        f"Inputs: {len(items)}",
         f"Output: {run_root}",
         (
             "Lifetime: output is under the host temporary directory; it may be "
             "deleted early or persist beyond this invocation."
         ),
     ]
-    lines.extend(
-        [
-            "",
-            f"Input: {item['source']['path']}",
-            f"  Role: {item['role']}",
-            f"  Format: {item['format']}",
-            f"  Status: {item['parse_status']}",
-            f"  Bytes: {item['bytes']}",
-            f"  SHA-256: {item['sha256']}",
-            f"  Structured chunk: {item['artifacts']['chunk']}",
-            f"  Full artifact: {item['artifacts']['full']}",
-        ]
-    )
-    if "top_level_keys" in item:
-        lines.append(f"  Top-level keys: {item['top_level_keys']}")
-    counts = item.get("counts")
-    if counts:
+    for item in items:
         lines.extend(
-            f"  {name.replace('_', ' ').capitalize()}: {value}"
-            for name, value in counts.items()
+            [
+                "",
+                f"Input: {item['source']['path']}",
+                f"  Role: {item['role']}",
+                f"  Format: {item['format']}",
+                f"  Status: {item['parse_status']}",
+                f"  Bytes: {item['bytes']}",
+                f"  SHA-256: {item['sha256']}",
+                f"  Structured chunk: {item['artifacts']['chunk']}",
+                f"  Full artifact: {item['artifacts']['full'] or 'unavailable'}",
+            ]
         )
-    for warning in item["warnings"]:
-        lines.append(f"  Warning: {warning}")
+        if "expected_format" in item:
+            lines.append(f"  Expected format: {item['expected_format']}")
+        if "role_match" in item:
+            lines.append(f"  Role match: {'yes' if item['role_match'] else 'no'}")
+        if "error" in item:
+            error = item["error"]
+            lines.append(f"  Error: {error['reason']}: {error['message']}")
+        if "top_level_keys" in item:
+            lines.append(f"  Top-level keys: {item['top_level_keys']}")
+        counts = item.get("counts")
+        if counts:
+            lines.extend(
+                f"  {name.replace('_', ' ').capitalize()}: {value}"
+                for name, value in counts.items()
+            )
+        for warning in item["warnings"]:
+            lines.append(f"  Warning: {warning}")
     return "\n".join(lines) + "\n"
+
+
+def _directory_inputs(path: Path) -> List[tuple]:
+    inputs = []
+    for child in sorted(path.iterdir(), key=lambda entry: entry.name.casefold()):
+        role_hint = _directory_role(child.name)
+        if role_hint is not None and not child.is_symlink() and child.is_file():
+            inputs.append((child, role_hint))
+    if not inputs:
+        raise SaveAnalysisError(
+            "no-supported-files",
+            f"Directory contains no supported save files: {path}",
+        )
+    return inputs
 
 
 def analyze(input_path: Path) -> Path:
     resolved_input = input_path.expanduser().resolve(strict=False)
     if not resolved_input.exists():
         raise SaveAnalysisError("input-missing", f"Input path does not exist: {resolved_input}")
-    if not resolved_input.is_file():
+    if resolved_input.is_file():
+        inputs = [(resolved_input, None)]
+        input_mode = "file"
+    elif resolved_input.is_dir():
+        inputs = _directory_inputs(resolved_input)
+        input_mode = "directory"
+    else:
         raise SaveAnalysisError(
             "unsupported-input",
-            f"Input must be one save file: {resolved_input}",
+            f"Input must be one save file or directory: {resolved_input}",
         )
 
-    item, chunk, full_text = _analyze_file(resolved_input, "input-1")
+    analyses = []
+    for index, (path, role_hint) in enumerate(inputs, start=1):
+        input_id = f"input-{index}"
+        try:
+            analysis = _analyze_file(path, input_id, role_hint)
+        except SaveAnalysisError as error:
+            if input_mode != "directory":
+                raise
+            source = _source_identity(path, path.read_bytes())
+            analysis = _failed_analysis(source, input_id, role_hint, error)
+        analyses.append(analysis)
+
     analysis_root = _output_root(resolved_input)
     analysis_root.mkdir(parents=True, exist_ok=True)
     run_id = uuid.uuid4().hex
@@ -451,21 +595,23 @@ def analyze(input_path: Path) -> Path:
     staging = Path(tempfile.mkdtemp(prefix=".staging-", dir=str(analysis_root)))
 
     try:
-        _write_text(
-            staging / item["artifacts"]["chunk"],
-            json.dumps(chunk, ensure_ascii=True, indent=2) + "\n",
-        )
-        _write_text(
-            staging / item["artifacts"]["full"],
-            full_text,
-        )
+        for item, chunk, full_text in analyses:
+            _write_text(
+                staging / item["artifacts"]["chunk"],
+                json.dumps(chunk, ensure_ascii=True, indent=2) + "\n",
+            )
+            if full_text is not None:
+                _write_text(
+                    staging / item["artifacts"]["full"],
+                    full_text,
+                )
 
         manifest = {
             "schema_version": 1,
             "run_id": run_id,
-            "input_mode": "file",
+            "input_mode": input_mode,
             "status": "success",
-            "inputs": [item],
+            "inputs": [item for item, _, _ in analyses],
             "artifacts": {
                 "manifest": "manifest.json",
                 "summary": "summary.txt",
@@ -475,7 +621,15 @@ def analyze(input_path: Path) -> Path:
             staging / "manifest.json",
             json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
         )
-        _write_text(staging / "summary.txt", _summary(run_id, run_root, item, "success"))
+        _write_text(
+            staging / "summary.txt",
+            _summary(
+                run_id,
+                run_root,
+                [item for item, _, _ in analyses],
+                "success",
+            ),
+        )
         os.rename(staging, run_root)
     except Exception:
         if staging.exists():
@@ -488,8 +642,9 @@ def build_parser() -> argparse.ArgumentParser:
     return argparse.ArgumentParser(
         description=(
             "Run a read-only, configuration-free analysis of one explicit "
-            "Blasphemous 1 save file. This command does not modify the input "
-            "and does not read a game profile or decompiled source."
+            "Blasphemous 1 save file or save directory. This command does not "
+            "modify the input and does not read a game profile or decompiled "
+            "source."
         ),
         epilog=(
             "Every run creates a unique directory under the host temporary "
@@ -510,7 +665,11 @@ def _configure_stdio() -> None:
 def main(argv: Optional[Sequence[str]] = None) -> int:
     _configure_stdio()
     parser = build_parser()
-    parser.add_argument("input", type=Path, help="One explicit save file.")
+    parser.add_argument(
+        "input",
+        type=Path,
+        help="One explicit save file or save directory.",
+    )
     args = parser.parse_args(argv)
     try:
         run_root = analyze(args.input)
