@@ -41,6 +41,8 @@ Blasphemous source navigation. Paths relative to `Assembly-CSharp/`.
 
 This guide indexes decompiled game source under `Assembly-CSharp/`. For Mod-owned changes, [Project architecture guidelines](../sub-skills/project-architecture-guidelines.md) own project structure, [Harmony patching standards](../coding-standards/coding-standards-harmony-patching.md) own patches, and the [Mod-test entry](../sub-skills/blasphemous-modding-test.md) owns verification.
 
+For exported project topology evidence, use [Unity project navigation](../unity-project-navigation/MAIN.md) instead. Matching paths or Unity `.cs` files MUST NOT replace this source tree as behavioral evidence.
+
 ## Quick Access for Mod Development
 
 | Entry Point | Description |

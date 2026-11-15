@@ -5,6 +5,7 @@ import tempfile
 import unittest
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from unittest import mock
 
 
 SCRIPT_ROOT = (
@@ -19,6 +20,9 @@ from blasphemous_modding_helper.preferences import (  # noqa: E402
     parse_preferences,
     read_skill_version,
     PreferenceValidationError,
+    set_unity_project_path,
+    UnityProjectPathError,
+    update_config_text,
     validate_preferences,
 )
 
@@ -54,6 +58,27 @@ class PreferencesValidationTests(unittest.TestCase):
                 "--home",
                 str(self.home),
                 "--validate",
+            ],
+            cwd=self.root,
+            env=self.environment,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            check=False,
+        )
+
+    def run_set_unity_path(self, value):
+        return subprocess.run(
+            [
+                sys.executable,
+                str(CHECK_PREFERENCES),
+                "--cwd",
+                str(self.root),
+                "--home",
+                str(self.home),
+                "--set-unity-project-path",
+                str(value),
             ],
             cwd=self.root,
             env=self.environment,
@@ -270,6 +295,225 @@ class PreferencesValidationTests(unittest.TestCase):
         fields = self.fields(result)
         self.assertEqual(fields["PREFERENCES_VALIDATION_STATUS"], "failed")
         self.assertEqual(fields["PREFERENCES_SETUP"], "required")
+
+    def test_valid_config_may_omit_unity_project_path(self):
+        now = datetime.now(timezone.utc).replace(microsecond=0)
+        self.write_config(self.valid_config(self.checked_at(now)))
+
+        result = self.run_validation()
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn("unity_project_path", parse_preferences(self.config))
+
+    def test_targeted_unity_path_update_preserves_unrelated_config(self):
+        unity = self.root / "Unity Project"
+        (unity / "Assets").mkdir(parents=True)
+        self.write_config(
+            "# keep header\n"
+            "unknown:\n"
+            "  nested: [one, two]\n"
+            "modding_profile_path: 'profile' # keep profile note\n"
+        )
+
+        result = self.run_set_unity_path(unity)
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn(f"PREFERENCES_UNITY_PROJECT_PATH={unity.resolve()}", result.stdout)
+        values = parse_preferences(self.config)
+        self.assertEqual(values["unity_project_path"], str(unity.resolve()))
+        self.assertEqual(values["unknown"], {"nested": ["one", "two"]})
+        self.assertEqual(values["modding_profile_path"], "profile")
+        text = self.config.read_text(encoding="utf-8")
+        self.assertIn("# keep header", text)
+        self.assertIn("# keep profile note", text)
+        self.assertLess(text.index("unknown:\n"), text.index("modding_profile_path:"))
+
+    def test_targeted_unity_path_update_preserves_flow_style_yaml(self):
+        unity = self.root / "Unity Flow"
+        (unity / "Assets").mkdir(parents=True)
+        self.write_config(
+            "{modding_profile_path: profile, unknown: [one, two]} # keep inline\n"
+        )
+
+        location, project = set_unity_project_path(
+            str(unity),
+            cwd=self.root,
+            home=self.home,
+        )
+
+        self.assertEqual(location.scope, "project")
+        self.assertEqual(project, unity.resolve())
+        values = parse_preferences(self.config)
+        self.assertEqual(values["modding_profile_path"], "profile")
+        self.assertEqual(values["unknown"], ["one", "two"])
+        self.assertEqual(values["unity_project_path"], str(unity.resolve()))
+        self.assertIn("# keep inline", self.config.read_text(encoding="utf-8"))
+
+    def test_targeted_unity_path_update_replaces_multiline_flow_value(self):
+        unity = self.root / "Unity Flow Multiline"
+        (unity / "Assets").mkdir(parents=True)
+        self.write_config(
+            "{unity_project_path: '/previous\n"
+            "  path', modding_profile_path: profile} # keep inline\n"
+        )
+
+        result = self.run_set_unity_path(unity)
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        values = parse_preferences(self.config)
+        self.assertEqual(values["unity_project_path"], str(unity.resolve()))
+        self.assertEqual(values["modding_profile_path"], "profile")
+        self.assertIn("# keep inline", self.config.read_text(encoding="utf-8"))
+
+    def test_targeted_unity_path_update_accepts_flow_style_trailing_comma(self):
+        unity = self.root / "Unity Flow Comma"
+        (unity / "Assets").mkdir(parents=True)
+        configs = (
+            "{modding_profile_path: profile,} # keep inline\n",
+            "{\n  modding_profile_path: profile, # keep multiline\n}\n",
+        )
+        for text in configs:
+            with self.subTest(text=text):
+                self.write_config(text)
+
+                result = self.run_set_unity_path(unity)
+
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                values = parse_preferences(self.config)
+                self.assertEqual(values["modding_profile_path"], "profile")
+                self.assertEqual(values["unity_project_path"], str(unity.resolve()))
+                self.assertIn("# keep", self.config.read_text(encoding="utf-8"))
+
+    def test_targeted_unity_path_update_replaces_quoted_block_key(self):
+        unity = self.root / "Unity Quoted"
+        (unity / "Assets").mkdir(parents=True)
+        for key in ("'unity_project_path'", '"unity_project_path"'):
+            with self.subTest(key=key):
+                self.write_config(
+                    f"{key}: '/previous'\n"
+                    "modding_profile_path: profile\n"
+                )
+
+                result = self.run_set_unity_path(unity)
+
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                values = parse_preferences(self.config)
+                self.assertEqual(values["unity_project_path"], str(unity.resolve()))
+                self.assertEqual(values["modding_profile_path"], "profile")
+                self.assertEqual(
+                    self.config.read_text(encoding="utf-8").count("unity_project_path"),
+                    1,
+                )
+
+    def test_targeted_unity_path_update_rejects_multiline_value_without_writing(self):
+        unity = self.root / "Unity Multiline"
+        (unity / "Assets").mkdir(parents=True)
+        self.write_config(
+            "unity_project_path: >\n"
+            "  /previous\n"
+            "modding_profile_path: profile\n"
+        )
+        before = self.config.read_bytes()
+
+        result = self.run_set_unity_path(unity)
+
+        self.assertEqual(result.returncode, 10)
+        self.assertIn("PREFERENCES_SETUP=required", result.stdout)
+        self.assertEqual(self.config.read_bytes(), before)
+
+    def test_targeted_unity_path_resolution_cycle_stays_retryable(self):
+        unity = self.root / "Unity Cycle"
+        unity.mkdir()
+        self.write_config("modding_profile_path: profile\n")
+        resolve = Path.resolve
+
+        def resolve_with_cycle(path, *args, **kwargs):
+            if path == unity:
+                raise RuntimeError("Symlink loop")
+            return resolve(path, *args, **kwargs)
+
+        with mock.patch.object(Path, "resolve", resolve_with_cycle):
+            with self.assertRaises(UnityProjectPathError):
+                set_unity_project_path(
+                    str(unity),
+                    cwd=self.root,
+                    home=self.home,
+                )
+
+    def test_flow_style_config_update_replaces_existing_and_appends_missing_fields(self):
+        self.write_config(
+            "{modding_profile_path: 'profile', check_period_days: 7} # keep inline\n"
+        )
+
+        updated = update_config_text(
+            self.config.read_text(encoding="utf-8"),
+            {
+                "check_period_days": 14,
+                "last_checked_version": read_skill_version(),
+            },
+        )
+        self.config.write_text(updated, encoding="utf-8")
+
+        values = parse_preferences(self.config)
+        self.assertEqual(values["check_period_days"], 14)
+        self.assertEqual(values["last_checked_version"], read_skill_version())
+        self.assertIn("# keep inline", updated)
+
+    def test_targeted_unity_path_update_rejects_invalid_path_without_writing(self):
+        self.write_config(
+            "# keep header\n"
+            "modding_profile_path: profile\n"
+        )
+        before = self.config.read_bytes()
+        missing = self.root / "missing-unity"
+
+        result = self.run_set_unity_path(missing)
+
+        self.assertEqual(result.returncode, 10)
+        self.assertIn("unity_project_path", result.stdout)
+        self.assertNotIn("PREFERENCES_VALIDATION_STATUS", result.stdout)
+        self.assertIn("PREFERENCES_SETUP=not-required", result.stdout)
+        self.assertIn(
+            "PREFERENCES_NEXT_ACTION=retry-unity-project-path",
+            result.stdout,
+        )
+        self.assertEqual(self.config.read_bytes(), before)
+
+    def test_targeted_unity_path_update_requires_existing_config(self):
+        unity = self.root / "Unity"
+        (unity / "Assets").mkdir(parents=True)
+
+        with self.assertRaises(PreferenceValidationError):
+            set_unity_project_path(unity, cwd=self.root, home=self.home)
+
+    def test_targeted_unity_path_rejects_blank_values(self):
+        self.write_config("modding_profile_path: profile\n")
+        before = self.config.read_bytes()
+        for value in ("", "   "):
+            with self.subTest(value=value):
+                result = self.run_set_unity_path(value)
+
+                self.assertEqual(result.returncode, 10)
+                self.assertIn("PREFERENCES_SETUP=not-required", result.stdout)
+                self.assertEqual(self.config.read_bytes(), before)
+
+    def test_targeted_unity_path_rejects_symlinked_assets_outside(self):
+        outside = self.root / "outside-assets"
+        outside.mkdir()
+        unity = self.root / "Unity"
+        unity.mkdir()
+        try:
+            (unity / "Assets").symlink_to(outside, target_is_directory=True)
+        except OSError as error:
+            self.skipTest(f"directory symlink unavailable: {error}")
+        self.write_config("modding_profile_path: profile\n")
+        before = self.config.read_bytes()
+
+        result = self.run_set_unity_path(unity)
+
+        self.assertEqual(result.returncode, 10)
+        self.assertIn("PREFERENCES_SETUP=not-required", result.stdout)
+        self.assertEqual(self.config.read_bytes(), before)
 
     def test_invalid_project_config_does_not_fall_back_to_user_scope(self):
         self.write_config("check_period_days: 0\n")

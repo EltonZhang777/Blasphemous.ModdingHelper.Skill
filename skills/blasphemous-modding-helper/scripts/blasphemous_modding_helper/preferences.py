@@ -41,6 +41,7 @@ _TEXT_FIELDS = frozenset(
         "unity_log_dir",
         "modding_api_reference_path",
         "modding_api_reference_selector",
+        "unity_project_path",
     }
 )
 
@@ -49,8 +50,8 @@ class PreferenceError(Exception):
     """A malformed or unreadable configuration file."""
 
 
-class PreferenceValidationError(PreferenceError):
-    """A configuration that requires first-time setup recovery."""
+class LocatedPreferenceError(PreferenceError):
+    """A preference failure tied to the selected configuration file."""
 
     def __init__(
         self,
@@ -59,6 +60,14 @@ class PreferenceValidationError(PreferenceError):
     ):
         super().__init__(message)
         self.location = location
+
+
+class PreferenceValidationError(LocatedPreferenceError):
+    """A configuration that requires first-time setup recovery."""
+
+
+class UnityProjectPathError(LocatedPreferenceError):
+    """An invalid Unity project path that requires only targeted retry."""
 
 
 if yaml is not None:
@@ -157,6 +166,14 @@ def update_config_text(text: str, updates: Mapping[str, object]) -> str:
     if not updates:
         return text
     serialized = {key: _format_config_value(value) for key, value in updates.items()}
+    flow_mapping = _flow_mapping_node(text)
+    if flow_mapping is not None:
+        flow_serialized = {
+            key: _format_flow_value(value)
+            for key, value in updates.items()
+        }
+        return _update_flow_mapping(text, flow_mapping, flow_serialized)
+    _reject_multiline_managed_values(text, serialized)
     output = []
     pending = set(serialized)
     for line in text.splitlines():
@@ -164,7 +181,7 @@ def update_config_text(text: str, updates: Mapping[str, object]) -> str:
             (
                 key
                 for key in serialized
-                if re.match(r"^" + re.escape(key) + r"\s*:", line)
+                if re.match(r"^" + _managed_key_pattern(key) + r"\s*:", line)
             ),
             None,
         )
@@ -172,13 +189,13 @@ def update_config_text(text: str, updates: Mapping[str, object]) -> str:
             output.append(line)
             continue
         match = re.match(
-            r"^" + re.escape(match_key) + r"\s*:\s*(.*)$",
+            r"^(" + _managed_key_pattern(match_key) + r")\s*:\s*(.*)$",
             line,
         )
         assert match is not None
         output.append(
-            f"{match_key}: {serialized[match_key]}"
-            f"{_inline_comment(match.group(1))}"
+            f"{match.group(1)}: {serialized[match_key]}"
+            f"{_inline_comment(match.group(2))}"
         )
         pending.discard(match_key)
     additions = [
@@ -196,6 +213,87 @@ def update_config_text(text: str, updates: Mapping[str, object]) -> str:
     return "\n".join(output) + "\n"
 
 
+def _flow_mapping_node(text: str):
+    if yaml is None:
+        return None
+    try:
+        node = yaml.compose(text, Loader=_UniqueKeyLoader)
+    except yaml.YAMLError:
+        return None
+    if not isinstance(node, yaml.MappingNode) or not node.flow_style:
+        return None
+    return node
+
+
+def _reject_multiline_managed_values(text: str, managed: Mapping[str, str]) -> None:
+    if yaml is None:
+        return
+    try:
+        node = yaml.compose(text, Loader=_UniqueKeyLoader)
+    except yaml.YAMLError:
+        return
+    if not isinstance(node, yaml.MappingNode):
+        return
+    for key_node, value_node in node.value:
+        if not isinstance(key_node, yaml.ScalarNode) or key_node.value not in managed:
+            continue
+        if (
+            not isinstance(value_node, yaml.ScalarNode)
+            or value_node.start_mark.line != value_node.end_mark.line
+        ):
+            raise PreferenceError(
+                f"Cannot safely update multi-line config value '{key_node.value}'; "
+                "edit config.yml or rerun first-time setup."
+            )
+
+
+def _update_flow_mapping(text: str, node, serialized: Mapping[str, str]) -> str:
+    replacements = []
+    present = set()
+    for key_node, value_node in node.value:
+        if not isinstance(key_node, yaml.ScalarNode) or key_node.value not in serialized:
+            continue
+        present.add(key_node.value)
+        replacements.append(
+            (
+                value_node.start_mark.index,
+                value_node.end_mark.index,
+                serialized[key_node.value],
+            )
+        )
+    for start, end, value in sorted(replacements, reverse=True):
+        text = text[:start] + value + text[end:]
+    additions = [
+        f"{key}: {value}"
+        for key, value in serialized.items()
+        if key not in present
+    ]
+    if additions:
+        node = _flow_mapping_node(text)
+        if node is None:
+            raise PreferenceError("Could not update flow-style config.yml.")
+        closing = text.rfind("}", 0, node.end_mark.index)
+        if closing < 0:
+            raise PreferenceError("Could not update flow-style config.yml.")
+        addition_text = ", ".join(additions)
+        if node.value:
+            value_end = node.value[-1][1].end_mark.index
+            comma = _flow_separator(text[value_end:closing])
+            if comma is None:
+                text = text[:value_end] + ", " + addition_text + text[value_end:]
+            else:
+                insertion = value_end + comma + 1
+                spacer = "" if text[insertion:insertion + 1].isspace() else " "
+                text = text[:insertion] + spacer + addition_text + text[insertion:]
+        else:
+            text = text[:closing] + addition_text + text[closing:]
+    try:
+        _parse_config(text)
+    except PreferenceError as error:
+        raise PreferenceError(f"Automated config update would make config.yml invalid: {error}") from error
+    return text
+
+
 def _format_config_value(value: object) -> str:
     if isinstance(value, str):
         return format_yaml_string(value)
@@ -204,6 +302,31 @@ def _format_config_value(value: object) -> str:
     if isinstance(value, int):
         return str(value)
     raise PreferenceError(f"Unsupported managed config value type: {type(value).__name__}.")
+
+
+def _managed_key_pattern(key: str) -> str:
+    escaped = re.escape(key)
+    return rf"(?:{escaped}|'{escaped}'|\"{escaped}\")"
+
+
+def _flow_separator(tail: str) -> Optional[int]:
+    in_comment = False
+    for index, character in enumerate(tail):
+        if character == "\n":
+            in_comment = False
+        elif in_comment:
+            continue
+        elif character == "#" and (index == 0 or tail[index - 1].isspace()):
+            in_comment = True
+        elif character == ",":
+            return index
+    return None
+
+
+def _format_flow_value(value: object) -> str:
+    if isinstance(value, str):
+        return "'" + value.replace("'", "''") + "'"
+    return _format_config_value(value)
 
 
 def _inline_comment(value: str) -> str:
@@ -528,7 +651,10 @@ def resolve_preference_path(value: str, base: Path) -> Path:
     path = Path(expanded)
     if not path.is_absolute():
         path = base / path
-    return path.resolve(strict=False)
+    try:
+        return path.resolve(strict=False)
+    except (OSError, RuntimeError) as error:
+        raise PreferenceError(f"Configured path could not be resolved: {path}: {error}") from error
 
 
 def validate_source_paths(
@@ -558,6 +684,57 @@ def validate_source_paths(
             raise PreferenceError(f"Configured {field} is not readable: {path}")
         result[field] = path
     return result
+
+
+def validate_unity_project_path(path: Path) -> Path:
+    """Validate an exported Unity project root without reading its assets."""
+
+    from .unity_project import NavigationError, validate_project_root
+
+    try:
+        return validate_project_root(Path(path))
+    except NavigationError as error:
+        raise PreferenceError(str(error)) from error
+
+
+def set_unity_project_path(
+    value: str,
+    *,
+    cwd: Optional[Path] = None,
+    home: Optional[Path] = None,
+) -> Tuple[PreferenceLocation, Path]:
+    """Validate and add only unity_project_path to the active configuration."""
+
+    location = find_preferences(cwd, home)
+    if location is None:
+        raise PreferenceValidationError(
+            "No config.yml found. Complete first-time setup before configuring the Unity project."
+        )
+    try:
+        _, text, _ = _read_config(location.path)
+    except PreferenceError as error:
+        raise PreferenceValidationError(str(error), location) from error
+    try:
+        try:
+            if not value.strip():
+                raise PreferenceError("path is empty")
+            resolved = resolve_preference_path(value, cwd or Path.cwd())
+            project = validate_unity_project_path(resolved)
+        except PreferenceError as error:
+            raise UnityProjectPathError(
+                f"Invalid unity_project_path: {error}",
+                location,
+            ) from error
+        updated_text = update_config_text(
+            text,
+            {"unity_project_path": str(project)},
+        )
+        _atomic_write_config(location.path, updated_text)
+    except UnityProjectPathError:
+        raise
+    except (OSError, PreferenceError) as error:
+        raise PreferenceValidationError(str(error), location) from error
+    return location, project
 
 
 def _text_value(values: Mapping[str, object], key: str) -> str:

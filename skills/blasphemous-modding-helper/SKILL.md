@@ -1,6 +1,6 @@
 ---
 name: blasphemous-modding-helper
-description: Blasphemous 1 modding development helper; supports Blasphemous 1 only, and Blasphemous 2 is not supported. Use when the user wants to build, deploy, launch, inspect startup evidence, stop, clean, or verify in-game behavior by Player-performed actions or Computer Use for a Blasphemous 1 mod; identify, explain, compare, or translate a Blasphemous 1 term; develop a Blasphemous 1 mod, analyze Blasphemous 1 decompiled source code, or debug Blasphemous 1 mod-related logs (BepInEx / Unity).
+description: Blasphemous 1 modding development helper; supports Blasphemous 1 only, and Blasphemous 2 is not supported. Use when the user wants to build, deploy, launch, inspect startup evidence, stop, clean, or verify in-game behavior by Player-performed actions or Computer Use for a Blasphemous 1 mod; identify, explain, compare, or translate a Blasphemous 1 term; develop a Blasphemous 1 mod, analyze Blasphemous 1 decompiled source code, inspect exported Unity project topology, or debug Blasphemous 1 mod-related logs (BepInEx / Unity).
 ---
 
 # Blasphemous modding helper
@@ -21,6 +21,7 @@ After reading [Requirement levels](references/requirement-levels-definitions.md)
 | --- | --- | --- |
 | natural-language identify, explain, compare, or translate request for a Blasphemous 1 term, name, UI phrase, or textual reference | [Localization lookup](references/sub-skills/localization-lookup.md) | Agent MUST treat this route as read-only and MUST NOT require configuration. Agent MUST report localization evidence and MUST route unresolved code-like terms to the source analyzer. |
 | Find or explain decompiled game source, mechanics, classes, or dependencies | [Source analyzer](references/sub-skills/source-analyzer.md) | Agent MUST complete the shared entry gate and the source-path gate. Agent MUST report the selected source tree, verified code evidence, and next analysis action. |
+| Inspect exported Unity project topology, Unity version, or scene-set summary | [Unity project navigation](references/sub-skills/unity-project-navigation.md) | Agent MUST complete the shared entry gate and require a valid `unity_project_path` only for this route. Agent MUST keep exported asset evidence separate from C# behavior evidence and MUST route behavior questions to the source analyzer. |
 | Diagnose BepInEx or Unity logs, startup evidence, or runtime diagnostics | [Log analyzer](references/sub-skills/log-analyzer.md) | Agent MUST complete the shared entry gate and MUST resolve required log sources. Agent MUST report evidence mode, paths, status, and next recovery or verification action. |
 | Test a Mod; build/deploy/launch a profile; inspect startup; stop, clean, or verify in-game behavior through Player-performed actions or Computer Use | [Mod-test entry](references/sub-skills/blasphemous-modding-test.md) | Agent MUST classify the request as `Real-profile`, `xUnit`, `both`, or `ambiguous`, then MUST follow the selected branch owner. Agent MUST ensure that Caller-owned xUnit does not wait for the Real-profile configuration gate. For `both`, Agent MUST keep independent phase reports. |
 | Generate, modify, review, or refactor Mod-owned C# or project structure | [Coding standards](references/sub-skills/coding-standards.md) | Agent MUST complete the shared entry gate and selected coding branch. Agent MUST report the ownership boundary and next implementation or verification action. |
@@ -63,7 +64,7 @@ Agent MUST apply the Request routing rules above and route every applicable bran
 
 Where useful to clarify the request, agent SHOULD identify the desired observable outcome and evidence relevant to the selected route, especially for Mod feature requests with a visible or persistent result. Route-specific completion criteria and evidence boundaries remain authoritative.
 
-**Done when**: user question is classified into one or more applicable branches (localization lookup, source code analysis, log analysis, mod testing, or general modding question), and every applicable specialized branch has been routed to its authoritative workflow reference or analysis task.
+**Done when**: user question is classified into one or more applicable branches (localization lookup, source code analysis, Unity project navigation, log analysis, mod testing, or general modding question), and every applicable specialized branch has been routed to its authoritative workflow reference or analysis task.
 
 ### Step 3: Use Tools to Gather Information
 
