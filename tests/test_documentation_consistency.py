@@ -165,7 +165,7 @@ ROUTING_CONTRACTS = (
             ("**Level.**", "level.md", "matching level mechanic within the selected `Assembly-CSharp/` tree"),
             ("**Tools.**", "tools.md", "matching tool family as the search entry within the selected `Assembly-CSharp/` tree"),
             ("**Localization.**", "localization.md", "I2 localization or the game LocalizationManager as indicated within the selected `Assembly-CSharp/` tree"),
-            ("**Lifecycle.**", "core.md", "feature's domain route and follow its shared base and lifecycle/event links"),
+            ("**Lifecycle.**", "core.md", "Agent MUST start at `Framework/Managers/Core.cs`, `LogicManager.cs`, or `LevelManager.cs` for system or scene flow"),
         ),
     ),
 )
@@ -343,6 +343,7 @@ class DocumentationConsistencyTests(unittest.TestCase):
             "disposable or mirror modding profile",
             "must not switch profiles or sessions",
             "player-performed in-game verification",
+            "computer use automated in-game test",
             "session id",
             "process id and tracked process tree identity recorded in that session manifest",
             "approval-gated action",
@@ -456,10 +457,11 @@ class DocumentationConsistencyTests(unittest.TestCase):
         self.assertNotIn((SKILL_ROOT / DELEGATION_REFERENCE).resolve(), set(local_links(mod_test)))
         mod_test_content = normalized(mod_test)
         self.assertIn(
-            "sole authoritative owner of real-profile operations and player-performed in-game verification",
+            "remains the sole authority for real-profile commands and lifecycle safeguards",
             mod_test_content,
         )
         self.assertIn("player-performed in-game verification", mod_test_content)
+        self.assertIn("computer use automated in-game test", mod_test_content)
 
     def test_delegation_contract_has_no_normative_host_dependency(self):
         shared = SKILL_ROOT / DELEGATION_REFERENCE
@@ -562,6 +564,7 @@ class DocumentationConsistencyTests(unittest.TestCase):
             "Current log",
             "Test log snapshot",
             "Player-performed in-game verification",
+            "Computer Use automated in-game test",
             "Automated xUnit test",
             "Real-profile test",
         ):
@@ -587,6 +590,7 @@ class DocumentationConsistencyTests(unittest.TestCase):
         )
         self.assertIn("xUnit is not gameplay proof", xunit)
         self.assertIn("Player-performed in-game verification", xunit)
+        self.assertIn("Computer Use automated in-game test", xunit)
 
     def test_reached_workflows_expose_completion_evidence_and_next_action(self):
         for relative in ROUTE_DOCUMENTS:

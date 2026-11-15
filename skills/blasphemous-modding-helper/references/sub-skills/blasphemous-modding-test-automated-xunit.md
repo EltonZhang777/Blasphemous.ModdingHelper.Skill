@@ -1,6 +1,6 @@
 # Automated xUnit branch
 
-The shared [Mod-test entry](blasphemous-modding-test.md) routes here for deterministic tests that run without a real or mirror Modding profile, game process, runtime startup, Unity lifecycle or scene state, startup logs, or player actions. This document is the sole authoritative owner of the Automated xUnit route.
+The shared [Mod-test entry](blasphemous-modding-test.md) routes here for deterministic tests that run without a real or mirror Modding profile, game process, runtime startup, Unity lifecycle or scene state, startup logs, or in-game behavior. This document is the sole authoritative owner of the Automated xUnit route.
 
 ## Boundary
 
@@ -13,7 +13,7 @@ Automated xUnit tests:
 
 Automated xUnit does not require `config.yml`, the Skill Python runtime, `modding_profile_path`, a launcher, Unity logs, BepInEx, a game process, or any Real-profile gate. Missing profile-only fields MUST NOT block this route.
 
-If a test needs actual Unity lifecycle, scene state, BepInEx startup, a game process, a Modding profile, runtime logs, or player interaction, route it to the [Real-profile branch](blasphemous-modding-test-real-profile.md).
+If a test needs actual Unity lifecycle, scene state, BepInEx startup, a game process, a Modding profile, runtime logs, or player interaction, return to the shared [Mod-test entry](blasphemous-modding-test.md) for route classification. In-game behavior or a specified visible state goes through [In-game test coordination](blasphemous-modding-test-in-game-coordination.md); lifecycle-only work goes to the [Real-profile branch](blasphemous-modding-test-real-profile.md).
 
 ## Subagent delegation
 
@@ -49,10 +49,10 @@ The standard command is `dotnet test <ModRepoName>.Tests`; it may compile the te
 
 Framework or command conflicts return `blocked` or `ambiguous`; the agent MUST NOT silently switch runners. Evidence records the selected project, runner output, test result, and exit status. The report status is exactly `passed`, `failed`, or `blocked`, and states that xUnit is not gameplay proof. Every report MUST name completion evidence, the blocked reason when applicable, and the next action.
 
-Agent MUST NOT build, deploy, launch, inspect startup logs, stop a game process, clean a profile, or collect **Player-performed in-game verification** in this branch.
+Agent MUST NOT build, deploy, launch, inspect startup logs, stop a game process, clean a profile, or collect **Player-performed in-game verification** or **Computer Use automated in-game test** evidence in this branch.
 
-For an explicit two-branch request, complete this branch first when it is available, then hand off to the [Real-profile branch](blasphemous-modding-test-real-profile.md). Keep the two phase results and their next actions separate.
+For an explicit two-branch request, complete this branch first when it is available, then return to the shared [Mod-test entry](blasphemous-modding-test.md) to route the second phase. Keep the two phase results and their next actions separate.
 
 ## Completion criterion
 
-The selected xUnit project runs through the standard test runner, references the main Mod project, and produces deterministic automated evidence without a real profile or game process. The report states that this evidence does not prove gameplay, names completion evidence and next action, and names any separately required Real-profile or **Player-performed in-game verification** phase.
+The selected xUnit project runs through the standard test runner, references the main Mod project, and produces deterministic automated evidence without a real profile or game process. The report states that this evidence does not prove gameplay, names completion evidence and next action, and names any separately required Real-profile, **Player-performed in-game verification**, or **Computer Use automated in-game test** phase.
