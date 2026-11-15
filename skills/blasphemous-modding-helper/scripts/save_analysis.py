@@ -14,11 +14,12 @@ import sys
 import tempfile
 import uuid
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 
 EXIT_SUCCESS = 0
 EXIT_FAILURE = 1
+EXIT_PARTIAL = 3
 RUN_ROOT_NAME = "blasphemous-save-analysis"
 MAX_SHAPE_MEMBERS = 40
 MAX_MODDING_PREVIEW_CHARS = 512
@@ -354,6 +355,10 @@ def _failed_analysis(
             "chunk": f"structured/{input_id}.json",
             "full": None,
         },
+        "artifact_status": {
+            "chunk": "pending",
+            "full": "unavailable",
+        },
         "full_artifact_status": "unavailable",
     }
     chunk = {
@@ -406,6 +411,10 @@ def _analyze_file(
                 "chunk": f"structured/{input_id}.json",
                 "full": f"full/{input_id}.txt",
             },
+            "artifact_status": {
+                "chunk": "pending",
+                "full": "pending",
+            },
             "full_artifact_status": "complete",
         }
         chunk = {
@@ -434,6 +443,10 @@ def _analyze_file(
         "artifacts": {
             "chunk": f"structured/{input_id}.json",
             "full": f"full/{input_id}.json",
+        },
+        "artifact_status": {
+            "chunk": "pending",
+            "full": "pending",
         },
         "full_artifact_status": "complete",
     }
@@ -534,13 +547,45 @@ def _write_text(root: Path, relative: str, value: str) -> None:
             f"Save-analysis output already exists or is linked: {target}",
         ) from error
 
-    with stream:
-        if os.fstat(stream.fileno()).st_nlink != 1:
-            raise SaveAnalysisError(
-                "unsafe-output-path",
-                f"Save-analysis output must not be hard-linked: {target}",
-            )
-        stream.write(value)
+    try:
+        with stream:
+            if os.fstat(stream.fileno()).st_nlink != 1:
+                raise SaveAnalysisError(
+                    "unsafe-output-path",
+                    f"Save-analysis output must not be hard-linked: {target}",
+                )
+            stream.write(value)
+    except (OSError, UnicodeError):
+        try:
+            target.unlink()
+        except OSError:
+            pass
+        raise
+
+
+def _artifact_error(name: str, error: Exception) -> Dict[str, str]:
+    reason = "invalid-unicode" if isinstance(error, UnicodeError) else "io-failure"
+    if isinstance(error, UnicodeError):
+        message = f"{name.capitalize()} artifact cannot be encoded as UTF-8."
+    else:
+        message = f"{name.capitalize()} artifact could not be written: {error}"
+    return {"reason": reason, "message": message}
+
+
+def _record_artifact_failure(
+    item: Dict[str, Any],
+    name: str,
+    error: Exception,
+) -> str:
+    detail = _artifact_error(name, error)
+    item["artifact_status"][name] = "failed"
+    item.setdefault("artifact_errors", {})[name] = detail
+    if name == "full":
+        item["full_artifact_status"] = "failed"
+    return (
+        f"{item['source']['path']}: {name} artifact failed "
+        f"({detail['reason']})"
+    )
 
 
 def _publish(staging: Path, run_root: Path) -> None:
@@ -575,11 +620,15 @@ def _summary(
     run_root: Path,
     items: Sequence[Dict[str, Any]],
     status: str,
+    exit_code: int,
+    partial_reasons: Sequence[str],
+    usable_artifacts: Sequence[str],
 ) -> str:
     lines = [
         "Blasphemous 1 save analysis",
         f"Run: {run_id}",
         f"Status: {status}",
+        f"Exit: {exit_code}",
         f"Inputs: {len(items)}",
         f"Output: {run_root}",
         (
@@ -587,6 +636,19 @@ def _summary(
             "deleted early or persist beyond this invocation."
         ),
     ]
+    if usable_artifacts:
+        lines.append(f"Usable evidence: {', '.join(usable_artifacts)}")
+    for reason in partial_reasons:
+        lines.append(f"Partial reason: {reason}")
+    if status == "partial":
+        lines.append(
+            "Trust: Partial evidence is incomplete and must not be treated as "
+            "complete or trusted save data."
+        )
+        lines.append(
+            "Recovery: Review the failed artifacts, then retry with a readable "
+            "copy of the affected input."
+        )
     for item in items:
         lines.extend(
             [
@@ -599,6 +661,8 @@ def _summary(
                 f"  SHA-256: {item['sha256']}",
                 f"  Structured chunk: {item['artifacts']['chunk']}",
                 f"  Full artifact: {item['artifacts']['full'] or 'unavailable'}",
+                f"  Chunk status: {item['artifact_status']['chunk']}",
+                f"  Full status: {item['artifact_status']['full']}",
             ]
         )
         if "expected_format" in item:
@@ -618,6 +682,10 @@ def _summary(
             )
         for warning in item["warnings"]:
             lines.append(f"  Warning: {warning}")
+        for name, error in item.get("artifact_errors", {}).items():
+            lines.append(
+                f"  Artifact error [{name}]: {error['reason']}: {error['message']}"
+            )
     return "\n".join(lines) + "\n"
 
 
@@ -635,7 +703,7 @@ def _directory_inputs(path: Path) -> List[tuple]:
     return inputs
 
 
-def analyze(input_path: Path) -> Path:
+def analyze(input_path: Path) -> Tuple[Path, int]:
     resolved_input = input_path.expanduser().resolve(strict=False)
     if not resolved_input.exists():
         raise SaveAnalysisError("input-missing", f"Input path does not exist: {resolved_input}")
@@ -675,28 +743,106 @@ def analyze(input_path: Path) -> Path:
     staging = Path(tempfile.mkdtemp(prefix=".staging-", dir=str(analysis_root)))
 
     try:
+        partial_reasons = []
+        for item, _, _ in analyses:
+            if item["parse_status"] == "failed":
+                error = item["error"]
+                partial_reasons.append(
+                    f"{item['source']['path']}: parse failed ({error['reason']})"
+                )
+
         for item, chunk, full_text in analyses:
-            _write_text(
-                staging,
-                item["artifacts"]["chunk"],
-                json.dumps(chunk, ensure_ascii=True, indent=2) + "\n",
-            )
-            if full_text is not None:
+            try:
                 _write_text(
                     staging,
-                    item["artifacts"]["full"],
-                    full_text,
+                    item["artifacts"]["chunk"],
+                    json.dumps(chunk, ensure_ascii=True, indent=2) + "\n",
                 )
+                item["artifact_status"]["chunk"] = "complete"
+            except SaveAnalysisError:
+                raise
+            except (OSError, UnicodeError) as error:
+                partial_reasons.append(
+                    _record_artifact_failure(item, "chunk", error)
+                )
+
+            if full_text is not None:
+                try:
+                    _write_text(
+                        staging,
+                        item["artifacts"]["full"],
+                        full_text,
+                    )
+                    item["artifact_status"]["full"] = "complete"
+                    item["full_artifact_status"] = "complete"
+                except SaveAnalysisError:
+                    raise
+                except (OSError, UnicodeError) as error:
+                    partial_reasons.append(
+                        _record_artifact_failure(item, "full", error)
+                    )
+            else:
+                item["artifact_status"]["full"] = "unavailable"
+                item["full_artifact_status"] = "unavailable"
+
+        usable_artifacts = []
+        for item, _, _ in analyses:
+            if item["parse_status"] != "ok":
+                continue
+            for name in ("chunk", "full"):
+                relative = item["artifacts"][name]
+                if relative and item["artifact_status"][name] == "complete":
+                    usable_artifacts.append(relative)
+        if not usable_artifacts:
+            raise SaveAnalysisError(
+                "no-usable-analysis",
+                "No supported input produced usable analysis evidence.",
+            )
+
+        status = "partial" if partial_reasons else "success"
+        exit_code = EXIT_PARTIAL if partial_reasons else EXIT_SUCCESS
+        summary_status = "complete"
+        try:
+            _write_text(
+                staging,
+                "summary.txt",
+                _summary(
+                    run_id,
+                    run_root,
+                    [item for item, _, _ in analyses],
+                    status,
+                    exit_code,
+                    partial_reasons,
+                    usable_artifacts,
+                ),
+            )
+        except SaveAnalysisError:
+            raise
+        except (OSError, UnicodeError) as error:
+            detail = _artifact_error("summary", error)
+            summary_status = "failed"
+            partial_reasons.append(
+                f"summary.txt artifact failed ({detail['reason']})"
+            )
+            status = "partial"
+            exit_code = EXIT_PARTIAL
 
         manifest = {
             "schema_version": 1,
             "run_id": run_id,
             "input_mode": input_mode,
-            "status": "success",
+            "status": status,
+            "exit_code": exit_code,
+            "partial_reasons": partial_reasons,
+            "usable_artifacts": usable_artifacts,
             "inputs": [item for item, _, _ in analyses],
             "artifacts": {
                 "manifest": "manifest.json",
                 "summary": "summary.txt",
+            },
+            "artifact_status": {
+                "manifest": "complete",
+                "summary": summary_status,
             },
         }
         _write_text(
@@ -704,16 +850,7 @@ def analyze(input_path: Path) -> Path:
             "manifest.json",
             json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
         )
-        _write_text(
-            staging,
-            "summary.txt",
-            _summary(
-                run_id,
-                run_root,
-                [item for item, _, _ in analyses],
-                "success",
-            ),
-        )
+
         if analysis_root.is_symlink() or analysis_root.resolve(strict=True) != analysis_root:
             raise SaveAnalysisError(
                 "unsafe-output-root",
@@ -724,7 +861,7 @@ def analyze(input_path: Path) -> Path:
         if staging.exists():
             shutil.rmtree(staging)
         raise
-    return run_root
+    return run_root, exit_code
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -737,9 +874,9 @@ def build_parser() -> argparse.ArgumentParser:
         ),
         epilog=(
             "Every run creates a unique directory under the host temporary "
-            "area and always writes manifest.json, summary.txt, structured "
-            "chunks, and a normalized full artifact. Read the manifest and "
-            "chunks before the full artifact."
+            "area and writes manifest.json, summary.txt, structured chunks, "
+            "and normalized full artifacts when available. Read the manifest "
+            "and chunks before the full artifact."
         ),
     )
 
@@ -761,7 +898,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     )
     args = parser.parse_args(argv)
     try:
-        run_root = analyze(args.input)
+        run_root, exit_code = analyze(args.input)
     except SaveAnalysisError as error:
         print(f"Error [save-analysis]: {error.message}", file=sys.stderr)
         print(f"Reason: {error.reason}", file=sys.stderr)
@@ -775,4 +912,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         print("Reason: invalid-unicode", file=sys.stderr)
         return EXIT_FAILURE
     print(run_root)
-    return EXIT_SUCCESS
+    if exit_code == EXIT_PARTIAL:
+        print(
+            "Warning [save-analysis]: partial evidence; review manifest.json "
+            "and summary.txt before using the result.",
+            file=sys.stderr,
+        )
+    return exit_code
