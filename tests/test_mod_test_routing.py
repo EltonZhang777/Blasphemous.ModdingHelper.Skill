@@ -31,6 +31,7 @@ DOCUMENTS = (
     READ_ONLY_DELEGATION,
 )
 PLAYER_HANDOFF_TURN_PHRASES = (
+    "mod_loaded",
     "every planned test item and expected result",
     "currently identifiable test session",
     "current target scene or save state",
@@ -286,6 +287,12 @@ class ModTestRoutingDocumentationTests(unittest.TestCase):
             "#player-performed-in-game-verification-handoff-and-turn-boundary)",
             player,
         )
+        self.assertIn(
+            "selects player-performed verification and reaches the "
+            "[player-performed in-game verification handoff and turn boundary]",
+            player.casefold(),
+        )
+        self.assertNotIn("has produced startup evidence", player.casefold())
 
     def test_coordination_owns_player_handoff_and_post_handoff_inactivity(self):
         text = read(COORDINATION).casefold()
@@ -294,7 +301,9 @@ class ModTestRoutingDocumentationTests(unittest.TestCase):
             self.assertIn(phrase, text)
         for phrase in (
             "## player-performed in-game verification handoff and turn boundary",
-            "after the real-profile branch has produced startup evidence",
+            "after the real-profile branch has produced `mod_loaded` startup evidence",
+            "`launched`, `ready`, and `timeout` startup states must not satisfy "
+            "the handoff precondition",
             "exact test session and required scene or save state are known",
             "handoff must be the last user-visible output",
             "no-input player observation uses the same boundary",
