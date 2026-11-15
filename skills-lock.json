@@ -27,6 +27,11 @@
       "version": "2.0.0",
       "description": "Automatically routed read-only Blasphemous 1 localization lookup reference",
       "path": "skills/blasphemous-modding-helper/references/sub-skills/localization-lookup.md"
+    },
+    "blasphemous-modding-helper:save-analysis": {
+      "version": "2.0.0",
+      "description": "Automatically routed read-only Blasphemous 1 save analysis reference",
+      "path": "skills/blasphemous-modding-helper/references/sub-skills/save-analysis.md"
     }
   }
 }

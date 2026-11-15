@@ -1,6 +1,6 @@
 ---
 name: blasphemous-modding-helper
-description: Blasphemous 1 modding development helper; supports Blasphemous 1 only, and Blasphemous 2 is not supported. Use when the user wants to build, deploy, launch, inspect startup evidence, stop, clean, or verify in-game behavior by Player-performed actions or Computer Use for a Blasphemous 1 mod; identify, explain, compare, or translate a Blasphemous 1 term; develop a Blasphemous 1 mod, analyze Blasphemous 1 decompiled source code, or debug Blasphemous 1 mod-related logs (BepInEx / Unity).
+description: Blasphemous 1 modding development helper; supports Blasphemous 1 only, and Blasphemous 2 is not supported. Use when the user wants to build, deploy, launch, inspect startup evidence, stop, clean, or verify in-game behavior by Player-performed actions or Computer Use for a Blasphemous 1 mod; analyze explicit Blasphemous 1 save evidence read-only; identify, explain, compare, or translate a Blasphemous 1 term; develop a Blasphemous 1 mod, analyze Blasphemous 1 decompiled source code, or debug Blasphemous 1 mod-related logs (BepInEx / Unity).
 ---
 
 # Blasphemous modding helper
@@ -25,16 +25,17 @@ After reading [Requirement levels](references/requirement-levels-definitions.md)
 | Test a Mod; build/deploy/launch a profile; inspect startup; stop, clean, or verify in-game behavior through Player-performed actions or Computer Use | [Mod-test entry](references/sub-skills/blasphemous-modding-test.md) | Agent MUST classify the request as `Real-profile`, `xUnit`, `both`, or `ambiguous`, then MUST follow the selected branch owner. Agent MUST ensure that Caller-owned xUnit does not wait for the Real-profile configuration gate. For `both`, Agent MUST keep independent phase reports. |
 | Generate, modify, review, or refactor Mod-owned C# or project structure | [Coding standards](references/sub-skills/coding-standards.md) | Agent MUST complete the shared entry gate and selected coding branch. Agent MUST report the ownership boundary and next implementation or verification action. |
 | Need ModdingAPI documentation, source guidance, or framework conventions | [Referencing ModdingAPI](references/sub-skills/referencing-modding-api.md) | Agent MUST complete the command-context gate and MUST resolve one local or release-aware reference. Agent MUST report the selected reference/topic and next source or code action. |
+| Analyze an explicit Blasphemous 1 save file read-only | [Save analysis](references/sub-skills/save-analysis.md) | Agent MUST require one explicit input path and MUST NOT read configuration, a Modding profile, game installation, or decompiled source. |
 
-The localization row is the only configuration-free operational exception. Every other route MUST complete the shared entry gate before its specialized work, with the Automated xUnit branch's documented exception. A completion report MUST name the selected route and its authority, then report `status`, `completion evidence`, `blocked reason` when applicable, and the next document/action.
-After classifying an operational Blasphemous 1 modding request and completing any gate required by its selected route, the agent MUST consult the [Modding knowledge](references/modding-knowledge.md) index at task start. The read-only Localization lookup route is excluded and MUST NOT run this lookup script. If a matching blocker arises later during an operational route, the agent MUST repeat the lookup. This lookup is advisory and does not change the selected route or its gate. Blasphemous 2-only requests MUST NOT use these Blasphemous 1 notes.
+The Localization lookup and Save analysis rows are documented configuration-free operational exceptions within their own scope. Every other route MUST complete the shared entry gate before its specialized work, with the Automated xUnit branch's documented exception. A completion report MUST name the selected route and its authority, then report `status`, `completion evidence`, `blocked reason` when applicable, and the next document/action.
+After classifying an operational Blasphemous 1 modding request and completing any gate required by its selected route, the agent MUST consult the [Modding knowledge](references/modding-knowledge.md) index at task start. The read-only localization lookup and Save analysis routes are excluded and MUST NOT run this lookup script. If a matching blocker arises later during an operational route, the agent MUST repeat the lookup. This lookup is advisory and does not change the selected route or its gate. Blasphemous 2-only requests MUST NOT use these Blasphemous 1 notes.
 Before applying a retrieved note, the agent MUST compare its game version, Mod version, route, and task with the user's case. If the note does not cover that version or task, or leaves coverage unknown, the agent MUST tell the user and MUST NOT present the claim as verified for that case. Logs alone MUST NOT be described as proof of gameplay behavior.
 
 When the main task identifies an evidence-backed Blasphemous 1 finding that may help beyond the current task, including a future improvement to the current Mod, the agent MUST start the [Experience note comparison](references/sub-skills/experience-note-comparison.md) in an independent child task and continue the main task without waiting for it. The comparison is read-only; it does not request approval, save a note, or create a pull request. At task end, the main task MUST follow [Experience note local save](references/sub-skills/experience-note-local-save.md) for any unique candidates. Only paths returned after an explicit local-save yes may then enter the separately approved [Experience note pull request](references/sub-skills/experience-note-pull-requests.md) workflow.
 
 ## Shared entry gate
 
-The [Invocation preflight](references/config/invocation-preflight.md) reference is the sole authority for the shared entry gate: Skill-root resolution, caller Mod-repository context, Python interpreter and host expectations, configuration scope and precedence, when first-time setup is required, path recovery, the tracked-session stop exception, and shared completion. It delegates detailed setup questions, validation, save operations, and optional local checkout to [First-Time Setup](references/config/first-time-setup.md). It routes Python interpreter and dependency validation to [Python Runtime](references/config/python-runtime.md). The read-only localization branch follows its documented configuration exception. The [Dependencies](references/config/invocation-preflight.md#dependencies) section contains the canonical post-install package and conditional workflow dependency inventory.
+The [Invocation preflight](references/config/invocation-preflight.md) reference is the sole authority for the shared entry gate: Skill-root resolution, caller Mod-repository context, Python interpreter and host expectations, configuration scope and precedence, when first-time setup is required, path recovery, the tracked-session stop exception, and shared completion. It delegates detailed setup questions, validation, save operations, and optional local checkout to [First-Time Setup](references/config/first-time-setup.md). It routes Python interpreter and dependency validation to [Python Runtime](references/config/python-runtime.md). The read-only localization lookup and Save analysis branches follow their documented configuration exceptions. The [Dependencies](references/config/invocation-preflight.md#dependencies) section contains the canonical post-install package and conditional workflow dependency inventory.
 
 ## Coding standards
 
@@ -53,9 +54,9 @@ Agent MUST follow workflow steps in order, unless otherwise explicitly specified
 
 ### Step 1: Complete shared entry gate
 
-Agent MUST complete the shared entry gate before selecting an operational specialized branch or executing command. The localization lookup branch follows its read-only exception.
+Agent MUST complete the shared entry gate before selecting an operational specialized branch or executing command. The Localization lookup and Save analysis branches follow their documented configuration-free exceptions.
 
-**Done when**: the shared entry gate's completion criteria are satisfied for an operational branch, or the localization branch has confirmed its index path and read-only context.
+**Done when**: the shared entry gate's completion criteria are satisfied for an operational branch, or a configuration-free branch has confirmed its required local input and read-only context.
 
 ### Step 2: Analyze User Question
 
@@ -63,7 +64,7 @@ Agent MUST apply the Request routing rules above and route every applicable bran
 
 Where useful to clarify the request, agent SHOULD identify the desired observable outcome and evidence relevant to the selected route, especially for Mod feature requests with a visible or persistent result. Route-specific completion criteria and evidence boundaries remain authoritative.
 
-**Done when**: user question is classified into one or more applicable branches (localization lookup, source code analysis, log analysis, mod testing, or general modding question), and every applicable specialized branch has been routed to its authoritative workflow reference or analysis task.
+**Done when**: user question is classified into one or more applicable branches (localization lookup, save analysis, source code analysis, log analysis, mod testing, or general modding question), and every applicable specialized branch has been routed to its authoritative workflow reference or analysis task.
 
 ### Step 3: Use Tools to Gather Information
 

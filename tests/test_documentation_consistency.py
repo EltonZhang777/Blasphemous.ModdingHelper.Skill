@@ -43,6 +43,7 @@ ROUTE_DOCUMENTS = (
     "references/sub-skills/blasphemous-modding-test-real-profile.md",
     "references/sub-skills/coding-standards.md",
     "references/sub-skills/referencing-modding-api.md",
+    "references/sub-skills/save-analysis.md",
 )
 DEPENDENCY_GUIDANCE = (
     REPOSITORY_ROOT / "README.md",
@@ -78,6 +79,7 @@ ROUTING_CONTRACTS = (
             ("Test a Mod; build/deploy/launch a profile", "Mod-test entry", "classify the request"),
             ("Generate, modify, review, or refactor Mod-owned C#", "Coding standards", "ownership boundary"),
             ("Need ModdingAPI documentation", "Referencing ModdingAPI", "local or release-aware reference"),
+            ("Analyze an explicit Blasphemous 1 save file read-only", "Save analysis", "MUST require one explicit input path"),
         ),
     ),
     (
@@ -91,6 +93,7 @@ ROUTING_CONTRACTS = (
             ("Configuration result", "selected config", "MUST consume"),
             ("Tracked-session stop", "recorded process tree", "MUST NOT read or edit configuration"),
             ("Path recovery", "path-recovery prompt", "MUST use the exact prompt below"),
+            ("Save analysis", "Save analysis", "MUST NOT read Skill configuration"),
             ("Preflight completion", "preflight result", "before mutations"),
         ),
     ),

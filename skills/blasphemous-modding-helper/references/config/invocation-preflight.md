@@ -7,11 +7,12 @@ description: Shared command context, configuration gate, recovery, and completio
 
 This reference is the single source of truth for the shared preflight contract of every operational `blasphemous-modding-helper` invocation. It owns command context, configuration scope selection, when first-time setup is required, path-failure recovery, the tracked-session stop exception, and preflight completion. Detailed setup questions, validation, save operations, and optional local checkout belong to [First-Time Setup](first-time-setup.md). The top-level [Skill](../../SKILL.md) remains the sole cross-branch router. Specialized references MUST link here and MUST add only their own requirements and evidence.
 
-The read-only [localization lookup branch](../sub-skills/localization-lookup.md) is the documented configuration exception. It reads the bundled localization index as text and does not run Skill scripts, inspect a Modding profile, or inspect source code. It confirms the index path and file readability, then follows its own completion criteria.
+The read-only [localization lookup branch](../sub-skills/localization-lookup.md) and [Save analysis](../sub-skills/save-analysis.md) branch are the documented configuration exceptions. Localization lookup reads the bundled localization index as text and does not run Skill scripts, inspect a Modding profile, or inspect source code. Save analysis requires one explicit local input and does not read configuration, a Modding profile, game installation, or source context. Each exception applies only within its own route and does not alter other routes.
 
 | Invocation path | Preflight route | Boundary and handoff |
 | --- | --- | --- |
 | Localization lookup | bundled index | Agent MUST read only the bundled index. Agent MUST NOT run scripts or inspect configuration, a Modding profile, or source code. Agent MUST confirm the index path and readability. Agent MUST use [Localization lookup](../sub-skills/localization-lookup.md) as the branch-completion authority. |
+| Save analysis (read-only) | [Save analysis](../sub-skills/save-analysis.md) | Agent MUST require one explicit local input path. Agent MUST NOT read Skill configuration, a Modding profile, game installation, or source context. Agent MUST use this branch-completion authority. |
 | Operational branches | shared preflight → selected branch | Agent MUST resolve command context and complete this preflight before specialized work. Agent MUST route to [Source analyzer](../sub-skills/source-analyzer.md), [Log analyzer](../sub-skills/log-analyzer.md), [Mod-test entry](../sub-skills/blasphemous-modding-test.md), [Coding standards](../sub-skills/coding-standards.md), or [Referencing ModdingAPI](../sub-skills/referencing-modding-api.md). Agent MUST treat each routed document as its branch's detailed authority. Agent MUST supply the selected branch its required context, then MUST return to the top-level [Skill](../../SKILL.md) workflow. Agent MUST leave Mod-test classification and its documented Automated xUnit exception to the Mod-test entry. |
 | First-time setup and Python validation | Python Runtime → First-Time Setup | Agent MUST complete [Python Runtime](python-runtime.md) before asking setup questions. Agent MUST use [First-Time Setup](first-time-setup.md) for setup questions, validation, save operations, and optional local checkout. Agent MUST let Python Runtime own interpreter and dependency validation, and MUST NOT install packages automatically. |
 | Configuration result | selected config | Agent MUST consume `skipped`, `passed`, `normalized`, or `failed` as valid results. When a result is `failed` or the file is missing, Agent MUST enter [First-Time Setup](first-time-setup.md). Agent MUST give project configuration precedence over user configuration. Agent MUST read, parse, and apply the selected file. Downstream branches MUST consume its scope and path without rediscovering or revalidating them. |
@@ -72,14 +73,14 @@ When check finds a file, agent MUST read, parse, and apply that selected file. C
 
 The no-argument `check_preferences.py` mode remains available for callers that only need the legacy `project`, `user`, or empty scope output; it does not run freshness validation or write configuration metadata.
 
-When check finds no file, agent MUST enter [First-Time Setup](first-time-setup.md). Agent MUST NOT infer defaults or enter source analysis, log analysis, modding operations, or test workflow commands before setup reports success or explicit setup failure.
+When check finds no file, agent MUST enter [First-Time Setup](first-time-setup.md) for every operational route except the documented Localization lookup and Save analysis exceptions. Agent MUST NOT infer defaults or enter source analysis, log analysis, modding operations, or test workflow commands before setup reports success or explicit setup failure.
 
 ## First-time setup and recovery
 
 [First-Time Setup](first-time-setup.md) owns setup questions, validation, scope save, optional local ModdingAPI checkout, and the setup-specific success or incomplete result. The shared gate above owns when setup is required and consumes that result; this section owns the common blocking and recovery contract:
 
-- Missing configuration MUST block every operational branch until setup succeeds. The read-only localization lookup branch does not require configuration and remains available when no configuration file exists. Setup failure MUST be reported with its error and retry path.
-- Only preflight exception is `/blasphemous-modding-test stop SESSION_ID`. It MUST use only recorded session identity, MUST address only that tracked process tree, and MUST not read or edit configuration when normal context preflight is unavailable.
+- Missing configuration MUST block every operational branch until setup succeeds, except the read-only localization lookup and Save analysis branches. Those exceptions remain available when no configuration file exists. Setup failure MUST be reported with its error and retry path.
+- The only tracked-session stop exception is `/blasphemous-modding-test stop SESSION_ID`. It MUST use only recorded session identity, MUST address only that tracked process tree, and MUST NOT read or edit configuration when normal context preflight is unavailable.
 - Source-code or modding path failure MUST use this exact handoff: "Some operations failed using the saved paths in `config.yml`. Would you like to re-run the first-time setup to update them?"
 - If user answers Yes, agent MUST delete active `config.yml` and return to [First-Time Setup](first-time-setup.md). If user answers No, agent MUST continue with current paths and report specific failure.
 
@@ -93,7 +94,7 @@ The entries below record the declared post-install package and dependencies that
 
 | Dependency | Scope | Declaration and check | Missing dependency behavior |
 | --- | --- | --- | --- |
-| `PyYAML>=6.0` | Python workflows that load `config.yml` through the shared configuration gate. The read-only localization route and caller-owned Automated xUnit branch are exceptions. | Declared in [`requirements.txt`](../../requirements.txt) and validated by the [Python Runtime](python-runtime.md) gate. | Missing or incompatible packages produce configuration exit code `78` with a stable diagnostic and manual repair action. The gate never installs or upgrades Python packages. |
+| `PyYAML>=6.0` | Python workflows that load `config.yml` through the shared configuration gate. The read-only localization and Save analysis routes and caller-owned Automated xUnit branch are exceptions. | Declared in [`requirements.txt`](../../requirements.txt) and validated by the [Python Runtime](python-runtime.md) gate. | Missing or incompatible packages produce configuration exit code `78` with a stable diagnostic and manual repair action. The gate never installs or upgrades Python packages. |
 
 ### Conditional workflow dependencies
 
@@ -115,8 +116,8 @@ The `ilspycmd` global-tool installation above is existing decompiler behavior; t
 
 Shared preflight is complete only when all applicable conditions below hold:
 
-1. An operational branch has a ready command context, including installed Skill root, caller Mod repository, resolved Python interpreter, and supported native host; or the localization branch has a confirmed bundled index path and readable file.
-2. An operational branch has a selected and applied project or user configuration file, or First-Time Setup has reported success. The localization branch has no configuration requirement.
+1. An operational branch has a ready command context, including installed Skill root, caller Mod repository, resolved Python interpreter, and supported native host; Localization lookup has a confirmed bundled index path and readable file; or Save analysis has one explicit readable local input and no configuration requirement.
+2. An operational branch has a selected and applied project or user configuration file, or First-Time Setup has reported success. Localization lookup and Save analysis have no configuration requirement within their documented scope.
 3. The selected branch has received its required context before mutating files, launching a process, or relying on source or log paths.
 4. For the tracked-session stop exception, the recorded process is stopped or confirmed gone and no unrelated process was touched.
 5. For declined path recovery, the specific failure and next action have been reported. Successful setup instead returns a validated configuration file to the main workflow.
