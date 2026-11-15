@@ -460,6 +460,14 @@ def _paths_overlap(left: Path, right: Path) -> bool:
     return common in {str(left), str(right)}
 
 
+def _path_within(path: Path, root: Path) -> bool:
+    try:
+        common = os.path.commonpath((str(path), str(root)))
+    except ValueError:
+        return False
+    return common == str(root)
+
+
 def _output_root(input_path: Path) -> Path:
     temp_root = Path(tempfile.gettempdir()).resolve()
     candidate = temp_root / RUN_ROOT_NAME
@@ -474,10 +482,13 @@ def _output_root(input_path: Path) -> Path:
             f"Save-analysis output root is not a directory: {candidate}",
         )
     analysis_root = candidate.resolve()
-    if analysis_root.parent != temp_root:
+    if analysis_root != candidate or analysis_root.parent != temp_root:
         raise SaveAnalysisError(
             "unsafe-output-root",
-            f"Save-analysis output root escapes the host temporary directory: {analysis_root}",
+            (
+                "Save-analysis output root must not redirect outside its "
+                f"dedicated temporary directory: {candidate}"
+            ),
         )
     if _paths_overlap(input_path, analysis_root):
         raise SaveAnalysisError(
@@ -487,10 +498,76 @@ def _output_root(input_path: Path) -> Path:
     return analysis_root
 
 
-def _write_text(path: Path, value: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", encoding="utf-8", newline="\n") as stream:
+def _write_text(root: Path, relative: str, value: str) -> None:
+    target = root / relative
+    resolved_root = root.resolve(strict=True)
+    resolved_target = target.resolve(strict=False)
+    if (
+        root.is_symlink()
+        or resolved_root != root
+        or target.is_symlink()
+        or resolved_target != target
+        or not _path_within(resolved_target, resolved_root)
+    ):
+        raise SaveAnalysisError(
+            "unsafe-output-path",
+            f"Save-analysis output path redirects through a link: {target}",
+        )
+
+    target.parent.mkdir(parents=True, exist_ok=True)
+    resolved_parent = target.parent.resolve(strict=True)
+    if (
+        target.parent.is_symlink()
+        or resolved_parent != target.parent
+        or not _path_within(resolved_parent, resolved_root)
+    ):
+        raise SaveAnalysisError(
+            "unsafe-output-path",
+            f"Save-analysis output parent redirects through a link: {target.parent}",
+        )
+
+    try:
+        stream = target.open("x", encoding="utf-8", newline="\n")
+    except FileExistsError as error:
+        raise SaveAnalysisError(
+            "unsafe-output-path",
+            f"Save-analysis output already exists or is linked: {target}",
+        ) from error
+
+    with stream:
+        if os.fstat(stream.fileno()).st_nlink != 1:
+            raise SaveAnalysisError(
+                "unsafe-output-path",
+                f"Save-analysis output must not be hard-linked: {target}",
+            )
         stream.write(value)
+
+
+def _publish(staging: Path, run_root: Path) -> None:
+    try:
+        run_root.mkdir(mode=0o700)
+    except FileExistsError as error:
+        raise SaveAnalysisError(
+            "run-collision",
+            f"Generated run directory already exists: {run_root}",
+        ) from error
+
+    moved = []
+    try:
+        for child in sorted(staging.iterdir(), key=lambda entry: entry.name.casefold()):
+            destination = run_root / child.name
+            os.rename(child, destination)
+            moved.append((destination, child))
+        staging.rmdir()
+    except Exception:
+        for destination, source in reversed(moved):
+            if destination.exists() or destination.is_symlink():
+                os.rename(destination, source)
+        try:
+            run_root.rmdir()
+        except OSError:
+            pass
+        raise
 
 
 def _summary(
@@ -588,21 +665,26 @@ def analyze(input_path: Path) -> Path:
 
     analysis_root = _output_root(resolved_input)
     analysis_root.mkdir(parents=True, exist_ok=True)
+    if analysis_root.is_symlink() or analysis_root.resolve(strict=True) != analysis_root:
+        raise SaveAnalysisError(
+            "unsafe-output-root",
+            f"Save-analysis output root was redirected: {analysis_root}",
+        )
     run_id = uuid.uuid4().hex
     run_root = analysis_root / run_id
-    if run_root.exists():
-        raise SaveAnalysisError("run-collision", f"Generated run directory already exists: {run_root}")
     staging = Path(tempfile.mkdtemp(prefix=".staging-", dir=str(analysis_root)))
 
     try:
         for item, chunk, full_text in analyses:
             _write_text(
-                staging / item["artifacts"]["chunk"],
+                staging,
+                item["artifacts"]["chunk"],
                 json.dumps(chunk, ensure_ascii=True, indent=2) + "\n",
             )
             if full_text is not None:
                 _write_text(
-                    staging / item["artifacts"]["full"],
+                    staging,
+                    item["artifacts"]["full"],
                     full_text,
                 )
 
@@ -618,11 +700,13 @@ def analyze(input_path: Path) -> Path:
             },
         }
         _write_text(
-            staging / "manifest.json",
+            staging,
+            "manifest.json",
             json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
         )
         _write_text(
-            staging / "summary.txt",
+            staging,
+            "summary.txt",
             _summary(
                 run_id,
                 run_root,
@@ -630,12 +714,17 @@ def analyze(input_path: Path) -> Path:
                 "success",
             ),
         )
-        os.rename(staging, run_root)
+        if analysis_root.is_symlink() or analysis_root.resolve(strict=True) != analysis_root:
+            raise SaveAnalysisError(
+                "unsafe-output-root",
+                f"Save-analysis output root was redirected: {analysis_root}",
+            )
+        _publish(staging, run_root)
     except Exception:
         if staging.exists():
             shutil.rmtree(staging)
         raise
-    return run_root.resolve()
+    return run_root
 
 
 def build_parser() -> argparse.ArgumentParser:

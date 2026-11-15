@@ -38,7 +38,7 @@ class SaveAnalysisTests(unittest.TestCase):
     def tearDown(self):
         self.temp_dir.cleanup()
 
-    def run_cli(self, *arguments):
+    def cli_environment(self, extra_env=None):
         environment = os.environ.copy()
         environment["TEMP"] = str(self.temp_root)
         environment["TMP"] = str(self.temp_root)
@@ -46,10 +46,15 @@ class SaveAnalysisTests(unittest.TestCase):
         environment["HOME"] = str(self.work)
         environment["USERPROFILE"] = str(self.work)
         environment["PYTHONIOENCODING"] = "utf-8"
+        if extra_env:
+            environment.update(extra_env)
+        return environment
+
+    def run_cli(self, *arguments, extra_env=None, cwd=None):
         return subprocess.run(
             [sys.executable, str(CLI), *arguments],
-            cwd=str(self.work),
-            env=environment,
+            cwd=str(cwd or self.work),
+            env=self.cli_environment(extra_env),
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -67,6 +72,35 @@ class SaveAnalysisTests(unittest.TestCase):
         for identifier, payload in payloads:
             lines.extend((identifier, json.dumps(payload, ensure_ascii=False)))
         return ("\n".join(lines) + "\n").encode("utf-8")
+
+    def shadow_sitecustomize(self):
+        directory = self.root / "shadow python"
+        directory.mkdir()
+        (directory / "sitecustomize.py").write_text(
+            "\n".join(
+                [
+                    "import os",
+                    "import tempfile",
+                    "import uuid",
+                    "",
+                    "_original_mkdtemp = tempfile.mkdtemp",
+                    "",
+                    "def _mkdtemp(*args, **kwargs):",
+                    "    fixed = os.environ.get('SAVE_ANALYSIS_TEST_STAGING')",
+                    "    if fixed and kwargs.get('prefix') == '.staging-':",
+                    "        return fixed",
+                    "    return _original_mkdtemp(*args, **kwargs)",
+                    "",
+                    "tempfile.mkdtemp = _mkdtemp",
+                    "fixed_uuid = os.environ.get('SAVE_ANALYSIS_TEST_UUID')",
+                    "if fixed_uuid:",
+                    "    uuid.uuid4 = lambda: uuid.UUID(fixed_uuid)",
+                ]
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        return directory
 
     def test_vanilla_save_is_analyzed_without_configuration(self):
         source = self.root / "Unicode 存档.bin"
@@ -186,6 +220,173 @@ class SaveAnalysisTests(unittest.TestCase):
             self.assertTrue((run_root / "manifest.json").is_file())
             self.assertTrue((run_root / "summary.txt").is_file())
             self.assertTrue((run_root / "full" / "input-1.json").is_file())
+
+    def test_concurrent_runs_publish_distinct_complete_directories(self):
+        source = self.root / "concurrent save.bin"
+        source.write_bytes(self.vanilla_bytes({"value": 1}))
+        command = [sys.executable, str(CLI), str(source)]
+        environment = self.cli_environment()
+        processes = [
+            subprocess.Popen(
+                command,
+                cwd=str(self.work),
+                env=environment,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                shell=False,
+            )
+            for _ in range(2)
+        ]
+        results = [process.communicate(timeout=60) for process in processes]
+
+        for process, (stdout, stderr) in zip(processes, results):
+            self.assertEqual(process.returncode, 0, stderr)
+            self.assertTrue((Path(stdout.strip()) / "manifest.json").is_file())
+        self.assertNotEqual(results[0][0].strip(), results[1][0].strip())
+        analysis_root = self.temp_root / "blasphemous-save-analysis"
+        self.assertEqual(list(analysis_root.glob(".staging-*")), [])
+
+    def test_unsafe_output_root_file_is_rejected(self):
+        source = self.root / "save.bin"
+        source.write_bytes(self.vanilla_bytes({"value": 1}))
+        analysis_root = self.temp_root / "blasphemous-save-analysis"
+        analysis_root.write_bytes(b"sentinel")
+
+        unsafe_root = self.run_cli(str(source))
+
+        self.assertEqual(unsafe_root.returncode, 1)
+        self.assertIn("Reason: unsafe-output-root", unsafe_root.stderr)
+        self.assertEqual(analysis_root.read_bytes(), b"sentinel")
+
+    def test_input_output_overlap_is_rejected(self):
+        analysis_root = self.temp_root / "blasphemous-save-analysis"
+        analysis_root.mkdir()
+        overlapping_source = analysis_root / "input.save"
+        overlapping_source.write_bytes(self.vanilla_bytes({"value": 2}))
+        overlap = self.run_cli(str(overlapping_source))
+
+        self.assertEqual(overlap.returncode, 1)
+        self.assertIn("Reason: input-output-overlap", overlap.stderr)
+        self.assertEqual(
+            [path.name for path in analysis_root.iterdir()],
+            ["input.save"],
+        )
+        self.assertEqual(list(analysis_root.glob(".staging-*")), [])
+
+    def test_output_root_symlink_does_not_redirect_artifacts(self):
+        source = self.root / "save.bin"
+        source.write_bytes(self.vanilla_bytes({"value": 1}))
+        outside = self.root / "outside output"
+        outside.mkdir()
+        analysis_root = self.temp_root / "blasphemous-save-analysis"
+        try:
+            os.symlink(outside, analysis_root, target_is_directory=True)
+        except OSError as error:
+            self.skipTest(f"directory symlinks unavailable: {error}")
+
+        result = self.run_cli(str(source))
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("Reason: unsafe-output-root", result.stderr)
+        self.assertEqual(list(outside.iterdir()), [])
+        self.assertEqual(source.read_bytes(), self.vanilla_bytes({"value": 1}))
+
+    def test_staging_hard_link_cannot_redirect_an_artifact_write(self):
+        source = self.root / "save.bin"
+        source.write_bytes(self.vanilla_bytes({"value": 1}))
+        analysis_root = self.temp_root / "blasphemous-save-analysis"
+        analysis_root.mkdir()
+        staging = analysis_root / ".staging-fixed"
+        staging.mkdir()
+        external = self.root / "external sentinel"
+        external.write_bytes(b"do not overwrite")
+        try:
+            os.link(external, staging / "manifest.json")
+        except OSError as error:
+            self.skipTest(f"hard links unavailable: {error}")
+        shadow = self.shadow_sitecustomize()
+
+        result = self.run_cli(
+            str(source),
+            extra_env={
+                "PYTHONPATH": str(shadow),
+                "SAVE_ANALYSIS_TEST_STAGING": str(staging),
+            },
+        )
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("Reason: unsafe-output-path", result.stderr)
+        self.assertEqual(external.read_bytes(), b"do not overwrite")
+        self.assertFalse(staging.exists())
+        self.assertEqual(list(analysis_root.iterdir()), [])
+
+    def test_run_collision_preserves_published_output(self):
+        source = self.root / "save.bin"
+        source.write_bytes(self.vanilla_bytes({"value": 1}))
+        fixed_uuid = "00000000-0000-4000-8000-000000000001"
+        shadow = self.shadow_sitecustomize()
+        environment = {
+            "PYTHONPATH": str(shadow),
+            "SAVE_ANALYSIS_TEST_UUID": fixed_uuid,
+        }
+
+        first = self.run_cli(str(source), extra_env=environment)
+        self.assertEqual(first.returncode, 0, first.stderr)
+        run_root = Path(first.stdout.strip())
+        before = {
+            path.relative_to(run_root).as_posix(): path.read_bytes()
+            for path in run_root.rglob("*")
+            if path.is_file()
+        }
+        source.write_bytes(self.vanilla_bytes({"value": 2}))
+
+        second = self.run_cli(str(source), extra_env=environment)
+
+        self.assertEqual(second.returncode, 1)
+        self.assertIn("Reason: run-collision", second.stderr)
+        after = {
+            path.relative_to(run_root).as_posix(): path.read_bytes()
+            for path in run_root.rglob("*")
+            if path.is_file()
+        }
+        self.assertEqual(after, before)
+        analysis_root = self.temp_root / "blasphemous-save-analysis"
+        self.assertEqual(list(analysis_root.glob(".staging-*")), [])
+
+    def test_missing_configuration_and_external_sentinels_remain_untouched(self):
+        source_directory = self.root / "input sentinels"
+        source_directory.mkdir()
+        source = source_directory / "Unicode 存档.bin"
+        source.write_bytes(self.vanilla_bytes({"value": 1}))
+        source_files = {path.name for path in source_directory.iterdir()}
+        fresh_home = self.root / "fresh caller"
+        fresh_home.mkdir()
+        profile = self.root / "profile sentinel"
+        profile.mkdir()
+        (profile / "keep.txt").write_text("profile", encoding="utf-8")
+        game = self.root / "game sentinel"
+        game.mkdir()
+        (game / "keep.txt").write_text("game", encoding="utf-8")
+
+        result = self.run_cli(
+            str(source),
+            extra_env={
+                "HOME": str(fresh_home),
+                "USERPROFILE": str(fresh_home),
+            },
+            cwd=fresh_home,
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(list(fresh_home.iterdir()), [])
+        self.assertEqual({path.name for path in source_directory.iterdir()}, source_files)
+        self.assertEqual((profile / "keep.txt").read_text(encoding="utf-8"), "profile")
+        self.assertEqual((game / "keep.txt").read_text(encoding="utf-8"), "game")
+        self.assertFalse((profile / "blasphemous-save-analysis").exists())
+        self.assertFalse((game / "blasphemous-save-analysis").exists())
 
     def test_moddingapi_records_preserve_duplicate_identifiers_and_order(self):
         source = self.root / "renamed-no-extension.bin"
@@ -383,6 +584,7 @@ class SaveAnalysisTests(unittest.TestCase):
         nested = source / "nested"
         nested.mkdir()
         (nested / "savegame_1.save").write_bytes(vanilla)
+        source_files = {path.name for path in source.iterdir()}
 
         result = self.run_cli(str(source))
 
@@ -408,6 +610,7 @@ class SaveAnalysisTests(unittest.TestCase):
                 for name in expected_roles
             },
         )
+        self.assertEqual({path.name for path in source.iterdir()}, source_files)
 
         summary = (run_root / "summary.txt").read_text(encoding="utf-8")
         for name in expected_roles:

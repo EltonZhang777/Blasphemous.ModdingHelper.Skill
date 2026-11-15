@@ -10,6 +10,8 @@ Save analysis MUST remain configuration-free. It MUST NOT read `config.yml`, PyY
 
 The route MUST write output only under the host temporary directory. It MUST NOT write to the selected input, the Caller Mod repository, the game installation, a Modding profile, or Skill configuration.
 
+The analyzer MUST canonicalize the selected input, the temporary output root, and each artifact target before writing. It MUST reject an output root that is a file, symbolic link, or redirected path; an artifact target that escapes its staging root or is already linked; and any input/output overlap. These conditions MUST fail as unsafe output or overlap errors rather than falling back to another path.
+
 ## Command
 
 Resolve `PYTHON3` and the installed `SKILL_ROOT` before invoking the public Python entry point.
@@ -51,6 +53,8 @@ Only these exact names and the documented `_backup` suffix are supported. Arbitr
 ## Run artifacts
 
 Each invocation MUST create a unique run directory under the host temporary area, under `blasphemous-save-analysis/<run-id>`. The command MUST print the normalized absolute run path.
+
+Artifacts MUST be written as exclusive regular files inside a unique staging directory. The analyzer MUST NOT follow a symbolic link or existing hard link while writing. Publication MUST create the final run directory exclusively and MUST NOT merge into, overwrite, or replace an existing run. A failed publication MUST leave previously published runs unchanged and remove its staging directory when possible.
 
 The run MUST contain:
 
