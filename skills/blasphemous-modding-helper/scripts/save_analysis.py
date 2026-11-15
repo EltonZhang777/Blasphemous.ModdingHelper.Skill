@@ -33,10 +33,16 @@ CONVENTIONAL_MODDING_IDENTIFIER = re.compile(
 class SaveAnalysisError(Exception):
     """A fatal save-analysis input or output failure."""
 
-    def __init__(self, reason: str, message: str) -> None:
+    def __init__(
+        self,
+        reason: str,
+        message: str,
+        source: Optional[Dict[str, Any]] = None,
+    ) -> None:
         super().__init__(message)
         self.reason = reason
         self.message = message
+        self.source = source
 
 
 def _sha256(value: bytes) -> str:
@@ -49,6 +55,17 @@ def _source_identity(path: Path, value: bytes) -> Dict[str, Any]:
         "name": path.name,
         "bytes": len(value),
         "sha256": _sha256(value),
+        "content_status": "available",
+    }
+
+
+def _unavailable_source_identity(path: Path) -> Dict[str, Any]:
+    return {
+        "path": str(path),
+        "name": path.name,
+        "bytes": None,
+        "sha256": None,
+        "content_status": "unavailable",
     }
 
 
@@ -380,21 +397,31 @@ def _analyze_file(
     try:
         value = path.read_bytes()
     except OSError as error:
-        raise SaveAnalysisError("input-unreadable", f"Input could not be read: {path}") from error
+        raise SaveAnalysisError(
+            "input-unreadable",
+            f"Input could not be read: {path}",
+            source=_unavailable_source_identity(path),
+        ) from error
     source = _source_identity(path, value)
     vanilla_error = None
     try:
         parsed = _decode_vanilla(value)
     except SaveAnalysisError as error:
+        error.source = source
         vanilla_error = error
         parsed = None
 
-    records, counts = _decode_modding(value)
+    try:
+        records, counts = _decode_modding(value)
+    except SaveAnalysisError as error:
+        error.source = source
+        raise
     has_modding_content = _has_modding_content(records, counts)
     if parsed is not None and has_modding_content:
         raise SaveAnalysisError(
             "ambiguous-content",
             "Input matches more than one supported save format.",
+            source=source,
         )
     if has_modding_content:
         item = {
@@ -650,6 +677,10 @@ def _summary(
             "copy of the affected input."
         )
     for item in items:
+        byte_count = (
+            item["bytes"] if item["bytes"] is not None else "unavailable"
+        )
+        source_digest = item["sha256"] or "unavailable"
         lines.extend(
             [
                 "",
@@ -657,8 +688,8 @@ def _summary(
                 f"  Role: {item['role']}",
                 f"  Format: {item['format']}",
                 f"  Status: {item['parse_status']}",
-                f"  Bytes: {item['bytes']}",
-                f"  SHA-256: {item['sha256']}",
+                f"  Bytes: {byte_count}",
+                f"  SHA-256: {source_digest}",
                 f"  Structured chunk: {item['artifacts']['chunk']}",
                 f"  Full artifact: {item['artifacts']['full'] or 'unavailable'}",
                 f"  Chunk status: {item['artifact_status']['chunk']}",
@@ -727,7 +758,7 @@ def analyze(input_path: Path) -> Tuple[Path, int]:
         except SaveAnalysisError as error:
             if input_mode != "directory":
                 raise
-            source = _source_identity(path, path.read_bytes())
+            source = error.source or _unavailable_source_identity(path)
             analysis = _failed_analysis(source, input_id, role_hint, error)
         analyses.append(analysis)
 

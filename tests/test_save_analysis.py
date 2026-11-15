@@ -86,13 +86,20 @@ class SaveAnalysisTests(unittest.TestCase):
                     "",
                     "_original_mkdtemp = tempfile.mkdtemp",
                     "_original_path_open = pathlib.Path.open",
+                    "_original_path_read_bytes = pathlib.Path.read_bytes",
                     "_fail_name = os.environ.get('SAVE_ANALYSIS_TEST_FAIL_WRITE')",
+                    "_fail_read_name = os.environ.get('SAVE_ANALYSIS_TEST_FAIL_READ')",
                     "",
                     "def _open_path(self, *args, **kwargs):",
                     "    mode = args[0] if args else kwargs.get('mode', 'r')",
                     "    if _fail_name and self.name == _fail_name and 'x' in mode:",
                     "        raise OSError('injected write failure')",
                     "    return _original_path_open(self, *args, **kwargs)",
+                    "",
+                    "def _read_bytes(self, *args, **kwargs):",
+                    "    if _fail_read_name and self.name == _fail_read_name:",
+                    "        raise PermissionError('injected unreadable input')",
+                    "    return _original_path_read_bytes(self, *args, **kwargs)",
                     "",
                     "def _mkdtemp(*args, **kwargs):",
                     "    fixed = os.environ.get('SAVE_ANALYSIS_TEST_STAGING')",
@@ -101,6 +108,7 @@ class SaveAnalysisTests(unittest.TestCase):
                     "    return _original_mkdtemp(*args, **kwargs)",
                     "",
                     "pathlib.Path.open = _open_path",
+                    "pathlib.Path.read_bytes = _read_bytes",
                     "tempfile.mkdtemp = _mkdtemp",
                     "fixed_uuid = os.environ.get('SAVE_ANALYSIS_TEST_UUID')",
                     "if fixed_uuid:",
@@ -788,6 +796,68 @@ class SaveAnalysisTests(unittest.TestCase):
         self.assertIn("Status: failed", summary)
         self.assertIn("Error: unsupported-format", summary)
         self.assertIn("Full artifact: unavailable", summary)
+
+    def test_directory_unreadable_input_preserves_valid_siblings_as_partial(self):
+        source = self.root / "unreadable directory"
+        source.mkdir()
+        valid = source / "app_settings"
+        valid.write_bytes(self.vanilla_bytes({"value": 1}))
+        unreadable = source / "savegame_0.save"
+        unreadable.write_bytes(self.vanilla_bytes({"value": 2}))
+        shadow = self.shadow_sitecustomize()
+
+        result = self.run_cli(
+            str(source),
+            extra_env={
+                "PYTHONPATH": str(shadow),
+                "SAVE_ANALYSIS_TEST_FAIL_READ": unreadable.name,
+            },
+        )
+
+        self.assertEqual(result.returncode, 3, result.stderr)
+        self.assertIn("Warning [save-analysis]: partial evidence", result.stderr)
+        run_root = Path(result.stdout.strip())
+        manifest = json.loads((run_root / "manifest.json").read_text(encoding="utf-8"))
+        self.assertEqual(manifest["status"], "partial")
+        self.assertEqual(manifest["exit_code"], 3)
+        self.assertEqual(
+            manifest["usable_artifacts"],
+            ["structured/input-1.json", "full/input-1.json"],
+        )
+        by_name = {item["source"]["name"]: item for item in manifest["inputs"]}
+        self.assertEqual(by_name["app_settings"]["parse_status"], "ok")
+        self.assertEqual(
+            by_name["app_settings"]["artifact_status"],
+            {"chunk": "complete", "full": "complete"},
+        )
+        failed = by_name["savegame_0.save"]
+        self.assertEqual(failed["role"], "vanilla-player-save")
+        self.assertEqual(failed["parse_status"], "failed")
+        self.assertEqual(failed["error"]["reason"], "input-unreadable")
+        self.assertIsNone(failed["bytes"])
+        self.assertIsNone(failed["sha256"])
+        self.assertEqual(failed["source"]["content_status"], "unavailable")
+        self.assertIsNone(failed["artifacts"]["full"])
+        self.assertEqual(
+            failed["artifact_status"],
+            {"chunk": "complete", "full": "unavailable"},
+        )
+        chunk = json.loads(
+            (run_root / failed["artifacts"]["chunk"]).read_text(encoding="utf-8")
+        )
+        self.assertEqual(chunk["error"]["reason"], "input-unreadable")
+        self.assertIsNone(chunk["source"]["bytes"])
+        self.assertIsNone(chunk["source"]["sha256"])
+        self.assertEqual(chunk["source"]["content_status"], "unavailable")
+
+        summary = (run_root / "summary.txt").read_text(encoding="utf-8")
+        self.assertIn("Status: partial", summary)
+        self.assertIn("Error: input-unreadable", summary)
+        self.assertIn("Bytes: unavailable", summary)
+        self.assertIn("SHA-256: unavailable", summary)
+        self.assertIn("Recovery:", summary)
+        analysis_root = self.temp_root / "blasphemous-save-analysis"
+        self.assertEqual(list(analysis_root.glob(".staging-*")), [])
 
     def test_directory_full_artifact_failure_preserves_other_files(self):
         source = self.root / "partial full directory"

@@ -69,6 +69,8 @@ For a failed directory input, the structured chunk records the reason and the ma
 
 Each input MUST record separate `chunk` and `full` artifact statuses. A failed write MUST NOT leave a partial artifact in place. A failed or unavailable artifact MUST remain visible in the manifest and summary without being described as complete.
 
+When a supported directory file cannot be read, its manifest and structured chunk MUST preserve its path and name, record the `input-unreadable` reason, set byte count and digest to `null`, and set `content_status` to `unavailable`. Readable siblings remain in a partial run when any usable analysis exists.
+
 `manifest.json` is the machine-readable self-description required for a published run. If it cannot be written completely, the analyzer MUST fail with exit `1`, remove its staging directory when possible, and publish no run; it MUST NOT publish a summary-only result. A `summary.txt` write failure MAY publish a partial run, provided the manifest records the failed summary and partial reason and the CLI returns `3`.
 
 The manifest and structured chunks are the preferred evidence surface. The agent SHOULD read them before the full artifact, because the full artifact can contain sensitive save data and can be larger.
