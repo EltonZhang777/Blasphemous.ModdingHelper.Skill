@@ -8,18 +8,25 @@ import hashlib
 import json
 import math
 import os
+import re
 import shutil
 import sys
 import tempfile
 import uuid
 from pathlib import Path
-from typing import Any, Dict, Optional, Sequence
+from typing import Any, Dict, List, Optional, Sequence
 
 
 EXIT_SUCCESS = 0
 EXIT_FAILURE = 1
 RUN_ROOT_NAME = "blasphemous-save-analysis"
 MAX_SHAPE_MEMBERS = 40
+MAX_MODDING_PREVIEW_CHARS = 512
+CONVENTIONAL_MODDING_IDENTIFIER = re.compile(
+    r"(?:[A-Za-z0-9_-]+\.)+[A-Za-z0-9_-]+|"
+    r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
+    r"[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
+)
 
 
 class SaveAnalysisError(Exception):
@@ -55,6 +62,14 @@ def _parse_finite_float(value: str) -> float:
     return number
 
 
+def _json_loads(value: str):
+    return json.loads(
+        value,
+        parse_constant=_reject_nonstandard_constant,
+        parse_float=_parse_finite_float,
+    )
+
+
 def _decode_vanilla(value: bytes) -> Any:
     encoded = value.strip()
     try:
@@ -66,13 +81,144 @@ def _decode_vanilla(value: bytes) -> Any:
     except UnicodeDecodeError as error:
         raise SaveAnalysisError("invalid-utf8", "Vanilla save payload is not valid UTF-8.") from error
     try:
-        return json.loads(
-            text,
-            parse_constant=_reject_nonstandard_constant,
-            parse_float=_parse_finite_float,
-        )
+        return _json_loads(text)
     except ValueError as error:
         raise SaveAnalysisError("invalid-json", "Vanilla save payload is not valid JSON.") from error
+
+
+def _parse_json_line(value: str):
+    try:
+        return _json_loads(value), None
+    except ValueError as error:
+        return None, str(error)
+
+
+def _decode_modding(value: bytes):
+    try:
+        text = value.decode("utf-8")
+    except UnicodeDecodeError as error:
+        raise SaveAnalysisError(
+            "invalid-utf8",
+            "ModdingAPI persistence file is not valid UTF-8.",
+        ) from error
+
+    lines = text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+    if lines and lines[-1] == "":
+        lines.pop()
+    records = []
+    counts = {
+        "valid_records": 0,
+        "invalid_records": 0,
+        "incomplete_records": 0,
+        "blank_lines": 0,
+    }
+    index = 0
+    while index < len(lines):
+        identifier = lines[index]
+        if not identifier.strip():
+            records.append({"status": "blank", "line": index + 1})
+            counts["blank_lines"] += 1
+            index += 1
+            continue
+        if index + 1 >= len(lines):
+            records.append(
+                {
+                    "status": "incomplete",
+                    "identifier": identifier,
+                    "identifier_line": index + 1,
+                    "payload_line": None,
+                }
+            )
+            counts["incomplete_records"] += 1
+            index += 1
+            continue
+
+        raw_payload = lines[index + 1]
+        parsed, error = _parse_json_line(raw_payload)
+        if error is None:
+            records.append(
+                {
+                    "status": "valid",
+                    "identifier": identifier,
+                    "identifier_line": index + 1,
+                    "payload_line": index + 2,
+                    "payload": parsed,
+                }
+            )
+            counts["valid_records"] += 1
+        else:
+            records.append(
+                {
+                    "status": "invalid",
+                    "identifier": identifier,
+                    "identifier_line": index + 1,
+                    "payload_line": index + 2,
+                    "raw_payload": raw_payload,
+                    "error": error,
+                }
+            )
+            counts["invalid_records"] += 1
+        index += 2
+    return records, counts
+
+
+def _format_modding_full(records: Sequence[Dict[str, Any]]) -> str:
+    lines = []
+    for record in records:
+        status = record["status"]
+        if status == "blank":
+            lines.append("")
+            continue
+        lines.append(record["identifier"])
+        if status == "valid":
+            lines.append(
+                json.dumps(
+                    record["payload"],
+                    ensure_ascii=False,
+                    allow_nan=False,
+                    indent=4,
+                )
+            )
+        elif status == "invalid":
+            lines.append(record["raw_payload"])
+    return "\n".join(lines) + "\n"
+
+
+def _modding_chunk_records(
+    records: Sequence[Dict[str, Any]]
+) -> List[Dict[str, Any]]:
+    chunk_records = []
+    for record in records:
+        chunk_record = {
+            key: value
+            for key, value in record.items()
+            if key not in {"payload", "raw_payload"}
+        }
+        if record["status"] == "valid":
+            chunk_record["payload_shape"] = _value_shape(record["payload"])
+        elif record["status"] == "invalid":
+            raw_payload = record["raw_payload"]
+            chunk_record["raw_payload_preview"] = raw_payload[
+                :MAX_MODDING_PREVIEW_CHARS
+            ]
+            chunk_record["raw_payload_chars"] = len(raw_payload)
+            chunk_record["raw_payload_truncated"] = (
+                len(raw_payload) > MAX_MODDING_PREVIEW_CHARS
+            )
+        chunk_records.append(chunk_record)
+    return chunk_records
+
+
+def _has_modding_content(
+    records: Sequence[Dict[str, Any]], counts: Dict[str, int]
+) -> bool:
+    if counts["valid_records"]:
+        return True
+    return any(
+        record["status"] in {"valid", "invalid"}
+        and CONVENTIONAL_MODDING_IDENTIFIER.fullmatch(record["identifier"])
+        for record in records
+    )
 
 
 def _top_level_count(value: Any) -> int:
@@ -121,13 +267,63 @@ def _value_shape(value: Any) -> Dict[str, Any]:
     return {"type": _json_type(value)}
 
 
+def _modding_warnings(counts: Dict[str, int]) -> list:
+    warnings = []
+    if counts["invalid_records"]:
+        warnings.append(f"{counts['invalid_records']} invalid payload record(s)")
+    if counts["incomplete_records"]:
+        warnings.append(f"{counts['incomplete_records']} incomplete record(s)")
+    return warnings
+
+
 def _analyze_file(path: Path, input_id: str):
     try:
         value = path.read_bytes()
     except OSError as error:
         raise SaveAnalysisError("input-unreadable", f"Input could not be read: {path}") from error
-    parsed = _decode_vanilla(value)
     source = _source_identity(path, value)
+    vanilla_error = None
+    try:
+        parsed = _decode_vanilla(value)
+    except SaveAnalysisError as error:
+        vanilla_error = error
+        parsed = None
+
+    records, counts = _decode_modding(value)
+    has_modding_content = _has_modding_content(records, counts)
+    if parsed is not None and has_modding_content:
+        raise SaveAnalysisError(
+            "ambiguous-content",
+            "Input matches more than one supported save format.",
+        )
+    if has_modding_content:
+        item = {
+            "id": input_id,
+            "source": source,
+            "role": "moddingapi",
+            "format": "moddingapi-records",
+            "parse_status": "ok",
+            "warnings": _modding_warnings(counts),
+            "bytes": source["bytes"],
+            "sha256": source["sha256"],
+            "counts": counts,
+            "artifacts": {
+                "chunk": f"structured/{input_id}.json",
+                "full": f"full/{input_id}.txt",
+            },
+            "full_artifact_status": "complete",
+        }
+        chunk = {
+            "source": source,
+            "role": "moddingapi",
+            "format": "moddingapi-records",
+            "counts": counts,
+            "records": _modding_chunk_records(records),
+        }
+        return item, chunk, _format_modding_full(records)
+    if vanilla_error is not None:
+        raise vanilla_error
+
     item = {
         "id": input_id,
         "source": source,
@@ -144,7 +340,17 @@ def _analyze_file(path: Path, input_id: str):
         },
         "full_artifact_status": "complete",
     }
-    return item, parsed
+    chunk = {
+        "source": source,
+        "role": "vanilla",
+        "format": "vanilla-base64-json",
+        "data_shape": _value_shape(parsed),
+    }
+    return (
+        item,
+        chunk,
+        json.dumps(parsed, ensure_ascii=False, allow_nan=False, indent=4) + "\n",
+    )
 
 
 def _paths_overlap(left: Path, right: Path) -> bool:
@@ -208,11 +414,20 @@ def _summary(run_id: str, run_root: Path, item: Dict[str, Any], status: str) -> 
             f"  Status: {item['parse_status']}",
             f"  Bytes: {item['bytes']}",
             f"  SHA-256: {item['sha256']}",
-            f"  Top-level keys: {item['top_level_keys']}",
             f"  Structured chunk: {item['artifacts']['chunk']}",
             f"  Full artifact: {item['artifacts']['full']}",
         ]
     )
+    if "top_level_keys" in item:
+        lines.append(f"  Top-level keys: {item['top_level_keys']}")
+    counts = item.get("counts")
+    if counts:
+        lines.extend(
+            f"  {name.replace('_', ' ').capitalize()}: {value}"
+            for name, value in counts.items()
+        )
+    for warning in item["warnings"]:
+        lines.append(f"  Warning: {warning}")
     return "\n".join(lines) + "\n"
 
 
@@ -226,7 +441,7 @@ def analyze(input_path: Path) -> Path:
             f"Input must be one save file: {resolved_input}",
         )
 
-    item, parsed = _analyze_file(resolved_input, "input-1")
+    item, chunk, full_text = _analyze_file(resolved_input, "input-1")
     analysis_root = _output_root(resolved_input)
     analysis_root.mkdir(parents=True, exist_ok=True)
     run_id = uuid.uuid4().hex
@@ -235,12 +450,6 @@ def analyze(input_path: Path) -> Path:
         raise SaveAnalysisError("run-collision", f"Generated run directory already exists: {run_root}")
     staging = Path(tempfile.mkdtemp(prefix=".staging-", dir=str(analysis_root)))
 
-    chunk = {
-        "source": item["source"],
-        "role": item["role"],
-        "format": item["format"],
-        "data_shape": _value_shape(parsed),
-    }
     try:
         _write_text(
             staging / item["artifacts"]["chunk"],
@@ -248,7 +457,7 @@ def analyze(input_path: Path) -> Path:
         )
         _write_text(
             staging / item["artifacts"]["full"],
-            json.dumps(parsed, ensure_ascii=False, allow_nan=False, indent=4) + "\n",
+            full_text,
         )
 
         manifest = {

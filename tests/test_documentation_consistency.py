@@ -44,6 +44,7 @@ ROUTE_DOCUMENTS = (
     "references/sub-skills/coding-standards.md",
     "references/sub-skills/referencing-modding-api.md",
     "references/sub-skills/save-analysis.md",
+    "references/sub-skills/moddingapi-persistence-save-format.md",
 )
 DEPENDENCY_GUIDANCE = (
     REPOSITORY_ROOT / "README.md",
