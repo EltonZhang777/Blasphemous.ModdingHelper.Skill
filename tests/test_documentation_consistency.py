@@ -51,6 +51,7 @@ ROUTE_DOCUMENTS = (
     "references/unity-project-navigation/prefabs.md",
     "references/unity-project-navigation/scenes.md",
     "references/unity-project-navigation/component-relations.md",
+    "references/unity-project-navigation/bindings.md",
 )
 DEPENDENCY_GUIDANCE = (
     REPOSITORY_ROOT / "README.md",
@@ -205,6 +206,9 @@ ROUTING_CONTRACTS = (
                 "Serialized component relations",
                 "component-relations.md",
                 "MUST report traversal direction, object scope, unresolved targets",
+                "Direct MonoBehaviour `m_Script` bindings",
+                "bindings.md",
+                "MUST report source and target evidence separately",
             ),
         ),
     ),

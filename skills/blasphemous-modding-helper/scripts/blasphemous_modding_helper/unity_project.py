@@ -426,6 +426,19 @@ def build_parser() -> argparse.ArgumentParser:
         default="60",
         help="Traversal timeout in seconds, up to 120.",
     )
+    bindings = commands.add_parser(
+        "bindings",
+        help="List direct MonoBehaviour-to-script bindings.",
+    )
+    bindings.add_argument("--project", required=True, help="Exported Unity project root.")
+    bindings.add_argument(
+        "--limit",
+        help="Maximum results per page (default: 200, maximum: 1000).",
+    )
+    bindings.add_argument(
+        "--cursor",
+        help="Opaque cursor returned by a previous bindings page.",
+    )
     return parser
 
 
@@ -497,6 +510,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             args.timeout_seconds,
         )
         return_code = exit_code(payload)
+    elif args.command == "bindings":
+        from .unity_bindings import bindings_exit_code, bindings_query
+
+        payload = bindings_query(Path(args.project), args.limit, args.cursor)
+        return_code = bindings_exit_code(payload)
     else:  # pragma: no cover - argparse rejects unknown commands.
         raise AssertionError(args.command)
     print(json.dumps(payload, sort_keys=True, separators=(",", ":")))

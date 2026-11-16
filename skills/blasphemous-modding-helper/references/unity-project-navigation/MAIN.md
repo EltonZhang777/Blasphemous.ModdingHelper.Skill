@@ -12,6 +12,7 @@ This guide provides read-only navigation for an exported Blasphemous Unity proje
 | Scene-set membership or serialized scene-object evidence | [scenes.md](scenes.md) | Agent MUST report completeness, missing layers, observed evidence limits, and any malformed, ambiguous, or excluded target. |
 | Flattened Prefab objects or components | [prefabs.md](prefabs.md) | Agent MUST identify the evidence as flattened and MUST NOT infer source instance hierarchy, nesting, variant, or modification structure. |
 | Serialized component relations, GUID edges, cycles, or incoming references | [component-relations.md](component-relations.md) | Agent MUST report traversal direction, object scope, unresolved targets, cycles, truncation, and timeout before selecting a next action. |
+| Direct MonoBehaviour `m_Script` bindings | [bindings.md](bindings.md) | Agent MUST report source and target evidence separately and hand behavior questions to the source analyzer. |
 
 ## Evidence boundary
 
