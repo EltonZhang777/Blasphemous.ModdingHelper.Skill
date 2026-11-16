@@ -36,6 +36,8 @@ DEFAULT_LIMIT = 200
 MAX_LIMIT = 1000
 SORT_VERSION = 1
 CURSOR_VERSION = 1
+INT64_MIN = -(1 << 63)
+INT64_MAX = (1 << 63) - 1
 SOURCE_KINDS = {
     ".unity": "scene",
     ".prefab": "prefab",
@@ -44,9 +46,11 @@ SOURCE_KINDS = {
 DOCUMENT_HEADER = re.compile(
     r"^--- !u!(?P<class_id>\d+) &(?P<file_id>-?\d+)(?:\s+stripped)?\s*$"
 )
-INLINE_FIELD = re.compile(
-    r"(?P<key>fileID|guid|type)\s*:\s*(?P<value>[^,}]+)"
+INLINE_MAP = re.compile(r"^\{\s*(?P<body>[^{}]*?)\s*\}$")
+INLINE_ENTRY = re.compile(
+    r"^\s*(?P<key>fileID|guid|type)\s*:\s*(?P<value>[^,{}]+?)\s*$"
 )
+DECIMAL_INTEGER = re.compile(r"^[+-]?\d+$")
 
 
 def _parse_limit(value: Optional[str]) -> int:
@@ -217,11 +221,30 @@ def _direct_script_field(
     return None
 
 
-def _inline_fields(raw: str) -> Dict[str, str]:
+def _inline_fields(raw: str) -> Optional[Dict[str, str]]:
+    map_match = INLINE_MAP.fullmatch(raw)
+    if map_match is None:
+        return None
     fields: Dict[str, str] = {}
-    for match in INLINE_FIELD.finditer(raw):
+    body = map_match.group("body")
+    if not body:
+        return fields
+    for entry in body.split(","):
+        match = INLINE_ENTRY.fullmatch(entry)
+        if match is None or match.group("key") in fields:
+            return None
         fields[match.group("key")] = match.group("value").strip().strip("'\"")
     return fields
+
+
+def _decimal_integer(raw: Optional[str], minimum: int, maximum: int) -> Optional[int]:
+    if raw is None or DECIMAL_INTEGER.fullmatch(raw) is None:
+        return None
+    try:
+        value = int(raw)
+    except ValueError:
+        return None
+    return value if minimum <= value <= maximum else None
 
 
 def _block_fields(
@@ -238,6 +261,8 @@ def _block_fields(
         if _indent(line) <= field_indent:
             break
         raw_lines.append(line)
+        if _indent(line) != field_indent + 2:
+            continue
         key, separator, value = line.strip().partition(":")
         if separator and key.strip() in {"fileID", "guid", "type"}:
             fields[key.strip()] = value.strip().strip("'\"")
@@ -264,8 +289,8 @@ def _parse_script_reference(
     value: str,
 ) -> Dict[str, object]:
     raw = value
-    if value.startswith("{"):
-        fields = _inline_fields(value)
+    if value.startswith("{") and value.endswith("}"):
+        fields = _inline_fields(value) or {}
     elif value == "" or value in {"null", "~"}:
         fields, raw = _block_fields(lines, field_index, field_indent)
     elif value == "0":
@@ -276,28 +301,33 @@ def _parse_script_reference(
     file_id_raw = fields.get("fileID")
     guid_raw = fields.get("guid")
     type_raw = fields.get("type")
-    try:
-        file_id = int(file_id_raw) if file_id_raw is not None else None
-    except ValueError:
-        file_id = None
-    try:
-        script_type = int(type_raw) if type_raw is not None else None
-    except ValueError:
-        script_type = None
+    file_id = _decimal_integer(file_id_raw, INT64_MIN, INT64_MAX)
+    script_type = _decimal_integer(
+        type_raw,
+        -(1 << 31),
+        (1 << 31) - 1,
+    )
     guid = (
         guid_raw.lower()
         if guid_raw is not None and GUID_PATTERN.fullmatch(guid_raw)
         else None
     )
+    malformed = any(
+        (
+            file_id_raw is not None and file_id is None,
+            guid_raw is not None and guid is None,
+            type_raw is not None and script_type is None,
+        )
+    )
 
-    if file_id == 0:
+    if file_id == 0 and not malformed:
         return {
             "reference_shape": "null",
             "m_script_file_id": "0",
             "m_script_guid": guid,
             "m_script_type": script_type,
         }
-    if file_id is not None and guid is not None:
+    if file_id is not None and guid is not None and not malformed:
         return {
             "reference_shape": "structured",
             "m_script_file_id": str(file_id),
@@ -359,26 +389,62 @@ def _asset_kind(path: Path) -> str:
 def _build_guid_index(
     root: Path,
     files: Sequence[Path],
-) -> Dict[str, List[Dict[str, object]]]:
+) -> Tuple[Dict[str, List[Dict[str, object]]], List[Dict[str, object]]]:
     index: Dict[str, List[Dict[str, object]]] = defaultdict(list)
+    warnings: List[Dict[str, object]] = []
     for meta_path in files:
         if meta_path.suffix.lower() != ".meta":
             continue
         target = meta_path.with_suffix("")
         if target.suffix.lower() == ".meta":
             continue
+        relative = _relative(meta_path, root)
         try:
-            text = meta_path.read_text(encoding="utf-8-sig")
-        except (OSError, UnicodeError):
+            data = meta_path.read_bytes()
+        except OSError as error:
+            warnings.append(
+                _warning(
+                    "metadata_unusable",
+                    f"Metadata could not be read: {error}",
+                    relative,
+                )
+            )
             continue
+        unreadable = False
+        try:
+            text = data.decode("utf-8-sig")
+        except UnicodeDecodeError:
+            text = data.decode("utf-8-sig", errors="replace")
+            unreadable = True
+            warnings.append(
+                _warning(
+                    "metadata_unusable",
+                    "Metadata is not valid UTF-8 and was only partially read.",
+                    relative,
+                )
+            )
         guid_match = META_GUID.search(text)
         if guid_match is None:
+            warnings.append(
+                _warning(
+                    "metadata_unusable",
+                    "Metadata has no valid GUID.",
+                    relative,
+                )
+            )
             continue
         version_match = META_VERSION.search(text)
         if version_match is not None:
             try:
                 int(version_match.group(1))
             except ValueError:
+                warnings.append(
+                    _warning(
+                        "metadata_unusable",
+                        "Metadata has an unusable fileFormatVersion.",
+                        relative,
+                    )
+                )
                 continue
         guid = guid_match.group(1).lower()
         try:
@@ -393,6 +459,7 @@ def _build_guid_index(
             {
                 "exists": exists,
                 "kind": _asset_kind(target),
+                "metadata_unreadable": unreadable,
                 "path": _relative(target, root),
             }
         )
@@ -404,7 +471,7 @@ def _build_guid_index(
                 str(item["kind"]),
             )
         )
-    return index
+    return index, warnings
 
 
 def _target_fields(
@@ -445,6 +512,13 @@ def _target_fields(
         )
         return fields
     candidate = candidates[0]
+    if candidate.get("metadata_unreadable"):
+        fields.update(
+            target_asset_kind="unresolved",
+            asset_resolution="missing",
+            asset_resolution_reason="unreadable_meta",
+        )
+        return fields
     if not candidate["exists"]:
         fields.update(
             target_asset_kind="unresolved",
@@ -570,7 +644,8 @@ def bindings_query(
 
         files, scan_warnings = _walk_files(root, included_roots)
         warnings.extend(scan_warnings)
-        guid_index = _build_guid_index(root, files)
+        guid_index, metadata_warnings = _build_guid_index(root, files)
+        warnings.extend(metadata_warnings)
         rows: List[Dict[str, object]] = []
         source_warnings: List[Dict[str, object]] = []
         for path in files:
@@ -593,7 +668,7 @@ def bindings_query(
 
         coverage = (
             "partial"
-            if scan_warnings or source_warnings
+            if scan_warnings or source_warnings or metadata_warnings
             else "complete"
         )
         rows.sort(key=_row_key)
