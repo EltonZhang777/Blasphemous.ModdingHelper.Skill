@@ -7,6 +7,7 @@ import json
 import os
 import re
 import stat
+import time
 from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Sequence, Set, Tuple
@@ -183,9 +184,22 @@ def validate_project_root(project: Path) -> Path:
     return _validated_project(project)[0]
 
 
-def _walk_files(root: Path, included_roots: Sequence[Path]):
+def _walk_files(
+    root: Path,
+    included_roots: Sequence[Path],
+    *,
+    deadline: Optional[float] = None,
+):
     warnings: List[Dict[str, object]] = []
     files: List[Path] = []
+
+    def check_deadline() -> None:
+        if deadline is not None and time.monotonic() >= deadline:
+            raise NavigationError(
+                "timeout",
+                "The Unity project scan timed out before evidence collection completed.",
+            )
+
     for included_root in included_roots:
         def on_error(error: OSError) -> None:
             relative = None
@@ -208,9 +222,11 @@ def _walk_files(root: Path, included_roots: Sequence[Path]):
             onerror=on_error,
             followlinks=False,
         ):
+            check_deadline()
             base = Path(directory)
             kept_names = []
             for name in sorted(names):
+                check_deadline()
                 child = base / name
                 if name.casefold() in EXCLUDED_DIRECTORY_NAMES:
                     continue
@@ -235,6 +251,7 @@ def _walk_files(root: Path, included_roots: Sequence[Path]):
                 kept_names.append(name)
             names[:] = kept_names
             for name in sorted(filenames):
+                check_deadline()
                 child = base / name
                 if _is_link_like(child):
                     if not _within(child, root):
@@ -375,6 +392,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="Opaque cursor returned by a previous bindings page.",
     )
     bindings.add_argument(
+        "--timeout-seconds",
+        help="Binding scan timeout in seconds (default: 60, maximum: 120).",
+    )
+    bindings.add_argument(
         "--path",
         action="append",
         help="Exact .unity, .prefab, or .asset source path; repeat for OR semantics.",
@@ -429,6 +450,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             Path(args.project),
             args.limit,
             args.cursor,
+            args.timeout_seconds,
             paths=args.path,
             object_file_id=args.object_file_id,
             script_guids=args.script_guid,
