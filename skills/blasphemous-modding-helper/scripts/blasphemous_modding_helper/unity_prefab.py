@@ -19,7 +19,7 @@ FLATTENED_LIMITS = {
 def _result_base(result: Dict[str, object], status: str) -> Dict[str, object]:
     return {
         "path": result["path"],
-        "type": "prefab",
+        "type": result["type"],
         "guid": result.get("guid"),
         "metadata": result["metadata"],
         "status": status,
@@ -44,6 +44,7 @@ def prefab_query(project: Path, selector: str, value: str) -> Dict[str, object]:
         return payload
 
     prefabs = [result for result in results if result["type"] == "prefab"]
+    non_prefabs = [result for result in results if result["type"] != "prefab"]
     if selector == "path" and results and not prefabs:
         payload["status"] = "invalid_query"
         payload["results"] = []
@@ -61,6 +62,21 @@ def prefab_query(project: Path, selector: str, value: str) -> Dict[str, object]:
             _warning(
                 "prefab_not_found",
                 "No Prefab matches the supplied selector.",
+            )
+        )
+        payload["warnings"] = _sorted_warnings(warnings)
+        return payload
+
+    if selector == "guid" and payload["status"] == "ambiguous" and prefabs and non_prefabs:
+        payload["status"] = "ambiguous"
+        payload["results"] = [
+            _result_base(result, "ambiguous") for result in results
+        ]
+        payload["error"] = None
+        warnings.append(
+            _warning(
+                "ambiguous_prefab",
+                "The GUID identifies both Prefab and non-Prefab assets; no Prefab was selected.",
             )
         )
         payload["warnings"] = _sorted_warnings(warnings)

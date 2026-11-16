@@ -196,30 +196,63 @@ def _result_key(result: Dict[str, object]) -> Tuple[str, str, str, str]:
     return (path.casefold(), path, str(result["type"]), str(result.get("guid") or ""))
 
 
+def _metadata_targets_for_guids(
+    files: Sequence[Path], guids: Sequence[str]
+) -> Dict[str, List[Path]]:
+    wanted = {guid.lower() for guid in guids}
+    targets: Dict[str, List[Path]] = defaultdict(list)
+    if not wanted:
+        return targets
+    for meta_path in files:
+        if meta_path.suffix.lower() != ".meta" or _is_link_like(meta_path):
+            continue
+        target = meta_path.with_suffix("")
+        if target.suffix.lower() == ".meta" or not target.exists():
+            continue
+        if _is_link_like(target):
+            continue
+        try:
+            text = meta_path.read_text(encoding="utf-8")
+        except (OSError, UnicodeError):
+            continue
+        guid_match = META_GUID.search(text)
+        if guid_match is None:
+            continue
+        guid = guid_match.group(1).lower()
+        if guid not in wanted:
+            continue
+        version_match = META_VERSION.search(text)
+        if version_match is not None:
+            try:
+                int(version_match.group(1))
+            except ValueError:
+                continue
+        targets[guid].append(target)
+    return targets
+
+
 def _mark_duplicate_guids(
     results: Sequence[Dict[str, object]],
     warnings: List[Dict[str, object]],
+    targets_by_guid: Dict[str, List[Path]],
 ) -> None:
-    by_guid: Dict[str, List[Dict[str, object]]] = defaultdict(list)
     for result in results:
         guid = result.get("guid")
-        if isinstance(guid, str):
-            by_guid[guid].append(result)
-    for guid, matches in by_guid.items():
-        if len(matches) < 2:
+        if not isinstance(guid, str):
             continue
-        paths = sorted(str(result["path"]) for result in matches)
-        for result in matches:
-            metadata = result["metadata"]
-            if isinstance(metadata, dict):
-                metadata["status"] = "duplicate"
-            warnings.append(
-                _warning(
-                    "duplicate_guid",
-                    f"GUID {guid} identifies {len(paths)} project paths.",
-                    result["path"],
-                )
+        targets = targets_by_guid.get(guid, [])
+        if len(targets) < 2:
+            continue
+        metadata = result["metadata"]
+        if isinstance(metadata, dict):
+            metadata["status"] = "duplicate"
+        warnings.append(
+            _warning(
+                "duplicate_guid",
+                f"GUID {guid} identifies {len(targets)} project paths.",
+                result["path"],
             )
+        )
 
 
 def _normalize_path(root: Path, included_roots: Sequence[Path], value: str) -> Path:
@@ -361,8 +394,17 @@ def asset_query(project: Path, selector: str, value: str) -> Dict[str, object]:
             }
             if target.is_file() or target.is_dir():
                 result, result_warnings = _result(root, target)
-                payload["results"] = [result]
+                results = [result]
+                payload["results"] = results
                 warnings.extend(result_warnings)
+                if isinstance(result.get("guid"), str):
+                    files, scan_warnings = _walk_files(root, included_roots)
+                    warnings.extend(scan_warnings)
+                    _mark_duplicate_guids(
+                        results,
+                        warnings,
+                        _metadata_targets_for_guids(files, [str(result["guid"])]),
+                    )
             else:
                 payload["status"] = "not_found"
         else:
@@ -383,6 +425,7 @@ def asset_query(project: Path, selector: str, value: str) -> Dict[str, object]:
 
             files, scan_warnings = _walk_files(root, included_roots)
             warnings.extend(scan_warnings)
+            targets_by_guid: Dict[str, List[Path]] = {}
             if selector == "name":
                 folded = value.casefold()
                 matches = set()
@@ -412,33 +455,9 @@ def asset_query(project: Path, selector: str, value: str) -> Dict[str, object]:
                             matches.add(parent)
                         parent = parent.parent
             else:
-                matches = []
                 query_guid = value.lower()
-                for meta_path in files:
-                    if meta_path.suffix.lower() != ".meta":
-                        continue
-                    if _is_link_like(meta_path):
-                        continue
-                    target = meta_path.with_suffix("")
-                    if target.suffix.lower() == ".meta":
-                        continue
-                    if not target.exists():
-                        continue
-                    if _is_link_like(target):
-                        continue
-                    try:
-                        text = meta_path.read_text(encoding="utf-8")
-                    except (OSError, UnicodeError):
-                        continue
-                    guid_match = META_GUID.search(text)
-                    if guid_match and guid_match.group(1).lower() == query_guid:
-                        version_match = META_VERSION.search(text)
-                        if version_match is not None:
-                            try:
-                                int(version_match.group(1))
-                            except ValueError:
-                                continue
-                        matches.append(target)
+                targets_by_guid = _metadata_targets_for_guids(files, [query_guid])
+                matches = targets_by_guid.get(query_guid, [])
 
             results: List[Dict[str, object]] = []
             ordered_matches = sorted(
@@ -450,7 +469,14 @@ def asset_query(project: Path, selector: str, value: str) -> Dict[str, object]:
                 results.append(result)
                 warnings.extend(result_warnings)
             results.sort(key=_result_key)
-            _mark_duplicate_guids(results, warnings)
+            if selector == "name":
+                result_guids = [
+                    str(result["guid"])
+                    for result in results
+                    if isinstance(result.get("guid"), str)
+                ]
+                targets_by_guid = _metadata_targets_for_guids(files, result_guids)
+            _mark_duplicate_guids(results, warnings, targets_by_guid)
             payload["results"] = results
             if not results:
                 payload["status"] = "not_found"

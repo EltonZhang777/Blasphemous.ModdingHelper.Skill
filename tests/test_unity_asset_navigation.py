@@ -229,6 +229,59 @@ class UnityAssetNavigationTests(unittest.TestCase):
             ["duplicate_guid", "duplicate_guid"],
         )
 
+    def test_exact_path_and_name_mark_duplicates_outside_the_result_set(self):
+        duplicate = "e" * 32
+        self.add_asset("Assets/Data/Exact.asset", "%YAML 1.1\n", duplicate)
+        self.add_asset("Assets/Other/Collision.asset", "%YAML 1.1\n", duplicate)
+
+        for selector, value in (
+            ("path", "Assets/Data/Exact.asset"),
+            ("name", "Exact"),
+        ):
+            with self.subTest(selector=selector):
+                first, payload = self.query(selector, value, 0)
+                second, repeated = self.query(selector, value, 0)
+
+                self.assertEqual(payload["status"], "ok")
+                self.assertEqual(
+                    [result["path"] for result in payload["results"]],
+                    ["Assets/Data/Exact.asset"],
+                )
+                self.assertEqual(
+                    payload["results"][0]["metadata"]["status"],
+                    "duplicate",
+                )
+                duplicates = [
+                    warning
+                    for warning in payload["warnings"]
+                    if warning["code"] == "duplicate_guid"
+                ]
+                self.assertEqual(len(duplicates), 1)
+                self.assertEqual(
+                    duplicates[0]["path"],
+                    "Assets/Data/Exact.asset",
+                )
+                self.assertEqual(
+                    duplicates[0]["message"],
+                    f"GUID {duplicate} identifies 2 project paths.",
+                )
+                self.assertEqual(first.stdout, second.stdout)
+                self.assertEqual(payload, repeated)
+
+    def test_unique_path_and_name_keep_present_metadata(self):
+        for selector, value in (
+            ("path", "Assets/Data/item.asset"),
+            ("name", "hero"),
+        ):
+            with self.subTest(selector=selector):
+                _, payload = self.query(selector, value, 0)
+
+                self.assertEqual(payload["results"][0]["metadata"]["status"], "present")
+                self.assertNotIn(
+                    "duplicate_guid",
+                    [warning["code"] for warning in payload["warnings"]],
+                )
+
     def test_guid_query_reads_metadata_only_for_matching_targets(self):
         with mock.patch.object(
             unity_assets,

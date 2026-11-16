@@ -192,6 +192,59 @@ class UnityPrefabNavigationTests(unittest.TestCase):
                     [warning["code"] for warning in payload["warnings"]],
                 )
 
+    def test_mixed_guid_collision_returns_every_candidate(self):
+        duplicate = "6" * 32
+        self.add_asset("Assets/Prefabs/Mixed.prefab", HERO_PREFAB, duplicate)
+        self.add_asset("Assets/Data/Mixed.asset", "%YAML 1.1\n", duplicate)
+
+        _, payload = self.query("guid", duplicate, 2)
+
+        self.assertEqual(payload["status"], "ambiguous")
+        self.assertIsNone(payload["error"])
+        self.assertEqual(
+            [
+                (result["path"], result["type"], result["status"])
+                for result in payload["results"]
+            ],
+            [
+                ("Assets/Data/Mixed.asset", "asset", "ambiguous"),
+                ("Assets/Prefabs/Mixed.prefab", "prefab", "ambiguous"),
+            ],
+        )
+        self.assertTrue(
+            all(result["metadata"]["status"] == "duplicate" for result in payload["results"])
+        )
+        self.assertTrue(
+            all(result["object_count"] == 0 for result in payload["results"])
+        )
+        warning_codes = [warning["code"] for warning in payload["warnings"]]
+        self.assertIn("ambiguous_prefab", warning_codes)
+        self.assertEqual(warning_codes.count("duplicate_guid"), 2)
+
+    def test_path_and_name_surface_duplicate_guid_without_filtering_the_prefab(self):
+        duplicate = "7" * 32
+        self.add_asset("Assets/Prefabs/Exact.prefab", HERO_PREFAB, duplicate)
+        self.add_asset("Assets/Data/Collision.asset", "%YAML 1.1\n", duplicate)
+
+        for selector, value in (
+            ("path", "Assets/Prefabs/Exact.prefab"),
+            ("name", "Exact"),
+        ):
+            with self.subTest(selector=selector):
+                _, payload = self.query(selector, value, 0)
+
+                self.assertEqual(payload["status"], "ok")
+                self.assertEqual(len(payload["results"]), 1)
+                result = payload["results"][0]
+                self.assertEqual(result["path"], "Assets/Prefabs/Exact.prefab")
+                self.assertEqual(result["type"], "prefab")
+                self.assertEqual(result["metadata"]["status"], "duplicate")
+                self.assertEqual(result["object_count"], 3)
+                self.assertIn(
+                    "duplicate_guid",
+                    [warning["code"] for warning in payload["warnings"]],
+                )
+
     def test_non_prefab_missing_and_malformed_targets_are_structured(self):
         cases = (
             ("path", "Assets/Data/Hero.asset", 3, "invalid_query", "not_prefab"),
