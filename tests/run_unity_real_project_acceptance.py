@@ -31,29 +31,6 @@ SCANNER_TIMEOUT_SECONDS = 600
 BINDINGS_LIMIT = 1000
 BINDINGS_TIMEOUT_SECONDS = 120
 TYPICAL_SCRIPT_FILE_ID = "11500000"
-BINDING_SOURCE_KINDS = ("scene", "prefab", "asset")
-BINDING_REFERENCE_SHAPES = ("structured", "null", "malformed")
-BINDING_TARGET_CATEGORIES = (
-    "cs",
-    "dll",
-    "unresolved",
-    "null",
-    "malformed",
-    "binary_other",
-    "other",
-)
-BINDING_ASSET_RESOLUTIONS = (
-    "resolved",
-    "missing",
-    "ambiguous",
-    "unsupported_binary",
-    "not_applicable",
-)
-BINDING_OBJECT_RESOLUTIONS = (
-    "asset_level_only",
-    "not_verifiable_binary",
-    "not_applicable",
-)
 
 
 class SmokeFailure(RuntimeError):
@@ -410,214 +387,6 @@ def _verify_references(
     _require("result_limit" not in warning_codes, "Reference query hit its result limit.")
 
 
-def _new_binding_census() -> Dict[str, object]:
-    return {
-        "rows": 0,
-        "pages": 0,
-        "source_asset_kind": {key: 0 for key in BINDING_SOURCE_KINDS},
-        "reference_shape": {key: 0 for key in BINDING_REFERENCE_SHAPES},
-        "target_category": {key: 0 for key in BINDING_TARGET_CATEGORIES},
-        "asset_resolution": {key: 0 for key in BINDING_ASSET_RESOLUTIONS},
-        "script_object_resolution": {
-            key: 0 for key in BINDING_OBJECT_RESOLUTIONS
-        },
-        "warning_codes": {},
-        "page_status": {},
-        "page_coverage": {},
-        "page_rows": {},
-        "boundary_identity_repeats": 0,
-        "samples": {},
-    }
-
-
-def _increment(counts: Dict[str, int], key: object) -> None:
-    name = str(key)
-    counts[name] = counts.get(name, 0) + 1
-
-
-def _binding_target_category(row: Dict[str, object]) -> str:
-    shape = row.get("reference_shape")
-    if shape in {"null", "malformed"}:
-        return str(shape)
-    kind = row.get("target_asset_kind")
-    if kind == "cs":
-        return "cs"
-    if kind == "binary":
-        path = str(row.get("target_asset_path") or "")
-        return "dll" if path.casefold().endswith(".dll") else "binary_other"
-    if kind == "unresolved":
-        return "unresolved"
-    return "other"
-
-
-def _binding_sample(row: Dict[str, object]) -> Dict[str, object]:
-    guid = row.get("m_script_guid")
-    return {
-        "source_asset_path": row.get("source_asset_path"),
-        "source_asset_kind": row.get("source_asset_kind"),
-        "source_object_file_id": row.get("source_object_file_id"),
-        "reference_shape": row.get("reference_shape"),
-        "m_script_file_id": row.get("m_script_file_id"),
-        "m_script_guid_sha256": (
-            hashlib.sha256(str(guid).encode("ascii")).hexdigest()
-            if guid is not None
-            else None
-        ),
-        "m_script_type": row.get("m_script_type"),
-        "target_asset_kind": row.get("target_asset_kind"),
-        "target_asset_path": row.get("target_asset_path"),
-        "target_asset_candidate_count": len(
-            row.get("target_asset_candidates") or []
-        ),
-        "asset_resolution": row.get("asset_resolution"),
-        "asset_resolution_reason": row.get("asset_resolution_reason"),
-        "script_object_resolution": row.get("script_object_resolution"),
-    }
-
-
-def _record_binding_samples(
-    samples: Dict[str, Dict[str, object]],
-    row: Dict[str, object],
-) -> None:
-    categories = [_binding_target_category(row)]
-    if (
-        row.get("reference_shape") == "structured"
-        and row.get("m_script_file_id") != TYPICAL_SCRIPT_FILE_ID
-    ):
-        categories.append("non_typical_file_id")
-    if row.get("source_asset_kind") == "asset":
-        categories.append("asset")
-    for key in ("source_asset_path", "target_asset_path"):
-        if str(row.get(key) or "").startswith("Packages/"):
-            categories.append("packages")
-            break
-    for category in categories:
-        samples.setdefault(category, _binding_sample(row))
-
-
-def _accumulate_binding_page(
-    census: Dict[str, object],
-    state: Dict[str, object],
-    payload: Dict[str, object],
-) -> None:
-    results = payload.get("results")
-    _require(isinstance(results, list), "Binding page results are not an array.")
-    _require(payload.get("status") == "ok", "Binding page status is not ok.")
-    _require(
-        payload.get("scan_coverage") == "complete",
-        "Binding page scan coverage is not complete.",
-    )
-    _require(
-        payload.get("warnings") == [] and payload.get("error") is None,
-        "Binding page reported warnings or an error.",
-    )
-    rows = len(results)
-    _require(rows > 0, "Binding census reached an empty non-final page.")
-    previous_last = state.get("previous_last")
-    if previous_last is not None:
-        first = results[0]
-        if (
-            first.get("source_asset_path"),
-            first.get("source_object_file_id"),
-        ) == previous_last:
-            census["boundary_identity_repeats"] += 1
-    state["previous_last"] = (
-        results[-1].get("source_asset_path"),
-        results[-1].get("source_object_file_id"),
-    )
-    page_rows = census["page_rows"]
-    page_rows["minimum"] = min(page_rows.get("minimum", rows), rows)
-    page_rows["maximum"] = max(page_rows.get("maximum", rows), rows)
-    census["rows"] += rows
-    census["pages"] += 1
-    _increment(census["page_status"], payload.get("status"))
-    _increment(census["page_coverage"], payload.get("scan_coverage"))
-    for row in results:
-        _require(
-            isinstance(row, dict),
-            "Binding census row is not an object.",
-        )
-        _increment(census["source_asset_kind"], row.get("source_asset_kind"))
-        _increment(census["reference_shape"], row.get("reference_shape"))
-        _increment(
-            census["target_category"],
-            _binding_target_category(row),
-        )
-        _increment(census["asset_resolution"], row.get("asset_resolution"))
-        _increment(
-            census["script_object_resolution"],
-            row.get("script_object_resolution"),
-        )
-        file_ids = state["file_ids"]
-        file_ids.add(row.get("m_script_file_id"))
-        if (
-            row.get("reference_shape") == "structured"
-            and row.get("m_script_file_id") != TYPICAL_SCRIPT_FILE_ID
-        ):
-            census["non_typical_file_id_rows"] = (
-                census.get("non_typical_file_id_rows", 0) + 1
-            )
-        _record_binding_samples(census["samples"], row)
-
-
-def _finalize_binding_census(
-    census: Dict[str, object],
-    state: Dict[str, object],
-    benchmark: Dict[str, object],
-    package_source_candidates: int,
-    manifest: Dict[str, object],
-) -> Dict[str, object]:
-    census["distinct_m_script_file_ids"] = len(state["file_ids"])
-    census["non_typical_file_id_rows"] = census.get(
-        "non_typical_file_id_rows",
-        0,
-    )
-    census["cursor"] = {
-        "pages": census["pages"],
-        "next_cursor_pages": census["pages"] - 1,
-        "final_next_cursor_present": benchmark["final_next_cursor_present"],
-        "boundary_identity_repeats": census["boundary_identity_repeats"],
-    }
-    census["maximum_page_benchmark"] = benchmark
-    samples = census["samples"]
-    required_samples = (
-        "cs",
-        "dll",
-        "unresolved",
-        "null",
-        "non_typical_file_id",
-        "asset",
-    )
-    for key in required_samples:
-        _require(
-            isinstance(samples.get(key), dict),
-            f"Binding census has no {key} sample.",
-        )
-    if census["target_category"]["malformed"]:
-        _require(
-            isinstance(samples.get("malformed"), dict),
-            "Binding census has malformed rows but no malformed sample.",
-        )
-    else:
-        _require(
-            "malformed" not in samples,
-            "Binding census reported a malformed sample without malformed rows.",
-        )
-    if package_source_candidates:
-        _require(
-            isinstance(samples.get("packages"), dict),
-            "Binding census has Packages source candidates but no package sample.",
-        )
-    else:
-        _require(
-            "packages" not in samples,
-            "Binding census reported a package sample without Packages sources.",
-        )
-    _verify_binding_samples(samples)
-    _verify_binding_census(census, manifest)
-    return census
-
-
 def _verify_binding_samples(samples: Dict[str, Dict[str, object]]) -> None:
     cs_sample = samples["cs"]
     _require(cs_sample["reference_shape"] == "structured", "CS sample is not structured.")
@@ -723,20 +492,13 @@ def _verify_binding_census(
     for key in (
         "distinct_m_script_file_ids",
         "non_typical_file_id_rows",
+        "candidate_source_files",
     ):
         _require(
             census[key] == expected[key],
             f"Binding census {key} drifted.",
         )
     _require(census["warning_codes"] == {}, "Binding census reported warnings.")
-    _require(
-        census["page_status"] == {"ok": expected["pages"]},
-        "Binding census page statuses drifted.",
-    )
-    _require(
-        census["page_coverage"] == {"complete": expected["pages"]},
-        "Binding census coverage drifted.",
-    )
 
 
 def _scanner_version() -> str:
@@ -793,6 +555,17 @@ def _binding_arguments(
     return arguments
 
 
+def _binding_census_arguments(project_root: Path) -> List[str]:
+    return [
+        "bindings",
+        "--project",
+        str(project_root),
+        "--census-summary",
+        "--timeout-seconds",
+        str(BINDINGS_TIMEOUT_SECONDS),
+    ]
+
+
 def _redacted_cursor_arguments(arguments: Sequence[str]) -> List[str]:
     redacted = list(arguments)
     for index, value in enumerate(redacted):
@@ -828,27 +601,28 @@ def _verify_binding_page(
         )
 
 
-def _run_default_binding_benchmark(
+def _run_binding_benchmark(
     python_executable: str,
     project_root: Path,
+    limit: int,
 ) -> Tuple[Dict[str, object], List[Dict[str, object]]]:
-    first_args = _binding_arguments(project_root, 200)
+    first_args = _binding_arguments(project_root, limit)
     first, first_elapsed, first_bytes = _run_scanner_with_size(
         python_executable,
         project_root,
         first_args,
     )
-    _verify_binding_page(first, 200, 200)
+    _verify_binding_page(first, limit, limit)
     cursor = first.get("next_cursor")
-    _require(isinstance(cursor, str) and cursor, "Default page has no next cursor.")
+    _require(isinstance(cursor, str) and cursor, "First page has no next cursor.")
 
-    second_args = _binding_arguments(project_root, 200, cursor)
+    second_args = _binding_arguments(project_root, limit, cursor)
     second, second_elapsed, _ = _run_scanner_with_size(
         python_executable,
         project_root,
         second_args,
     )
-    _verify_binding_page(second, 200, 200)
+    _verify_binding_page(second, limit, limit)
     first_rows = first["results"]
     second_rows = second["results"]
     transitioned = (
@@ -859,7 +633,7 @@ def _run_default_binding_benchmark(
         first_rows[-1].get("source_object_file_id"),
     )
     benchmark = {
-        "limit": 200,
+        "limit": limit,
         "page_row_count": len(first_rows),
         "serialized_bytes": first_bytes,
         "first_page_elapsed_seconds": first_elapsed,
@@ -873,14 +647,14 @@ def _run_default_binding_benchmark(
     }
     records = [
         _query_record(
-            "bindings_benchmark_200",
+            f"bindings_benchmark_{limit}",
             first_args,
             project_root,
             first,
             first_elapsed,
         ),
         _query_record(
-            "bindings_benchmark_200_cursor",
+            f"bindings_benchmark_{limit}_cursor",
             _redacted_cursor_arguments(second_args),
             project_root,
             second,
@@ -903,87 +677,100 @@ def _run_binding_census(
         package_sources == expected["packages_source_candidates"],
         "Packages source candidate count drifted.",
     )
-    arguments = _binding_arguments(project_root, BINDINGS_LIMIT)
+    arguments = _binding_census_arguments(project_root)
     started_at = _utc_now()
-    payload, elapsed, first_bytes = _run_scanner_with_size(
+    payload, elapsed, _ = _run_scanner_with_size(
         python_executable,
         project_root,
         arguments,
     )
-    _verify_binding_page(payload, BINDINGS_LIMIT, BINDINGS_LIMIT)
-    first_page = payload
-    first_page_last = (
-        first_page["results"][-1].get("source_asset_path"),
-        first_page["results"][-1].get("source_object_file_id"),
+    _require(payload.get("status") == "ok", "Binding census status is not ok.")
+    _require(
+        payload.get("scan_coverage") == "complete",
+        "Binding census scan coverage is not complete.",
     )
-    first_page_elapsed = elapsed
+    _require(
+        payload.get("warnings") == [] and payload.get("error") is None,
+        "Binding census reported warnings or an error.",
+    )
+    _require(
+        payload.get("results") == [],
+        "Binding census summary returned paginated rows.",
+    )
+    _require(payload.get("next_cursor") is None, "Binding census has a cursor.")
+    payload_census = payload.get("census")
+    _require(
+        isinstance(payload_census, dict),
+        "Binding census summary has no census object.",
+    )
+    census = dict(payload_census)
+    file_counts = project_payload["results"][0]["file_counts"]
+    _require(
+        census["candidate_source_files"]
+        == sum(file_counts[key] for key in ("unity", "prefab", "asset")),
+        "Binding census source candidate count drifted.",
+    )
+    samples = census.get("samples")
+    _require(isinstance(samples, dict), "Binding census samples are not an object.")
+    required_samples = (
+        "cs",
+        "dll",
+        "unresolved",
+        "null",
+        "non_typical_file_id",
+        "asset",
+    )
+    for key in required_samples:
+        _require(
+            isinstance(samples.get(key), dict),
+            f"Binding census has no {key} sample.",
+        )
+    if census["target_category"]["malformed"]:
+        _require(
+            isinstance(samples.get("malformed"), dict),
+            "Binding census has malformed rows but no malformed sample.",
+        )
+    else:
+        _require(
+            "malformed" not in samples,
+            "Binding census reported a malformed sample without malformed rows.",
+        )
+    if package_sources:
+        _require(
+            isinstance(samples.get("packages"), dict),
+            "Binding census has Packages source candidates but no package sample.",
+        )
+    else:
+        _require(
+            "packages" not in samples,
+            "Binding census reported a package sample without Packages sources.",
+        )
+    _verify_binding_samples(samples)
+    _verify_binding_census(census, manifest)
 
-    census = _new_binding_census()
-    state: Dict[str, object] = {
-        "file_ids": set(),
-        "previous_last": None,
-    }
-    total_elapsed = 0.0
-    second_page_elapsed = None
-    boundary_changed = False
-    for page_number in range(expected["pages"]):
-        _require(
-            page_number < expected["pages"],
-            "Binding census exceeded its expected page count.",
-        )
-        results = payload.get("results")
-        _require(isinstance(results, list), "Binding page results are not an array.")
-        if page_number == 1:
-            second_page_elapsed = elapsed
-            boundary_changed = (
-                results[0].get("source_asset_path"),
-                results[0].get("source_object_file_id"),
-            ) != first_page_last
-        _accumulate_binding_page(census, state, payload)
-        total_elapsed += elapsed
-        cursor = payload.get("next_cursor")
-        if page_number + 1 == expected["pages"]:
-            _require(cursor is None, "Binding census ended before the final cursor.")
-            break
-        _require(
-            isinstance(cursor, str) and cursor,
-            "Binding census ended before the expected final page.",
-        )
-        arguments = _binding_arguments(project_root, BINDINGS_LIMIT, cursor)
-        payload, elapsed, _ = _run_scanner_with_size(
-            python_executable,
-            project_root,
-            arguments,
-        )
-        _verify_binding_page(payload, BINDINGS_LIMIT)
+    default_benchmark, default_records = _run_binding_benchmark(
+        python_executable,
+        project_root,
+        200,
+    )
+    maximum_benchmark, maximum_records = _run_binding_benchmark(
+        python_executable,
+        project_root,
+        BINDINGS_LIMIT,
+    )
     finished_at = _utc_now()
 
-    maximum_benchmark = {
-        "limit": BINDINGS_LIMIT,
-        "page_row_count": len(first_page["results"]),
-        "serialized_bytes": first_bytes,
-        "first_page_elapsed_seconds": first_page_elapsed,
-        "next_cursor_present": True,
-        "cursor_transition": {
-            "second_page_elapsed_seconds": second_page_elapsed,
-            "boundary_identity_changed": boundary_changed,
-            "final_next_cursor_present": False,
-        },
-        "final_next_cursor_present": False,
-    }
+    census["default_page_benchmark"] = default_benchmark
     census["maximum_page_benchmark"] = maximum_benchmark
     census["scan_timestamps"] = {
         "started_at": started_at,
         "finished_at": finished_at,
-        "elapsed_seconds": round(total_elapsed, 2),
+        "summary_elapsed_seconds": elapsed,
     }
     census["invocation"] = {
-        "command": _scanner_command(
-            _binding_arguments(project_root, BINDINGS_LIMIT),
-            project_root,
-        ),
+        "command": _scanner_command(arguments, project_root),
         "selectors": {},
-        "cursor_pages": expected["pages"],
+        "mode": "census_summary",
     }
     census["scanner_version"] = _scanner_version()
     census["schema_version"] = project_payload["schema_version"]
@@ -992,18 +779,7 @@ def _run_binding_census(
         "Packages" in project_payload["project"]["included_roots"]
     )
     census["packages_source_candidates"] = package_sources
-    file_counts = project_payload["results"][0]["file_counts"]
-    census["candidate_source_files"] = sum(
-        file_counts[key] for key in ("unity", "prefab", "asset")
-    )
     census["file_counts"] = file_counts
-    _finalize_binding_census(
-        census,
-        state,
-        maximum_benchmark,
-        package_sources,
-        manifest,
-    )
     census["scan_coverage"] = "complete"
     census["error_counts"] = dict(census["warning_codes"])
     snapshot_material = {
@@ -1028,23 +804,21 @@ def _run_binding_census(
     ).hexdigest()
     records = [
         _query_record(
-            "bindings_benchmark_1000",
-            _binding_arguments(project_root, BINDINGS_LIMIT),
+            "bindings_census_summary",
+            arguments,
             project_root,
-            first_page,
-            first_page_elapsed,
+            payload,
+            elapsed,
         ),
         {
             "query": "bindings_census",
-            "command": _scanner_command(
-                _redacted_cursor_arguments(arguments),
-                project_root,
-            ),
             "status": "ok",
-            "elapsed_seconds": round(total_elapsed, 2),
-            "pages": census["pages"],
+            "elapsed_seconds": elapsed,
             "rows": census["rows"],
+            "samples": len(census["samples"]),
         },
+        *default_records,
+        *maximum_records,
     ]
     return census, records
 
@@ -1148,11 +922,6 @@ def run(
                 )
             )
             _verify_project_summary(project_payload, before_assets, manifest)
-            default_benchmark, default_records = _run_default_binding_benchmark(
-                python_executable,
-                project_root,
-            )
-            commands.extend(default_records)
             binding_census_result, census_records = _run_binding_census(
                 python_executable,
                 project_root,
@@ -1160,7 +929,6 @@ def run(
                 before_paths,
                 manifest,
             )
-            binding_census_result["default_page_benchmark"] = default_benchmark
             commands.extend(census_records)
 
             after_paths, after_assets, after_files, after_dirs = _snapshot_paths(

@@ -107,7 +107,7 @@
   "bindings": {
     "census": {
       "rows": 75147,
-      "pages": 76,
+      "candidate_source_files": 35316,
       "source_asset_kind": {
         "scene": 69267,
         "prefab": 4803,
@@ -140,7 +140,7 @@
         "not_applicable": 4131
       },
       "distinct_m_script_file_ids": 50,
-      "non_typical_file_id_rows": 6485,
+      "non_typical_file_id_rows": 6484,
       "packages_source_candidates": 0
     }
   },
