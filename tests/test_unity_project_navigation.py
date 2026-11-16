@@ -233,7 +233,7 @@ root = Path({str(self.root)!r})
 
 def walk(top, topdown=True, onerror=None, followlinks=False):
     if onerror is not None:
-        onerror(PermissionError(13, "Access denied for " + str(root) + " now"))
+        onerror(PermissionError(13, "Access denied", str(root)))
     yield top, [], []
 
 with mock.patch.object(unity_project.os, "walk", walk):
