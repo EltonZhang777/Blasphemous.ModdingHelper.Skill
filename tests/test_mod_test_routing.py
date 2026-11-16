@@ -12,6 +12,8 @@ REFERENCES = SKILL_ROOT / "references" / "sub-skills"
 SHARED = REFERENCES / "blasphemous-modding-test.md"
 AUTOMATED = REFERENCES / "blasphemous-modding-test-automated-xunit.md"
 REAL_PROFILE = REFERENCES / "blasphemous-modding-test-real-profile.md"
+COORDINATION = REFERENCES / "blasphemous-modding-test-in-game-coordination.md"
+PLAYER = REFERENCES / "blasphemous-modding-test-player-verification.md"
 DELEGATION_REFERENCES = SKILL_ROOT / "references" / "subagent-delegation"
 GENERAL_DELEGATION = DELEGATION_REFERENCES / "subagent-delegation-general-guidelines.md"
 XUNIT_DELEGATION = DELEGATION_REFERENCES / "xunit-testing-delegation.md"
@@ -21,10 +23,23 @@ DOCUMENTS = (
     SHARED,
     AUTOMATED,
     REAL_PROFILE,
+    COORDINATION,
+    PLAYER,
     GENERAL_DELEGATION,
     XUNIT_DELEGATION,
     REAL_PROFILE_DELEGATION,
     READ_ONLY_DELEGATION,
+)
+PLAYER_HANDOFF_TURN_PHRASES = (
+    "mod_loaded",
+    "every planned test item and expected result",
+    "currently identifiable test session",
+    "current target scene or save state",
+    "explicit request for the player to perform the listed test and "
+    "report in the next user turn",
+    "until a new user message arrives",
+    "must not produce a player handoff or claim in-game evidence",
+    "must not be reported as test completion",
 )
 
 
@@ -263,6 +278,85 @@ class ModTestRoutingDocumentationTests(unittest.TestCase):
 
         self.assertIn("skill repository's python cli and fixture tests", text)
         self.assertIn("caller-mod xunit convention does not redirect", text)
+
+    def test_player_guide_links_to_coordination_turn_boundary(self):
+        player = read(PLAYER)
+
+        self.assertIn(
+            "](blasphemous-modding-test-in-game-coordination.md"
+            "#player-performed-in-game-verification-handoff-and-turn-boundary)",
+            player,
+        )
+        self.assertIn(
+            "selects player-performed verification and reaches the "
+            "[player-performed in-game verification handoff and turn boundary]",
+            player.casefold(),
+        )
+        self.assertNotIn("has produced startup evidence", player.casefold())
+
+    def test_coordination_owns_player_handoff_and_post_handoff_inactivity(self):
+        text = read(COORDINATION).casefold()
+
+        for phrase in PLAYER_HANDOFF_TURN_PHRASES:
+            self.assertIn(phrase, text)
+        for phrase in (
+            "## player-performed in-game verification handoff and turn boundary",
+            "after the real-profile branch has produced `mod_loaded` startup evidence",
+            "`launched`, `ready`, and `timeout` startup states must not satisfy "
+            "the handoff precondition",
+            "exact test session and required scene or save state are known",
+            "handoff must be the last user-visible output",
+            "no-input player observation uses the same boundary",
+            "must not make tool calls, poll, sleep, perform background monitoring",
+            "retain a waiting interactive session",
+            "game process and tracked test session may remain active",
+            "must not stop, force-stop, clean, snapshot, or roll back",
+            "computer use automated in-game testing and automated xunit are outside",
+            "readiness or startup-evidence failure before this boundary",
+            "existing blocked-report behavior",
+            "session-identity",
+            "ambiguity, approval, stop, force-stop, snapshot, cleanup, and "
+            "evidence-separation rules must remain unchanged",
+            "method switching must remain prohibited without user authorization",
+        ):
+            self.assertIn(phrase, text)
+
+        self.assertLess(
+            text.index("lifecycle-only requests such as build/deploy/launch"),
+            text.index(
+                "## player-performed in-game verification handoff and turn boundary"
+            ),
+        )
+
+    def test_player_guide_keeps_detail_without_copying_turn_or_lifecycle_rules(self):
+        player = " ".join(read(PLAYER).split()).casefold()
+
+        self.assertIn(
+            "this guide owns the detailed in-game actions, observations, and "
+            "evidence below",
+            player,
+        )
+        self.assertIn(
+            "real-profile branch remains authoritative for every command, "
+            "profile safeguard, session operation, and snapshot",
+            player,
+        )
+        for phrase in PLAYER_HANDOFF_TURN_PHRASES:
+            self.assertNotIn(phrase, player)
+        for phrase in (
+            "last user-visible output",
+            "must not make tool calls",
+            "perform background monitoring",
+            "waiting interactive session",
+            "computer use automated in-game testing",
+            "automated xunit are outside",
+            "force-stop",
+            "clean session_id",
+            "snapshot session_id",
+            "roll back",
+            "<test_cli> stop",
+        ):
+            self.assertNotIn(phrase, player)
 
 
 if __name__ == "__main__":

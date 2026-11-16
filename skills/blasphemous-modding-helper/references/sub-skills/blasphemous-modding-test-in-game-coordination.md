@@ -1,6 +1,6 @@
 # In-game test coordination
 
-The shared [Mod-test entry](blasphemous-modding-test.md) routes requests that need in-game behavior or a specified visible state here. This document owns the plan, Computer Use suitability assessment, user method choice, and handoff. The [Real-profile branch](blasphemous-modding-test-real-profile.md) remains authoritative for configuration, profile requirements, commands, build/package/deployment, launch, startup/log evidence, session tracking, stop, and cleanup.
+The shared [Mod-test entry](blasphemous-modding-test.md) routes requests that need in-game behavior or a specified visible state here. This document owns the plan, Computer Use suitability assessment, user method choice, and the Player-performed in-game verification handoff and turn boundary. The [Real-profile branch](blasphemous-modding-test-real-profile.md) remains authoritative for configuration, profile requirements, commands, build/package/deployment, launch, startup/log evidence, session tracking, stop, and cleanup.
 
 ## Plan and assess before setup
 
@@ -21,6 +21,14 @@ For every in-game run, present the operation list, expected results, suitability
 If the user cancels, end the run without Real-profile setup or other profile operations. Only after the user selects Player-performed verification or Computer Use for the current plan may the agent perform the shared Real-profile preflight, build/package/deployment, profile-local launch, and startup-evidence flow once, following the Real-profile branch. If preparation is blocked, the agent MUST report that phase and MUST NOT claim in-game evidence. After startup, the agent MUST hand off to exactly one selected evidence guide: [Player-performed in-game verification](blasphemous-modding-test-player-verification.md) or [Computer Use automated in-game testing](blasphemous-modding-test-computer-use.md). The evidence guide MUST NOT repeat common preparation or introduce alternate lifecycle commands.
 
 Lifecycle-only requests such as build/deploy/launch, startup inspection, logs, stop, or cleanup with no requested in-game result MUST remain on the Real-profile route and MUST NOT require this method choice. Automated xUnit remains separate.
+
+## Player-performed in-game verification handoff and turn boundary
+
+After the Real-profile branch has produced `mod_loaded` startup evidence and the exact Test session and required scene or save state are known, Player-performed verification reaches the handoff boundary. The `launched`, `ready`, and `timeout` startup states MUST NOT satisfy the handoff precondition. The handoff MUST be the last user-visible output of the turn and MUST include every planned test item and expected result, the currently identifiable Test session, the current target scene or save state, and an explicit request for the player to perform the listed test and report in the next user turn. A no-input player observation uses the same boundary.
+
+After the handoff, the agent MUST end the turn without waiting. Until a new user message arrives, the agent MUST NOT make tool calls, poll, sleep, perform background monitoring, or retain a waiting interactive session. The game process and tracked Test session MAY remain active. Ending the turn MUST NOT stop, force-stop, clean, snapshot, or roll back the game or session, and MUST NOT be reported as test completion.
+
+Computer Use automated in-game testing and automated xUnit are outside this Player-performed boundary. A readiness or startup-evidence failure before this boundary MUST use the existing blocked-report behavior in the [Real-profile report contract](blasphemous-modding-test-real-profile.md#report-status-and-evidence-boundary) and MUST NOT produce a Player handoff or claim in-game evidence. The session-identity, ambiguity, approval, stop, force-stop, snapshot, cleanup, and evidence-separation rules MUST remain unchanged. Method switching MUST remain prohibited without user authorization.
 
 ## Disposable-profile limits and reporting
 
