@@ -366,6 +366,12 @@ def build_parser() -> argparse.ArgumentParser:
     selectors.add_argument("--path", help="Exact project-relative asset path.")
     selectors.add_argument("--guid", help="Exact 32-character hexadecimal GUID.")
     selectors.add_argument("--name", help="Case-insensitive exact basename or stem.")
+    prefab = commands.add_parser("prefab", help="Inspect flattened Prefab evidence.")
+    prefab.add_argument("--project", required=True, help="Exported Unity project root.")
+    prefab_selectors = prefab.add_mutually_exclusive_group(required=True)
+    prefab_selectors.add_argument("--path", help="Exact project-relative Prefab path.")
+    prefab_selectors.add_argument("--guid", help="Exact 32-character hexadecimal GUID.")
+    prefab_selectors.add_argument("--name", help="Case-insensitive exact basename or stem.")
     scene = commands.add_parser("scene", help="Resolve a scene set or scene file.")
     scene.add_argument("--project", required=True, help="Exported Unity project root.")
     scene.add_argument("--path", help="Project path to one exact .unity file.")
@@ -391,6 +397,18 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         else:
             selector, value = "name", args.name
         payload = asset_query(Path(args.project), selector, value)
+        return_code = asset_exit_code(payload)
+    elif args.command == "prefab":
+        from .unity_assets import asset_exit_code
+        from .unity_prefab import prefab_query
+
+        if args.path is not None:
+            selector, value = "path", args.path
+        elif args.guid is not None:
+            selector, value = "guid", args.guid
+        else:
+            selector, value = "name", args.name
+        payload = prefab_query(Path(args.project), selector, value)
         return_code = asset_exit_code(payload)
     elif args.command == "scene":
         from .unity_scene import scene_query

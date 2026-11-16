@@ -58,6 +58,20 @@ An asset query MUST provide exactly one of `--path`, `--guid`, or `--name`:
 & $PYTHON3 (Join-Path $SkillRoot 'scripts\unity_project_navigation.py') asset --project '<UNITY_PROJECT_ROOT>' --name Example
 ```
 
+Resolve one flattened Prefab after the project summary:
+
+```bash
+"$PYTHON3" "$SKILL_ROOT/scripts/unity_project_navigation.py" prefab --project "<UNITY_PROJECT_ROOT>" --path "<PREFAB_PATH>"
+"$PYTHON3" "$SKILL_ROOT/scripts/unity_project_navigation.py" prefab --project "<UNITY_PROJECT_ROOT>" --guid "<PREFAB_GUID>"
+"$PYTHON3" "$SKILL_ROOT/scripts/unity_project_navigation.py" prefab --project "<UNITY_PROJECT_ROOT>" --name "<PREFAB_NAME_OR_STEM>"
+```
+
+```powershell
+& $PYTHON3 (Join-Path $SkillRoot 'scripts\unity_project_navigation.py') prefab --project '<UNITY_PROJECT_ROOT>' --path '<PREFAB_PATH>'
+& $PYTHON3 (Join-Path $SkillRoot 'scripts\unity_project_navigation.py') prefab --project '<UNITY_PROJECT_ROOT>' --guid '<PREFAB_GUID>'
+& $PYTHON3 (Join-Path $SkillRoot 'scripts\unity_project_navigation.py') prefab --project '<UNITY_PROJECT_ROOT>' --name '<PREFAB_NAME_OR_STEM>'
+```
+
 Resolve one scene set or one exact scene file after the project summary:
 
 ```bash

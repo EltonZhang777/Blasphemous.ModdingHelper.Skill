@@ -9,6 +9,7 @@ This guide provides read-only navigation for an exported Blasphemous Unity proje
 | Project topology, Unity version, included roots, file counts, or scene-set summary | [topology.md](topology.md) | Agent MUST inspect the exported project summary and report any version, completeness, or unreadable-path warning before a narrower lookup. |
 | Exact asset path, GUID, name, or extensionless stem | [assets-and-guids.md](assets-and-guids.md) | Agent MUST report the resolved project-relative evidence, metadata status, ambiguity, and the binary-content limit before selecting a next action. |
 | Scene-set membership or serialized scene-object evidence | [scenes.md](scenes.md) | Agent MUST report completeness, missing layers, observed evidence limits, and any malformed, ambiguous, or excluded target. |
+| Flattened Prefab objects or components | [prefabs.md](prefabs.md) | Agent MUST identify the evidence as flattened and MUST NOT infer source instance hierarchy, nesting, variant, or modification structure. |
 
 ## Evidence boundary
 

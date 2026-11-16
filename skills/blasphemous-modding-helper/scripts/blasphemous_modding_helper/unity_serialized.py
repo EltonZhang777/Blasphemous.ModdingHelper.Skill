@@ -28,6 +28,8 @@ LEADING_FLOW_KEY = re.compile(
 PLAIN_KEY = re.compile(
     r"^(\s*)(-\s+)?([A-Za-z_][A-Za-z0-9_.-]*):(?:\s+(.*))?$"
 )
+MIN_UNITY_ID = -(2**63)
+MAX_UNITY_ID = 2**63 - 1
 
 
 class SerializedError(Exception):
@@ -89,6 +91,26 @@ def _scalar(raw: str) -> Optional[str]:
             return raw[1:-1]
         return value if isinstance(value, str) else None
     return raw
+
+
+def _unity_id(value: str, field: str, relative: str) -> int:
+    try:
+        parsed = int(value)
+    except ValueError as error:
+        raise SerializedError(
+            "invalid_query",
+            "malformed_serialized",
+            f"{field} is not a signed 64-bit integer in {relative}.",
+            "malformed_document",
+        ) from error
+    if not MIN_UNITY_ID <= parsed <= MAX_UNITY_ID:
+        raise SerializedError(
+            "invalid_query",
+            "malformed_serialized",
+            f"{field} is outside the signed 64-bit range in {relative}.",
+            "malformed_document",
+        )
+    return parsed
 
 
 def _structure_only(
@@ -169,6 +191,7 @@ def _structure_lines(lines: Sequence[str]) -> List[str]:
 
 def _document_ranges(
     lines: Sequence[str],
+    relative: str,
 ) -> List[Tuple[int, int, int, int, int]]:
     starts: List[Tuple[int, int, int]] = []
     for index, line in enumerate(lines):
@@ -182,7 +205,13 @@ def _document_ranges(
                 f"Unparseable Unity document header at line {index + 1}.",
                 "malformed_document",
             )
-        starts.append((index, int(matched.group(1)), int(matched.group(2))))
+        starts.append(
+            (
+                index,
+                _unity_id(matched.group(1), "class ID", relative),
+                _unity_id(matched.group(2), "file ID", relative),
+            )
+        )
     if not starts:
         raise SerializedError(
             "invalid_query",
@@ -202,7 +231,7 @@ def _document_ranges(
     ]
 
 
-def _component_ids(lines: Sequence[str]) -> List[int]:
+def _component_ids(lines: Sequence[str], relative: str) -> List[int]:
     component_ids: List[int] = []
     active = False
     base_indent = 0
@@ -229,11 +258,17 @@ def _component_ids(lines: Sequence[str]) -> List[int]:
                 continue
             file_id = re.search(r"\bfileID\s*:\s*(-?\d+)", matched.group(1))
             if file_id:
-                component_ids.append(int(file_id.group(1)))
+                component_ids.append(
+                    _unity_id(file_id.group(1), "component file ID", relative)
+                )
     return component_ids
 
 
-def _references(lines: Sequence[str], start_line: int) -> List[Dict[str, object]]:
+def _references(
+    lines: Sequence[str],
+    start_line: int,
+    relative: str,
+) -> List[Dict[str, object]]:
     references: List[Dict[str, object]] = []
     parent_key: Optional[str] = None
     for index, structure in enumerate(_structure_lines(lines)):
@@ -247,6 +282,8 @@ def _references(lines: Sequence[str], start_line: int) -> List[Dict[str, object]
             file_value = pairs.get("fileID")
             if file_value is None or not re.fullmatch(r"-?\d+", file_value):
                 continue
+            guid = pairs.get("guid")
+            type_value = pairs.get("type")
             prefix = structure[: matched.start()]
             field = FIELD_KEY.search(prefix)
             field_name = field.group(1) if field else None
@@ -260,19 +297,27 @@ def _references(lines: Sequence[str], start_line: int) -> List[Dict[str, object]
                 and not prefix.rstrip().endswith(("[", ",", "{"))
             ):
                 continue
+            file_id = _unity_id(file_value, "reference file ID", relative)
+            type_id = (
+                _unity_id(type_value, "reference type", relative)
+                if type_value and re.fullmatch(r"-?\d+", type_value)
+                else None
+            )
             if field_name == "component" and parent_key == "m_Component":
                 field_name = "m_Component.component"
             if field_name is None:
                 field_name = parent_key or "reference"
-            guid = pairs.get("guid")
-            type_value = pairs.get("type")
             references.append(
                 {
                     "field": field_name,
-                    "file_id": int(file_value),
+                    "file_id": file_id,
                     "guid": guid,
-                    "type": int(type_value) if type_value and type_value.isdigit() else None,
-                    "scope": "external" if guid else ("null" if int(file_value) == 0 else "local"),
+                    "type": type_id,
+                    "scope": (
+                        "external"
+                        if guid
+                        else ("null" if file_id == 0 else "local")
+                    ),
                     "line": start_line + index + 1,
                 }
             )
@@ -281,14 +326,14 @@ def _references(lines: Sequence[str], start_line: int) -> List[Dict[str, object]
     return references
 
 
-def _container_file_id(lines: Sequence[str]) -> Optional[int]:
+def _container_file_id(lines: Sequence[str], relative: str) -> Optional[int]:
     for structure in _structure_lines(lines):
         matched = re.match(r"^\s{2}m_GameObject:\s*\{([^}]*)\}", structure)
         if matched is None:
             continue
         file_id = re.search(r"\bfileID\s*:\s*(-?\d+)", matched.group(1))
         if file_id:
-            return int(file_id.group(1))
+            return _unity_id(file_id.group(1), "container file ID", relative)
     return None
 
 
@@ -328,7 +373,9 @@ def parse_serialized_file(
     warnings: List[Dict[str, object]] = []
     objects: List[Dict[str, object]] = []
     seen_ids = set()
-    for body_start, end, class_id, file_id, header_line in _document_ranges(lines):
+    for body_start, end, class_id, file_id, header_line in _document_ranges(
+        lines, relative
+    ):
         body = lines[body_start:end]
         top_level = next((line for line in body if line.strip()), "")
         matched = TOP_LEVEL_KEY.fullmatch(top_level.rstrip())
@@ -354,19 +401,19 @@ def parse_serialized_file(
             if name_match:
                 name = _scalar(name_match.group(1))
                 break
-        references = _references(body, body_start)
+        references = _references(body, body_start, relative)
         objects.append(
             {
                 "file_id": file_id,
                 "class_id": class_id,
                 "class_name": matched.group(1),
                 "name": name,
-                "component_file_ids": _component_ids(body),
-                "container_file_id": _container_file_id(body),
+                "component_file_ids": _component_ids(body, relative),
+                "container_file_id": _container_file_id(body, relative),
                 "references": references,
             }
         )
-    objects.sort(key=lambda item: int(item["file_id"]))
+    objects.sort(key=lambda item: item["file_id"])
     return {
         "path": relative,
         "status": "ok",
