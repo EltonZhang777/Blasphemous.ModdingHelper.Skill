@@ -136,7 +136,9 @@ class SaveAnalysisTests(unittest.TestCase):
         run_root = Path(result.stdout.strip())
         self.assertTrue(run_root.is_absolute())
         self.assertTrue(run_root.is_dir())
-        self.assertEqual(run_root.parent, self.temp_root / "blasphemous-save-analysis")
+        self.assertEqual(
+            run_root.parent, (self.temp_root / "blasphemous-save-analysis").resolve()
+        )
 
         manifest = json.loads((run_root / "manifest.json").read_text(encoding="utf-8"))
         self.assertEqual(manifest["status"], "success")
@@ -711,7 +713,7 @@ class SaveAnalysisTests(unittest.TestCase):
 
         summary = (run_root / "summary.txt").read_text(encoding="utf-8")
         for name in expected_roles:
-            self.assertIn(str(source / name).casefold(), summary.casefold())
+            self.assertIn(str((source / name).resolve()).casefold(), summary.casefold())
         self.assertNotIn("notes.txt", summary)
         self.assertNotIn("savegame_1.save", summary)
 
