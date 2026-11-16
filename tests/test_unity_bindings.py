@@ -5,6 +5,7 @@ import re
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -233,6 +234,140 @@ class UnityBindingNavigationTests(unittest.TestCase):
             result.stdout,
             json.dumps(payload, sort_keys=True, separators=(",", ":")) + "\n",
         )
+
+    def test_census_summary_aggregates_all_rows_without_pagination(self):
+        dll_guid = "d" * 32
+        self.write("Assets/Plugins/Example.dll", b"MZ")
+        self.write_meta("Assets/Plugins/Example.dll", dll_guid)
+        self.add_source(
+            "Assets/Scenes/Main.unity",
+            [
+                (
+                    1,
+                    "{fileID: 11500000, guid: "
+                    + SCRIPT_GUID
+                    + ", type: 3}",
+                ),
+                (2, "{fileID: 0}"),
+                (3, "{fileID: 11500000}"),
+            ],
+        )
+        self.add_source(
+            "Assets/Prefabs/Widget.prefab",
+            [(4, "{fileID: 11500001, guid: " + dll_guid + ", type: 3}")],
+        )
+        self.add_source(
+            "Assets/Data/Config.asset",
+            [
+                (
+                    5,
+                    "{fileID: 11500000, guid: "
+                    + SCRIPT_GUID
+                    + ", type: 3}",
+                )
+            ],
+        )
+
+        first, payload = self.query("--census-summary")
+        repeated, repeated_payload = self.query("--census-summary")
+
+        self.assertEqual(first.stdout, repeated.stdout)
+        self.assertEqual(payload, repeated_payload)
+        self.assertEqual(payload["status"], "ok")
+        self.assertEqual(payload["scan_coverage"], "complete")
+        self.assertEqual(payload["results"], [])
+        self.assertIsNone(payload["next_cursor"])
+        self.assertFalse(payload["truncated"])
+        self.assertEqual(
+            payload["limits"],
+            {
+                "limit": None,
+                "default_limit": 200,
+                "max_limit": 1000,
+                "timeout_seconds": 60.0,
+                "census_summary": True,
+            },
+        )
+        census = payload["census"]
+        self.assertEqual(census["rows"], 5)
+        self.assertEqual(census["candidate_source_files"], 3)
+        self.assertEqual(
+            census["source_asset_kind"],
+            {"scene": 3, "prefab": 1, "asset": 1},
+        )
+        self.assertEqual(
+            census["reference_shape"],
+            {"structured": 3, "null": 1, "malformed": 1},
+        )
+        self.assertEqual(
+            census["target_category"],
+            {
+                "cs": 2,
+                "dll": 1,
+                "unresolved": 0,
+                "null": 1,
+                "malformed": 1,
+                "binary_other": 0,
+                "other": 0,
+            },
+        )
+        self.assertEqual(census["distinct_m_script_file_ids"], 3)
+        self.assertEqual(census["non_typical_file_id_rows"], 1)
+        self.assertEqual(census["warning_codes"], {})
+        self.assertEqual(
+            set(census["samples"]),
+            {
+                "cs",
+                "dll",
+                "null",
+                "malformed",
+                "non_typical_file_id",
+                "asset",
+            },
+        )
+        self.assertNotIn("m_script_guid", census["samples"]["cs"])
+
+        _, paginated = self.query()
+        self.assertNotIn("census", paginated)
+
+    def test_census_summary_rejects_pagination_and_partial_coverage(self):
+        self.add_source(
+            "Assets/Scenes/Main.unity",
+            [
+                (
+                    1,
+                    "{fileID: 11500000, guid: "
+                    + SCRIPT_GUID
+                    + ", type: 3}",
+                )
+            ],
+        )
+        self.write("Assets/Scenes/AA_Binary.unity", b"%YAML 1.1\n\x00")
+
+        for arguments in (
+            ("--census-summary", "--limit", "200"),
+            ("--census-summary", "--cursor", "not-a-cursor"),
+            (
+                "--census-summary",
+                "--path",
+                "Assets/Scenes/Main.unity",
+                "--object-file-id",
+                "1",
+            ),
+        ):
+            with self.subTest(arguments=arguments):
+                _, payload = self.query(*arguments, expected=3)
+                self.assertEqual(payload["status"], "invalid_query")
+                self.assertIn("--census-summary", payload["error"]["message"])
+
+        _, payload = self.query("--census-summary", expected=4)
+        self.assertEqual(payload["status"], "partial")
+        self.assertEqual(payload["scan_coverage"], "partial")
+        self.assertEqual(
+            payload["census"]["warning_codes"],
+            {"source_binary": 1},
+        )
+        self.assertEqual(payload["census"]["rows"], 1)
 
     def test_repeated_instances_remain_separate(self):
         self.add_source(
@@ -699,6 +834,43 @@ class UnityBindingNavigationTests(unittest.TestCase):
         self.assertEqual(row["asset_resolution"], "missing")
         self.assertEqual(row["asset_resolution_reason"], "unreadable_meta")
         self.assertEqual(row["script_object_resolution"], "not_applicable")
+
+    def test_metadata_reads_preserve_order_and_keep_the_deadline(self):
+        paths = []
+        for index in range(4):
+            relative = f"Assets/Scripts/Order{index}.cs.meta"
+            self.write(
+                relative,
+                f"fileFormatVersion: 2\nguid: {str(index) * 32}\n",
+            )
+            paths.append(self.root / relative)
+
+        def read_metadata(path):
+            if path.name == "Order0.cs.meta":
+                time.sleep(0.05)
+            return path, path.read_bytes(), None
+
+        with mock.patch.object(
+            unity_bindings,
+            "_read_metadata",
+            side_effect=read_metadata,
+        ):
+            results = list(
+                unity_bindings._metadata_reads(
+                    paths,
+                    time.monotonic() + 5,
+                )
+            )
+
+        self.assertEqual([item[0] for item in results], paths)
+        with self.assertRaises(unity_bindings.NavigationError) as raised:
+            list(
+                unity_bindings._metadata_reads(
+                    paths,
+                    time.monotonic() - 1,
+                )
+            )
+        self.assertEqual(raised.exception.code, "timeout")
 
     def test_partial_source_warnings_continue_scanning_and_preserve_rows(self):
         binary_guid = "5" * 32

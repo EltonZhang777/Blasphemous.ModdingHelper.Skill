@@ -4,15 +4,16 @@ from __future__ import annotations
 
 import base64
 import binascii
+import concurrent.futures
 import hashlib
 import json
 import math
 import os
 import re
 import time
-from collections import defaultdict
+from collections import defaultdict, deque
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Dict, Iterable, Iterator, List, Optional, Sequence, Tuple
 
 from .unity_assets import (
     BINARY_SUFFIXES,
@@ -39,15 +40,27 @@ DEFAULT_LIMIT = 200
 MAX_LIMIT = 1000
 DEFAULT_TIMEOUT_SECONDS = 60.0
 MAX_TIMEOUT_SECONDS = 120.0
+METADATA_READ_WORKERS = 16
 SORT_VERSION = 2
 CURSOR_VERSION = 2
 INT64_MIN = -(1 << 63)
 INT64_MAX = (1 << 63) - 1
+TYPICAL_SCRIPT_FILE_ID = "11500000"
 SOURCE_KINDS = {
     ".unity": "scene",
     ".prefab": "prefab",
     ".asset": "asset",
 }
+CENSUS_SOURCE_KINDS = ("scene", "prefab", "asset")
+CENSUS_TARGET_CATEGORIES = (
+    "cs",
+    "dll",
+    "unresolved",
+    "null",
+    "malformed",
+    "binary_other",
+    "other",
+)
 REFERENCE_SHAPES = frozenset({"structured", "null", "malformed"})
 ASSET_RESOLUTIONS = frozenset(
     {
@@ -349,6 +362,120 @@ def _bounded_raw_reference(raw: str) -> str:
     return text
 
 
+def _new_binding_census() -> Dict[str, object]:
+    return {
+        "rows": 0,
+        "candidate_source_files": 0,
+        "source_asset_kind": {key: 0 for key in CENSUS_SOURCE_KINDS},
+        "reference_shape": {
+            key: 0 for key in ("structured", "null", "malformed")
+        },
+        "target_category": {key: 0 for key in CENSUS_TARGET_CATEGORIES},
+        "asset_resolution": {
+            key: 0 for key in ASSET_RESOLUTIONS
+        },
+        "script_object_resolution": {
+            key: 0 for key in SCRIPT_OBJECT_RESOLUTIONS
+        },
+        "non_typical_file_id_rows": 0,
+        "warning_codes": {},
+        "samples": {},
+        "_file_ids": set(),
+    }
+
+
+def _target_category(row: Dict[str, object]) -> str:
+    shape = row.get("reference_shape")
+    if shape in {"null", "malformed"}:
+        return str(shape)
+    kind = row.get("target_asset_kind")
+    if kind == "cs":
+        return "cs"
+    if kind == "binary":
+        path = str(row.get("target_asset_path") or "")
+        return "dll" if path.casefold().endswith(".dll") else "binary_other"
+    if kind == "unresolved":
+        return "unresolved"
+    return "other"
+
+
+def _binding_sample(row: Dict[str, object]) -> Dict[str, object]:
+    guid = row.get("m_script_guid")
+    return {
+        "source_asset_path": row.get("source_asset_path"),
+        "source_asset_kind": row.get("source_asset_kind"),
+        "source_object_file_id": row.get("source_object_file_id"),
+        "reference_shape": row.get("reference_shape"),
+        "m_script_file_id": row.get("m_script_file_id"),
+        "m_script_guid_sha256": (
+            hashlib.sha256(str(guid).encode("ascii")).hexdigest()
+            if guid is not None
+            else None
+        ),
+        "m_script_type": row.get("m_script_type"),
+        "target_asset_kind": row.get("target_asset_kind"),
+        "target_asset_path": row.get("target_asset_path"),
+        "target_asset_candidate_count": len(
+            row.get("target_asset_candidates") or []
+        ),
+        "asset_resolution": row.get("asset_resolution"),
+        "asset_resolution_reason": row.get("asset_resolution_reason"),
+        "script_object_resolution": row.get("script_object_resolution"),
+    }
+
+
+def _increment(counts: Dict[str, int], key: object) -> None:
+    name = str(key)
+    counts[name] = counts.get(name, 0) + 1
+
+
+def _record_binding_census_row(
+    census: Dict[str, object],
+    row: Dict[str, object],
+) -> None:
+    census["rows"] += 1
+    _increment(census["source_asset_kind"], row.get("source_asset_kind"))
+    _increment(census["reference_shape"], row.get("reference_shape"))
+    _increment(census["target_category"], _target_category(row))
+    _increment(census["asset_resolution"], row.get("asset_resolution"))
+    _increment(
+        census["script_object_resolution"],
+        row.get("script_object_resolution"),
+    )
+    file_id = row.get("m_script_file_id")
+    if file_id is not None:
+        census["_file_ids"].add(file_id)
+    if (
+        row.get("reference_shape") == "structured"
+        and file_id != TYPICAL_SCRIPT_FILE_ID
+    ):
+        census["non_typical_file_id_rows"] += 1
+
+    categories = [_target_category(row)]
+    if (
+        row.get("reference_shape") == "structured"
+        and file_id != TYPICAL_SCRIPT_FILE_ID
+    ):
+        categories.append("non_typical_file_id")
+    if row.get("source_asset_kind") == "asset":
+        categories.append("asset")
+    for key in ("source_asset_path", "target_asset_path"):
+        if str(row.get(key) or "").startswith("Packages/"):
+            categories.append("packages")
+            break
+    for category in categories:
+        census["samples"].setdefault(category, _binding_sample(row))
+
+
+def _finalize_binding_census(
+    census: Dict[str, object],
+    warnings: Sequence[Dict[str, object]],
+) -> None:
+    census["distinct_m_script_file_ids"] = len(census.pop("_file_ids"))
+    for warning in warnings:
+        _increment(census["warning_codes"], warning.get("code"))
+
+
 def _parse_script_reference(
     lines: Sequence[str],
     field_index: int,
@@ -416,6 +543,8 @@ def _parse_source(
     text: str,
 ) -> List[Dict[str, object]]:
     rows: List[Dict[str, object]] = []
+    if "--- !u!114 &" not in text:
+        return rows
     kind = SOURCE_KINDS[path.suffix.lower()]
     source_path = _relative(path, root)
     for (class_id, object_file_id), lines in _iter_documents(text):
@@ -453,6 +582,55 @@ def _asset_kind(path: Path) -> str:
     return "other"
 
 
+def _read_metadata(
+    path: Path,
+) -> Tuple[Path, Optional[bytes], Optional[OSError]]:
+    try:
+        return path, path.read_bytes(), None
+    except OSError as error:
+        return path, None, error
+
+
+def _metadata_reads(
+    paths: Sequence[Path],
+    deadline: float,
+) -> Iterator[Tuple[Path, Optional[bytes], Optional[OSError]]]:
+    if not paths:
+        return
+    workers = min(METADATA_READ_WORKERS, len(paths))
+    executor = concurrent.futures.ThreadPoolExecutor(max_workers=workers)
+    iterator = iter(paths)
+    pending = deque()
+    try:
+        while True:
+            while len(pending) < workers:
+                _check_deadline(deadline)
+                try:
+                    path = next(iterator)
+                except StopIteration:
+                    break
+                pending.append(executor.submit(_read_metadata, path))
+            if not pending:
+                break
+            _check_deadline(deadline)
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                _check_deadline(deadline)
+            try:
+                result = pending.popleft().result(timeout=remaining)
+            except concurrent.futures.TimeoutError as error:
+                raise NavigationError(
+                    "timeout",
+                    "The binding metadata scan timed out before evidence "
+                    "collection completed.",
+                ) from error
+            yield result
+    finally:
+        for future in pending:
+            future.cancel()
+        executor.shutdown(wait=False, cancel_futures=True)
+
+
 def _build_guid_index(
     root: Path,
     files: Sequence[Path],
@@ -460,21 +638,21 @@ def _build_guid_index(
 ) -> Tuple[Dict[str, List[Dict[str, object]]], List[Dict[str, object]]]:
     index: Dict[str, List[Dict[str, object]]] = defaultdict(list)
     warnings: List[Dict[str, object]] = []
-    for meta_path in files:
+    meta_paths = [
+        path
+        for path in files
+        if path.suffix.lower() == ".meta"
+        and path.with_suffix("").suffix.lower() != ".meta"
+    ]
+    for meta_path, data, read_error in _metadata_reads(meta_paths, deadline):
         _check_deadline(deadline)
-        if meta_path.suffix.lower() != ".meta":
-            continue
         target = meta_path.with_suffix("")
-        if target.suffix.lower() == ".meta":
-            continue
         relative = _relative(meta_path, root)
-        try:
-            data = meta_path.read_bytes()
-        except OSError as error:
+        if read_error is not None:
             warnings.append(
                 _warning(
                     "metadata_unusable",
-                    f"Metadata could not be read: {error}",
+                    f"Metadata could not be read: {read_error}",
                     relative,
                 )
             )
@@ -833,6 +1011,7 @@ def bindings_query(
     cursor: Optional[str],
     timeout_seconds: Optional[str] = None,
     *,
+    census_summary: bool = False,
     paths: Optional[Sequence[str]] = None,
     object_file_id: Optional[str] = None,
     script_guids: Optional[Sequence[str]] = None,
@@ -873,6 +1052,16 @@ def bindings_query(
 
         page_limit = _parse_limit(limit)
         timeout = _parse_timeout(timeout_seconds)
+        if census_summary and (
+            cursor is not None
+            or limit is not None
+            or object_file_id is not None
+        ):
+            raise NavigationError(
+                "invalid_query",
+                "--census-summary cannot be combined with --limit, --cursor, "
+                "or --object-file-id.",
+            )
         query = _build_binding_query(
             root,
             included_roots,
@@ -889,12 +1078,22 @@ def bindings_query(
             if cursor is not None
             else None
         )
-        payload["limits"] = {
-            "limit": page_limit,
-            "default_limit": DEFAULT_LIMIT,
-            "max_limit": MAX_LIMIT,
-            "timeout_seconds": timeout,
-        }
+        payload["limits"] = (
+            {
+                "limit": None,
+                "default_limit": DEFAULT_LIMIT,
+                "max_limit": MAX_LIMIT,
+                "timeout_seconds": timeout,
+                "census_summary": True,
+            }
+            if census_summary
+            else {
+                "limit": page_limit,
+                "default_limit": DEFAULT_LIMIT,
+                "max_limit": MAX_LIMIT,
+                "timeout_seconds": timeout,
+            }
+        )
 
         deadline = time.monotonic() + timeout
         _check_deadline(deadline)
@@ -911,11 +1110,14 @@ def bindings_query(
         )
         warnings.extend(metadata_warnings)
         rows: List[Dict[str, object]] = []
+        census = _new_binding_census() if census_summary else None
         source_warnings: List[Dict[str, object]] = []
         for path in files:
             _check_deadline(deadline)
             if path.suffix.lower() not in SOURCE_KINDS:
                 continue
+            if census is not None:
+                census["candidate_source_files"] += 1
             text, warning = _read_source(path, root)
             if warning is not None:
                 source_warnings.append(warning)
@@ -928,45 +1130,56 @@ def bindings_query(
                         guid_index,
                     )
                 )
-                rows.append(row)
+                if census is None:
+                    rows.append(row)
+                elif _matches_binding_query(row, query):
+                    _record_binding_census_row(census, row)
         _check_deadline(deadline)
         warnings.extend(source_warnings)
-        rows = [row for row in rows if _matches_binding_query(row, query)]
 
         coverage = (
             "partial"
             if scan_warnings or source_warnings or metadata_warnings
             else "complete"
         )
-        unique_status = None
-        if object_file_id is not None:
-            if not rows:
-                unique_status = "not_found"
-            elif len(rows) > 1:
-                unique_status = "ambiguous"
-        _check_deadline(deadline)
-        positioned = _positioned_rows(rows)
-        _check_deadline(deadline)
-        if cursor_key is not None:
-            positioned = [
-                item for item in positioned if item[0] > cursor_key
-            ]
-        page_positions = positioned[:page_limit]
-        page = [row for _, row in page_positions]
-        has_more = len(positioned) > page_limit
-        payload["results"] = page
-        payload["next_cursor"] = (
-            _encode_cursor(root, query, page_positions[-1][0])
-            if has_more and page
-            else None
-        )
-        payload["scan_coverage"] = coverage
-        if unique_status is not None:
-            payload["status"] = unique_status
-        elif coverage == "partial":
-            payload["status"] = "partial"
+        if census is not None:
+            _finalize_binding_census(census, warnings)
+            payload["census"] = census
+            payload["scan_coverage"] = coverage
+            payload["status"] = (
+                "partial" if coverage == "partial" else "ok"
+            )
         else:
-            payload["status"] = "ok"
+            rows = [row for row in rows if _matches_binding_query(row, query)]
+            unique_status = None
+            if object_file_id is not None:
+                if not rows:
+                    unique_status = "not_found"
+                elif len(rows) > 1:
+                    unique_status = "ambiguous"
+            _check_deadline(deadline)
+            positioned = _positioned_rows(rows)
+            _check_deadline(deadline)
+            if cursor_key is not None:
+                positioned = [
+                    item for item in positioned if item[0] > cursor_key
+                ]
+            page_positions = positioned[:page_limit]
+            page = [row for _, row in page_positions]
+            has_more = len(positioned) > page_limit
+            payload["results"] = page
+            payload["next_cursor"] = (
+                _encode_cursor(root, query, page_positions[-1][0])
+                if has_more and page
+                else None
+            )
+            payload["scan_coverage"] = coverage
+            if unique_status is not None:
+                payload["status"] = unique_status
+            elif coverage == "partial":
+                payload["status"] = "partial"
+            else:
+                payload["status"] = "ok"
     except NavigationError as error:
         if error.code == "timeout":
             message = (

@@ -458,6 +458,14 @@ def build_parser() -> argparse.ArgumentParser:
         help="Binding scan timeout in seconds (default: 60, maximum: 120).",
     )
     bindings.add_argument(
+        "--census-summary",
+        action="store_true",
+        help=(
+            "Return aggregate counts and deterministic samples from one full "
+            "scan without pagination."
+        ),
+    )
+    bindings.add_argument(
         "--path",
         action="append",
         help="Exact .unity, .prefab, or .asset source path; repeat for OR semantics.",
@@ -565,6 +573,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             args.limit,
             args.cursor,
             args.timeout_seconds,
+            census_summary=args.census_summary,
             paths=args.path,
             object_file_id=args.object_file_id,
             script_guids=args.script_guid,

@@ -91,6 +91,31 @@ Repeated values within one selector or status axis use OR semantics. Different s
 
 An invalid path, object ID, GUID, status value, or cursor is an `invalid_query` with exit code `3`. An unsupported selector format, such as a non-Unity source path, reports `error.code=unsupported_format` with `status=invalid_query` and exit code `3`. An `--object-file-id` lookup has a uniqueness requirement: no matching object reports `status=not_found`, while more than one row reports `status=ambiguous`; both use exit code `2`. These uniqueness outcomes take precedence over partial coverage, while `scan_coverage` and warnings still report unavailable evidence.
 
+## Census summary
+
+`--census-summary` returns aggregate binding evidence from one complete scan. It is intended for bounded real-project acceptance when following every cursor page would repeatedly rescan the same export:
+
+```bash
+"$PYTHON3" "$SKILL_ROOT/scripts/unity_project_navigation.py" bindings --project "<UNITY_PROJECT_ROOT>" --census-summary --timeout-seconds 120
+```
+
+```powershell
+& $PYTHON3 (Join-Path $SkillRoot 'scripts\unity_project_navigation.py') bindings --project '<UNITY_PROJECT_ROOT>' --census-summary --timeout-seconds 120
+```
+
+Census summary is opt-in and additive; ordinary project-wide and paginated output remains unchanged. It cannot be combined with `--limit`, `--cursor`, or `--object-file-id`. Source path, script GUID, reference-shape, asset-resolution, and script-object-resolution filters MAY be used to summarize a narrower inventory.
+
+In census mode, `results` is empty and `next_cursor` is `null`. The top-level `census` object contains:
+
+- `rows` and `candidate_source_files`.
+- Source-kind, reference-shape, target-category, asset-resolution, and script-object-resolution counts.
+- `distinct_m_script_file_ids`, `non_typical_file_id_rows`, and `warning_codes`.
+- Deterministic first-match samples for observed categories, including C# targets, DLL targets, unresolved targets, null references, malformed references, non-typical script file IDs, `.asset` sources, and `Packages` evidence when present.
+
+Samples can contain project-relative paths and GUID hashes for local diagnostics. Callers MUST NOT commit or publish sample paths, GUID hashes, asset copies, or raw reports; publish only aggregate counts, statuses, timestamps, and a path-free snapshot identifier.
+
+The summary has `scan_coverage=complete` and `status=ok` only when all candidate evidence was scanned. Any warning yields `status=partial` and exit code `4`. A timeout yields `status=timeout`, `scan_coverage=partial`, and exit code `3`. A partial or timed-out summary MUST NOT be treated as complete census evidence.
+
 ## Partial coverage
 
 Candidate source failures are non-fatal. The scanner continues with later sources and returns stable warning codes:
@@ -144,7 +169,7 @@ A normal middle page and a normal final page for a complete, non-unique query bo
 
 Path selectors are constrained to the included `Assets` and `Packages` roots. Absolute paths outside the project, parent-directory traversal, and links that resolve outside the project are rejected. Legitimate project-relative paths, including nested paths, remain accepted.
 
-The command opens project evidence read-only and creates no project or Skill index, cache, lock, log, copied asset, or temporary file. It does not read the configured authoritative source tree, and it does not use or invoke the decompiler. This command proves exported binding evidence only; continue with the source analyzer for behavior.
+The command opens project evidence read-only and creates no project or Skill index, cache, lock, log, copied asset, or temporary file. Metadata reads MAY use a bounded 16-worker prefetch; input order, path and symlink filtering, aggregate order, and deadline handling remain unchanged. The command does not read the configured authoritative source tree, and it does not use or invoke the decompiler. This command proves exported binding evidence only; continue with the source analyzer for behavior.
 
 Each binding row is serialized asset evidence. A `.cs` path in this command is not behavioral proof and is not treated as equivalent to the authoritative source tree. For classes, dependencies, call flow, or behavior, continue with the source analyzer.
 

@@ -46,7 +46,7 @@ The default real-project gate is a bounded smoke and does not run the complete b
 & $PYTHON3 tests\run_unity_real_project_acceptance.py --project '<UNITY_PROJECT_ROOT>' --bindings-census
 ```
 
-The census uses only the public `bindings` command. It follows every page cursor at the maximum limit of 1000 and fails unless every page reports `status: "ok"` and `scan_coverage: "complete"`. The final page MUST have `next_cursor: null`.
+The census uses only the public `bindings` command. One opt-in `--census-summary` scan MUST report `status: "ok"` and `scan_coverage: "complete"`. The summary MUST return aggregate counts and deterministic samples from the same full scan without following the complete cursor chain.
 
 Census mode runs the project summary, the full binding census, and the before-and-after read-only gate. It does not rerun the unrelated scene, Prefab, GUID, script-asset, or serialized-reference smoke chains. Those remain owned by the default real-project smoke.
 
@@ -54,7 +54,7 @@ The report records the Unity version, Skill and schema versions, invocation para
 
 The census selects deterministic first matches for a C# target, a DLL target, an unresolved target, a null reference, a non-typical script file ID, an `.asset` source, malformed evidence when present, and a `Packages` binding when package source candidates exist. Each sample is checked for the expected binding-chain state. A state absent from the export is reported as not observed instead of fabricated.
 
-The page benchmark records the UTF-8 serialized byte size and elapsed time for a default 200-row page and a maximum 1000-row page. It follows each cursor once, records the page transition, and records the full maximum-limit cursor chain.
+The page benchmark separately runs the first and second page at the default 200-row limit and at the maximum 1000-row limit. Each run records the UTF-8 serialized byte size, elapsed time, cursor presence, and a changed boundary identity. The benchmark does not follow the complete cursor chain.
 
 The local report can contain real project-relative sample paths so the operator can inspect the selected chains. Do not commit or upload those paths, sample GUID hashes, asset copies, or the raw acceptance log. Publish only aggregate counts, statuses, timestamps, page sizes, and the path-free snapshot identifier.
 
@@ -77,7 +77,7 @@ The local report can contain real project-relative sample paths so the operator 
 | Binding sources: scenes / Prefabs / assets | 69,267 / 4,803 / 1,077 |
 | Structured / null / malformed references | 75,146 / 1 / 0 |
 | C# / DLL / unresolved / null / malformed targets | 68,660 / 2,356 / 4,130 / 1 / 0 |
-| Distinct / non-typical `m_Script.fileID` values | 50 / 6,485 rows |
+| Distinct / non-typical `m_Script.fileID` values | 50 / 6,484 rows |
 
 The fixed smoke resolves:
 
@@ -101,7 +101,11 @@ Observed on 2026-11-16 on native Windows with the supplied export:
 - Complete scene sets: 393; standalone scenes: 5.
 - Real-project extra-file count after the smoke: 0.
 - Representative file content changes after the smoke: 0.
-- Full binding census: blocked. Repeated maximum-limit pages completed individually, but the full cursor chain hit the 120-second per-page timeout on a later page. No partial or timed-out census is recorded as a pass.
+- Full binding census: passed with one `--census-summary` scan in 40.53 seconds: 75,147 rows, 35,316 candidate source files, and `scan_coverage: "complete"`.
+- Snapshot identifier: `5272524ba74c0570e2e80643c735a04ccc7f1e19e172c92d13a871e2f5730c02`.
+- 200-row benchmark: 126,820 UTF-8 bytes, first page 43.52 seconds, second page 46.76 seconds, changed boundary identity.
+- 1,000-row benchmark: 628,184 UTF-8 bytes, first page 61.84 seconds, second page 51.30 seconds, changed boundary identity.
+- Read-only census check: no added or removed paths and no representative content changes.
 
 The real-project report is separate from the synthetic suite and does not claim C# behavior, runtime state, or gameplay.
 
@@ -109,7 +113,7 @@ The real report is asset and serialized evidence only. C# behavior, dependencies
 
 ## Completion criteria
 
-Real-project acceptance is complete only when the synthetic suite passes separately, the real runner exits `0`, the full path inventory is unchanged, every representative hash is unchanged, and the report names the commands, evidence, and next action. Component-binding acceptance additionally requires the opt-in census to finish every cursor page with complete coverage, match the aggregate baseline, cover every observed sample state, record both page benchmarks, and leave the project path inventory unchanged. A blocked, timed-out, partial, or failed real run remains incomplete.
+Real-project acceptance is complete only when the synthetic suite passes separately, the real runner exits `0`, the full path inventory is unchanged, every representative hash is unchanged, and the report names the commands, evidence, and next action. Component-binding acceptance additionally requires one opt-in census summary to complete with full coverage, match the aggregate baseline, cover every observed sample state, record both two-page benchmarks, and leave the project path inventory unchanged. A blocked, timed-out, partial, or failed real run remains incomplete.
 
 ## Next action
 
