@@ -7,6 +7,7 @@ This guide provides read-only navigation for an exported Blasphemous Unity proje
 | Request signal | Route destination | Evidence boundary / next action |
 | --- | --- | --- |
 | Project topology, Unity version, included roots, file counts, or scene-set summary | [topology.md](topology.md) | Agent MUST inspect the exported project summary and report any version, completeness, or unreadable-path warning before a narrower lookup. |
+| Exact asset path, GUID, name, or extensionless stem | [assets-and-guids.md](assets-and-guids.md) | Agent MUST report the resolved project-relative evidence, metadata status, ambiguity, and the binary-content limit before selecting a next action. |
 
 ## Evidence boundary
 

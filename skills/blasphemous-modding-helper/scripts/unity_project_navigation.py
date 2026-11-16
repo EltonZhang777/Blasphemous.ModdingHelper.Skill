@@ -3,6 +3,10 @@
 
 from __future__ import annotations
 
+import sys
+
+sys.dont_write_bytecode = True
+
 from blasphemous_modding_helper.unity_project import main
 
 

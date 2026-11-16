@@ -29,7 +29,7 @@ An invalid path result reports `PREFERENCES_NEXT_ACTION=retry-unity-project-path
 
 ## Workflow
 
-1. Open [Unity project navigation](../unity-project-navigation/MAIN.md) and select the topology topic.
+1. Open [Unity project navigation](../unity-project-navigation/MAIN.md) and select the narrowest topic.
 2. Resolve the configured root and invoke the public scanner with an explicit `--project`.
 3. The agent MUST read the versioned JSON envelope and report `status`, warnings, evidence paths, and incomplete conditions.
 4. Hand behavior or dependency questions to [Source analyzer](source-analyzer.md).
@@ -42,6 +42,20 @@ Start with a project summary:
 
 ```powershell
 & $PYTHON3 (Join-Path $SkillRoot 'scripts\unity_project_navigation.py') project --project '<UNITY_PROJECT_ROOT>'
+```
+
+An asset query MUST provide exactly one of `--path`, `--guid`, or `--name`:
+
+```bash
+"$PYTHON3" "$SKILL_ROOT/scripts/unity_project_navigation.py" asset --project "<UNITY_PROJECT_ROOT>" --path "Assets/Prefabs/Example.prefab"
+"$PYTHON3" "$SKILL_ROOT/scripts/unity_project_navigation.py" asset --project "<UNITY_PROJECT_ROOT>" --guid 0123456789abcdef0123456789abcdef
+"$PYTHON3" "$SKILL_ROOT/scripts/unity_project_navigation.py" asset --project "<UNITY_PROJECT_ROOT>" --name Example
+```
+
+```powershell
+& $PYTHON3 (Join-Path $SkillRoot 'scripts\unity_project_navigation.py') asset --project '<UNITY_PROJECT_ROOT>' --path 'Assets/Prefabs/Example.prefab'
+& $PYTHON3 (Join-Path $SkillRoot 'scripts\unity_project_navigation.py') asset --project '<UNITY_PROJECT_ROOT>' --guid 0123456789abcdef0123456789abcdef
+& $PYTHON3 (Join-Path $SkillRoot 'scripts\unity_project_navigation.py') asset --project '<UNITY_PROJECT_ROOT>' --name Example
 ```
 
 The scanner reads the configured directory and writes no index, cache, lock, log, copied asset, or project file. The agent MUST NOT start Unity Editor or modify, repair, or reserialize the project.

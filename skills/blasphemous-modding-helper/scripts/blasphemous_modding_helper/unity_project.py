@@ -31,6 +31,7 @@ EXCLUDED_DIRECTORIES = frozenset(
         "Builds",
     }
 )
+EXCLUDED_DIRECTORY_NAMES = frozenset(name.casefold() for name in EXCLUDED_DIRECTORIES)
 UNITY_VERSION = re.compile(r"^\d+\.\d+\.\d+[A-Za-z]\d+$")
 
 
@@ -211,7 +212,7 @@ def _walk_files(root: Path, included_roots: Sequence[Path]):
             kept_names = []
             for name in sorted(names):
                 child = base / name
-                if name in EXCLUDED_DIRECTORIES:
+                if name.casefold() in EXCLUDED_DIRECTORY_NAMES:
                     continue
                 if not _within(child, root):
                     warnings.append(
@@ -354,6 +355,12 @@ def build_parser() -> argparse.ArgumentParser:
     commands = parser.add_subparsers(dest="command", required=True)
     project = commands.add_parser("project", help="Summarize an exported Unity project.")
     project.add_argument("--project", required=True, help="Exported Unity project root.")
+    asset = commands.add_parser("asset", help="Resolve one exported asset identity.")
+    asset.add_argument("--project", required=True, help="Exported Unity project root.")
+    selectors = asset.add_mutually_exclusive_group(required=True)
+    selectors.add_argument("--path", help="Exact project-relative asset path.")
+    selectors.add_argument("--guid", help="Exact 32-character hexadecimal GUID.")
+    selectors.add_argument("--name", help="Case-insensitive exact basename or stem.")
     return parser
 
 
@@ -361,10 +368,22 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     args = build_parser().parse_args(argv)
     if args.command == "project":
         payload = project_summary(Path(args.project))
+        return_code = exit_code(payload)
+    elif args.command == "asset":
+        from .unity_assets import asset_exit_code, asset_query
+
+        if args.path is not None:
+            selector, value = "path", args.path
+        elif args.guid is not None:
+            selector, value = "guid", args.guid
+        else:
+            selector, value = "name", args.name
+        payload = asset_query(Path(args.project), selector, value)
+        return_code = asset_exit_code(payload)
     else:  # pragma: no cover - argparse rejects unknown commands.
         raise AssertionError(args.command)
     print(json.dumps(payload, sort_keys=True, separators=(",", ":")))
-    return exit_code(payload)
+    return return_code
 
 
 if __name__ == "__main__":

@@ -46,6 +46,7 @@ ROUTE_DOCUMENTS = (
     "references/sub-skills/referencing-modding-api.md",
     "references/unity-project-navigation/MAIN.md",
     "references/unity-project-navigation/topology.md",
+    "references/unity-project-navigation/assets-and-guids.md",
 )
 DEPENDENCY_GUIDANCE = (
     REPOSITORY_ROOT / "README.md",
@@ -78,7 +79,7 @@ ROUTING_CONTRACTS = (
         (
             ("natural-language identify", "Localization lookup", "MUST NOT require configuration"),
             ("Find or explain decompiled game source", "Source analyzer", "source-path gate"),
-            ("Inspect exported Unity project topology, Unity version, or scene-set summary", "Unity project navigation", "MUST keep exported asset evidence separate from C# behavior"),
+            ("Inspect exported Unity project topology, assets, GUIDs, Unity version, or scene-set summary", "Unity project navigation", "MUST keep exported asset evidence separate from C# behavior"),
             ("Diagnose BepInEx or Unity logs", "Log analyzer", "MUST resolve required log sources"),
             ("Test a Mod; build/deploy/launch a profile", "Mod-test entry", "classify the request"),
             ("Generate, modify, review, or refactor Mod-owned C#", "Coding standards", "ownership boundary"),
@@ -180,6 +181,11 @@ ROUTING_CONTRACTS = (
         "## Evidence boundary",
         (
             ("Project topology", "topology.md", "MUST inspect the exported project summary"),
+            (
+                "Exact asset path, GUID, name, or extensionless stem",
+                "assets-and-guids.md",
+                "MUST report the resolved project-relative evidence",
+            ),
         ),
     ),
 )
