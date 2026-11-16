@@ -61,9 +61,14 @@ def _snapshot_paths(root: Path) -> Tuple[Set[str], int, int, int]:
     assets_files = 0
     file_count = 0
     directory_count = 0
+
+    def on_error(error: OSError) -> None:
+        raise error
+
     for directory, names, filenames in os.walk(
         str(root),
         topdown=True,
+        onerror=on_error,
         followlinks=False,
     ):
         base = Path(directory)
@@ -99,10 +104,26 @@ def _scanner_command(
     ]
 
 
+def _query_record(
+    name: str,
+    python_executable: str,
+    project_root: Path,
+    arguments: Sequence[str],
+) -> Dict[str, object]:
+    command = [python_executable, str(SCANNER), *arguments]
+    return {
+        "query": name,
+        "command": _scanner_command(command, project_root),
+        "status": "started",
+        "elapsed_seconds": None,
+    }
+
+
 def _run_scanner(
     python_executable: str,
     project_root: Path,
     arguments: Sequence[str],
+    record: Dict[str, object],
 ) -> Tuple[Dict[str, object], float]:
     command = [python_executable, str(SCANNER), *arguments]
     started = time.monotonic()
@@ -119,12 +140,16 @@ def _run_scanner(
             timeout=SCANNER_TIMEOUT_SECONDS,
         )
     except subprocess.TimeoutExpired as error:
+        record["status"] = "timeout"
+        record["elapsed_seconds"] = round(time.monotonic() - started, 2)
         raise SmokeFailure(
             "Scanner command exceeded the outer acceptance timeout: "
             + " ".join(command)
         ) from error
     elapsed = round(time.monotonic() - started, 2)
+    record["elapsed_seconds"] = elapsed
     if result.returncode != 0:
+        record["status"] = "failed"
         raise SmokeFailure(
             f"Scanner command failed with exit code {result.returncode}: "
             f"{' '.join(command)}\nstdout:\n{result.stdout}\nstderr:\n{result.stderr}"
@@ -132,26 +157,15 @@ def _run_scanner(
     try:
         payload = json.loads(result.stdout)
     except json.JSONDecodeError as error:
+        record["status"] = "failed"
         raise SmokeFailure(
             f"Scanner output was not JSON: {' '.join(command)}: {error}"
         ) from error
-    _require(isinstance(payload, dict), "Scanner output envelope is not an object.")
+    if not isinstance(payload, dict):
+        record["status"] = "failed"
+        raise SmokeFailure("Scanner output envelope is not an object.")
+    record["status"] = payload.get("status")
     return payload, elapsed
-
-
-def _query_record(
-    name: str,
-    arguments: Sequence[str],
-    project_root: Path,
-    payload: Dict[str, object],
-    elapsed: float,
-) -> Dict[str, object]:
-    return {
-        "query": name,
-        "command": _scanner_command(arguments, project_root),
-        "status": payload.get("status"),
-        "elapsed_seconds": elapsed,
-    }
 
 
 def _verify_project_summary(
@@ -397,7 +411,6 @@ def _blocked_report(project: Optional[str], reason: str) -> Dict[str, object]:
 def run(
     python_executable: str,
     project: Optional[str],
-    manifest_path: Path,
 ) -> Tuple[int, Dict[str, object]]:
     if not project:
         return 2, _blocked_report(
@@ -421,7 +434,17 @@ def run(
             str(project_root),
             "The supplied real Unity project root has no ProjectVersion.txt evidence.",
         )
+    try:
+        before_paths, before_assets, before_files, before_dirs = _snapshot_paths(
+            project_root
+        )
+    except OSError as error:
+        return 2, _blocked_report(
+            str(project_root),
+            f"The supplied real Unity project could not be traversed: {error}",
+        )
 
+    commands: List[Dict[str, object]] = []
     report: Dict[str, object] = {
         "schema_version": 1,
         "report": "unity-project-navigation-real-project",
@@ -432,7 +455,7 @@ def run(
         ),
         "status": "failed",
         "project": {"root": str(project_root)},
-        "commands": [],
+        "commands": commands,
         "completion_evidence": {},
         "read_only": None,
         "blocked_reason": None,
@@ -440,32 +463,33 @@ def run(
         "next_action": "Fix the failed real-project evidence and rerun the runner.",
     }
     try:
-        manifest = _read_json(manifest_path)
+        manifest = _read_json(DEFAULT_MANIFEST)
         _require(
             manifest.get("schema_version") == 1,
             "Real-project smoke manifest schema is unsupported.",
         )
-        before_paths, before_assets, before_files, before_dirs = _snapshot_paths(
-            project_root
-        )
         representative_files = manifest["representative_files"]
-        before_hashes = _hashes(project_root, representative_files)
+        try:
+            before_hashes = _hashes(project_root, representative_files)
+        except OSError as error:
+            return 2, _blocked_report(
+                str(project_root),
+                f"A representative project file could not be read: {error}",
+            )
 
-        commands: List[Dict[str, object]] = []
         project_args = ["project", "--project", str(project_root)]
-        project_payload, elapsed = _run_scanner(
+        project_record = _query_record(
+            "project",
             python_executable,
             project_root,
             project_args,
         )
-        commands.append(
-            _query_record(
-                "project",
-                project_args,
-                project_root,
-                project_payload,
-                elapsed,
-            )
+        commands.append(project_record)
+        project_payload, elapsed = _run_scanner(
+            python_executable,
+            project_root,
+            project_args,
+            project_record,
         )
         _verify_project_summary(
             project_payload,
@@ -480,19 +504,18 @@ def run(
             "--name",
             str(manifest["scene_set"]["name"]),
         ]
-        scene_payload, elapsed = _run_scanner(
+        scene_record = _query_record(
+            "scene_set",
             python_executable,
             project_root,
             scene_args,
         )
-        commands.append(
-            _query_record(
-                "scene_set",
-                scene_args,
-                project_root,
-                scene_payload,
-                elapsed,
-            )
+        commands.append(scene_record)
+        scene_payload, elapsed = _run_scanner(
+            python_executable,
+            project_root,
+            scene_args,
+            scene_record,
         )
         _verify_scene_set(scene_payload, manifest)
 
@@ -503,19 +526,18 @@ def run(
             "--path",
             str(manifest["standalone_scene"]["path"]),
         ]
-        standalone_payload, elapsed = _run_scanner(
+        standalone_record = _query_record(
+            "standalone_scene",
             python_executable,
             project_root,
             standalone_args,
         )
-        commands.append(
-            _query_record(
-                "standalone_scene",
-                standalone_args,
-                project_root,
-                standalone_payload,
-                elapsed,
-            )
+        commands.append(standalone_record)
+        standalone_payload, elapsed = _run_scanner(
+            python_executable,
+            project_root,
+            standalone_args,
+            standalone_record,
         )
         _verify_standalone_scene(standalone_payload, manifest)
 
@@ -526,19 +548,18 @@ def run(
             "--path",
             str(manifest["prefab"]["path"]),
         ]
-        prefab_payload, elapsed = _run_scanner(
+        prefab_record = _query_record(
+            "prefab",
             python_executable,
             project_root,
             prefab_args,
         )
-        commands.append(
-            _query_record(
-                "prefab",
-                prefab_args,
-                project_root,
-                prefab_payload,
-                elapsed,
-            )
+        commands.append(prefab_record)
+        prefab_payload, elapsed = _run_scanner(
+            python_executable,
+            project_root,
+            prefab_args,
+            prefab_record,
         )
         _verify_prefab(prefab_payload, manifest)
 
@@ -549,19 +570,18 @@ def run(
             "--path",
             str(manifest["script"]["path"]),
         ]
-        script_payload, elapsed = _run_scanner(
+        script_record = _query_record(
+            "script",
             python_executable,
             project_root,
             script_args,
         )
-        commands.append(
-            _query_record(
-                "script",
-                script_args,
-                project_root,
-                script_payload,
-                elapsed,
-            )
+        commands.append(script_record)
+        script_payload, elapsed = _run_scanner(
+            python_executable,
+            project_root,
+            script_args,
+            script_record,
         )
         _verify_script(script_payload, manifest)
 
@@ -572,19 +592,18 @@ def run(
             "--guid",
             str(manifest["guid_lookup"]["guid"]),
         ]
-        guid_payload, elapsed = _run_scanner(
+        guid_record = _query_record(
+            "guid_lookup",
             python_executable,
             project_root,
             guid_args,
         )
-        commands.append(
-            _query_record(
-                "guid_lookup",
-                guid_args,
-                project_root,
-                guid_payload,
-                elapsed,
-            )
+        commands.append(guid_record)
+        guid_payload, elapsed = _run_scanner(
+            python_executable,
+            project_root,
+            guid_args,
+            guid_record,
         )
         _verify_guid_lookup(guid_payload, manifest)
 
@@ -611,19 +630,18 @@ def run(
                 "--timeout-seconds",
                 str(reference_expected["timeout_seconds"]),
             ]
-            reference_payload, elapsed = _run_scanner(
+            reference_record = _query_record(
+                query_name,
                 python_executable,
                 project_root,
                 reference_args,
             )
-            commands.append(
-                _query_record(
-                    query_name,
-                    reference_args,
-                    project_root,
-                    reference_payload,
-                    elapsed,
-                )
+            commands.append(reference_record)
+            reference_payload, elapsed = _run_scanner(
+                python_executable,
+                project_root,
+                reference_args,
+                reference_record,
             )
             _verify_references(reference_payload, manifest, manifest_key)
             reference_payloads[query_name] = reference_payload
@@ -719,7 +737,7 @@ def run(
             "then close the acceptance ticket."
         )
         return 0, report
-    except (SmokeFailure, KeyError, IndexError, TypeError) as error:
+    except (SmokeFailure, KeyError, IndexError, OSError, TypeError) as error:
         report["error"] = str(error)
         report["next_action"] = (
             "Fix the real-project evidence or manifest drift and rerun; do not "
@@ -743,12 +761,6 @@ def build_parser() -> argparse.ArgumentParser:
         default=sys.executable,
         help="Python executable for scanner child processes.",
     )
-    parser.add_argument(
-        "--manifest",
-        type=Path,
-        default=DEFAULT_MANIFEST,
-        help="Fixed real-project smoke manifest.",
-    )
     return parser
 
 
@@ -761,7 +773,6 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     return_code, report = run(
         args.python_executable,
         args.project,
-        args.manifest,
     )
     print(json.dumps(report, indent=2, ensure_ascii=False, sort_keys=True))
     return return_code

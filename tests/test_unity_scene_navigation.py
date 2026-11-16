@@ -15,9 +15,6 @@ SCRIPT_ROOT = (
     / "blasphemous-modding-helper"
     / "scripts"
 )
-sys.path.insert(0, str(SCRIPT_ROOT))
-
-from blasphemous_modding_helper import unity_serialized  # noqa: E402
 
 
 SCANNER = (
@@ -92,6 +89,28 @@ GameObject:
 --- !u!4 &2
 Transform:
   m_GameObject: {fileID: 1}
+"""
+
+BARE_SEQUENCE_SCENE = """%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!1 &1
+GameObject:
+  m_Name: BlockScalars
+  items:
+  - |
+    literal {fileID: 72}
+  real: {fileID: 9}
+  nested:
+  - |
+    literal {fileID: 73}
+  target: {fileID: 11}
+  spaced:
+  -   note: |
+        literal {fileID: 74}
+      child: {fileID: 12}
+  plain:
+  -   key: value
+      sibling: {fileID: 10}
 """
 
 
@@ -490,33 +509,15 @@ class UnitySceneNavigationTests(unittest.TestCase):
         self.assertEqual(evidence["reference_count"], 7)
 
     def test_bare_sequence_block_scalars_do_not_expose_references(self):
-        bare = unity_serialized._structure_lines(
-            ["- |", "  literal {fileID: 72}", "real: {fileID: 9}"]
-        )
-        nested_bare = unity_serialized._structure_lines(
-            ["  - |", "    literal {fileID: 73}", "  real: {fileID: 9}"]
-        )
-        spaced_block = unity_serialized._structure_lines(
-            [
-                "  -   note: |",
-                "        literal {fileID: 74}",
-                "      target: {fileID: 11}",
-            ]
-        )
-        spaced_plain = unity_serialized._structure_lines(
-            [
-                "-   key: value",
-                "    sibling: {fileID: 10}",
-            ]
-        )
+        self.write("Assets/Scenes/BlockScalars.unity", BARE_SEQUENCE_SCENE)
 
-        self.assertNotIn("fileID: 72", "".join(bare))
-        self.assertIn("fileID: 9", bare[-1])
-        self.assertNotIn("fileID: 73", "".join(nested_bare))
-        self.assertIn("fileID: 9", nested_bare[-1])
-        self.assertNotIn("fileID: 74", "".join(spaced_block))
-        self.assertIn("fileID: 11", spaced_block[-1])
-        self.assertIn("fileID: 10", spaced_plain[-1])
+        _, payload = self.query_ok("--path", "Assets/Scenes/BlockScalars.unity")
+
+        game_object = payload["results"][0]["evidence"][0]["objects"][0]
+        file_ids = {
+            reference["file_id"] for reference in game_object["references"]
+        }
+        self.assertEqual(file_ids, {9, 10, 11, 12})
 
     def test_scene_queries_are_read_only(self):
         before_paths, before_digest = self.digest_tree()

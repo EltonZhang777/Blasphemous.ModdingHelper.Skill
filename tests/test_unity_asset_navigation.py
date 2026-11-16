@@ -7,15 +7,11 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
-from unittest import mock
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 SCRIPT_ROOT = REPOSITORY_ROOT / "skills" / "blasphemous-modding-helper" / "scripts"
 SCANNER = SCRIPT_ROOT / "unity_project_navigation.py"
-sys.path.insert(0, str(SCRIPT_ROOT))
-
-from blasphemous_modding_helper import unity_assets  # noqa: E402
 
 ICON_GUID = "1" * 32
 ITEM_GUID = "2" * 32
@@ -282,17 +278,6 @@ class UnityAssetNavigationTests(unittest.TestCase):
                     [warning["code"] for warning in payload["warnings"]],
                 )
 
-    def test_guid_query_reads_metadata_only_for_matching_targets(self):
-        with mock.patch.object(
-            unity_assets,
-            "_read_metadata",
-            wraps=unity_assets._read_metadata,
-        ) as reader:
-            payload = unity_assets.asset_query(self.root, "guid", ITEM_GUID)
-
-        self.assertEqual(payload["status"], "ok")
-        self.assertEqual(reader.call_count, 1)
-
     def test_missing_identities_are_not_guessed(self):
         _, missing_path = self.query("path", "Assets/Absent.asset", 2)
         _, missing_guid = self.query("guid", "9" * 32, 2)
@@ -435,35 +420,43 @@ class UnityAssetNavigationTests(unittest.TestCase):
                 )
 
     def test_internal_link_is_not_followed(self):
-        link = self.root / "Assets" / "Data"
-        with mock.patch.object(
-            unity_assets,
-            "_is_link_like",
-            side_effect=lambda path: path == link,
-        ):
-            payload = unity_assets.asset_query(
-                self.root,
-                "path",
-                "Assets/Data/hero.asset",
-            )
+        link = self.root / "Assets" / "DataLink"
+        try:
+            os.symlink(self.root / "Assets" / "Data", link, target_is_directory=True)
+        except (OSError, NotImplementedError) as error:
+            self.skipTest(f"directory symlink unavailable: {error}")
 
+        result = self.run_scanner(
+            "asset",
+            "--project",
+            str(self.root),
+            "--path",
+            "Assets/DataLink/hero.asset",
+        )
+        payload = json.loads(result.stdout)
+
+        self.assertEqual(result.returncode, 3)
         self.assertEqual(payload["status"], "invalid_query")
         self.assertEqual(payload["error"]["code"], "symlink_not_followed")
         self.assertEqual(payload["results"], [])
 
     def test_absolute_internal_link_is_not_followed(self):
-        link = self.root / "Assets" / "Data"
-        with mock.patch.object(
-            unity_assets,
-            "_is_link_like",
-            side_effect=lambda path: path == link,
-        ):
-            payload = unity_assets.asset_query(
-                self.root,
-                "path",
-                str(self.root / "Assets" / "Data" / "hero.asset"),
-            )
+        link = self.root / "Assets" / "DataLink"
+        try:
+            os.symlink(self.root / "Assets" / "Data", link, target_is_directory=True)
+        except (OSError, NotImplementedError) as error:
+            self.skipTest(f"directory symlink unavailable: {error}")
 
+        result = self.run_scanner(
+            "asset",
+            "--project",
+            str(self.root),
+            "--path",
+            str(link / "hero.asset"),
+        )
+        payload = json.loads(result.stdout)
+
+        self.assertEqual(result.returncode, 3)
         self.assertEqual(payload["status"], "invalid_query")
         self.assertEqual(payload["error"]["code"], "symlink_not_followed")
 

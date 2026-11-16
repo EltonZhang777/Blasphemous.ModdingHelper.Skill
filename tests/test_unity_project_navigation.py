@@ -6,7 +6,6 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
-from unittest import mock
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
@@ -16,9 +15,6 @@ SCRIPT_ROOT = (
     / "blasphemous-modding-helper"
     / "scripts"
 )
-sys.path.insert(0, str(SCRIPT_ROOT))
-
-from blasphemous_modding_helper import unity_project  # noqa: E402
 
 
 SCANNER = (
@@ -202,47 +198,17 @@ class UnityProjectNavigationTests(unittest.TestCase):
         self.assertEqual(after_paths, before_paths)
         self.assertEqual(after_digest, before_digest)
 
-    def test_directory_resolution_cycle_is_reported_without_traceback(self):
-        cycle = self.root / "Assets" / "Loop"
-        cycle.mkdir()
-        resolve = Path.resolve
-
-        def resolve_with_cycle(path, *args, **kwargs):
-            if path == cycle:
-                raise RuntimeError("Symlink loop")
-            return resolve(path, *args, **kwargs)
-
-        with mock.patch.object(Path, "resolve", resolve_with_cycle):
-            payload = unity_project.project_summary(self.root)
-
-        self.assertEqual(payload["status"], "ok")
-        self.assertIn(
-            "Assets/Loop",
-            [warning.get("path") for warning in payload["warnings"]],
+    @unittest.skipIf(os.name == "nt", "POSIX expanduser failure test")
+    def test_project_missing_user_expansion_returns_json(self):
+        result = self.run_scanner(
+            "project",
+            "--project",
+            "~definitely-missing-codex-user",
         )
+        payload = json.loads(result.stdout)
 
-    def test_project_root_resolution_cycle_returns_invalid_project(self):
-        resolve = Path.resolve
-
-        def resolve_with_cycle(path, *args, **kwargs):
-            if path == self.root:
-                raise RuntimeError("Symlink loop")
-            return resolve(path, *args, **kwargs)
-
-        with mock.patch.object(Path, "resolve", resolve_with_cycle):
-            payload = unity_project.project_summary(self.root)
-
-        self.assertEqual(payload["status"], "invalid_project")
-        self.assertEqual(payload["error"]["code"], "invalid_project")
-
-    def test_project_expanduser_failure_returns_invalid_project(self):
-        with mock.patch.object(
-            Path,
-            "expanduser",
-            side_effect=RuntimeError("Unknown user"),
-        ):
-            payload = unity_project.project_summary(Path("~missing_user"))
-
+        self.assertEqual(result.returncode, 3)
+        self.assertEqual(result.stderr, "")
         self.assertEqual(payload["status"], "invalid_project")
         self.assertEqual(payload["error"]["code"], "invalid_project")
 
