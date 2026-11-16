@@ -1,16 +1,22 @@
 import hashlib
 import json
+import os
 import re
 import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 SCRIPT_ROOT = REPOSITORY_ROOT / "skills" / "blasphemous-modding-helper" / "scripts"
 SCANNER = SCRIPT_ROOT / "unity_project_navigation.py"
+sys.dont_write_bytecode = True
+sys.path.insert(0, str(SCRIPT_ROOT))
+
+from blasphemous_modding_helper import unity_bindings  # noqa: E402
 
 SCRIPT_GUID = "a" * 32
 BINDING_FIELDS = {
@@ -115,19 +121,20 @@ class UnityBindingNavigationTests(unittest.TestCase):
         self.assertEqual(result.stderr, "")
         return result, json.loads(result.stdout)
 
-    def digest_tree(self):
-        digest = hashlib.sha256()
-        paths = []
+    def inventory_tree(self):
+        inventory = {}
         for path in sorted(self.root.rglob("*")):
             relative = path.relative_to(self.root).as_posix()
-            paths.append(relative)
-            digest.update(relative.encode("utf-8"))
+            metadata = path.stat()
+            item = {
+                "kind": "file" if path.is_file() else "directory",
+                "mtime_ns": metadata.st_mtime_ns,
+                "size": metadata.st_size,
+            }
             if path.is_file():
-                stat = path.stat()
-                digest.update(str(stat.st_size).encode("ascii"))
-                digest.update(str(stat.st_mtime_ns).encode("ascii"))
-                digest.update(path.read_bytes())
-        return paths, digest.hexdigest()
+                item["sha256"] = hashlib.sha256(path.read_bytes()).hexdigest()
+            inventory[relative] = item
+        return inventory
 
     def assert_cs_row(self, row, path, source_kind, object_id):
         self.assertEqual(set(row), BINDING_FIELDS)
@@ -192,7 +199,12 @@ class UnityBindingNavigationTests(unittest.TestCase):
         self.assertEqual(payload["scan_coverage"], "complete")
         self.assertEqual(
             payload["limits"],
-            {"limit": 200, "default_limit": 200, "max_limit": 1000},
+            {
+                "limit": 200,
+                "default_limit": 200,
+                "max_limit": 1000,
+                "timeout_seconds": 60.0,
+            },
         )
         self.assertFalse(payload["truncated"])
         self.assertEqual(payload["warnings"], [])
@@ -688,6 +700,116 @@ class UnityBindingNavigationTests(unittest.TestCase):
         self.assertEqual(row["asset_resolution_reason"], "unreadable_meta")
         self.assertEqual(row["script_object_resolution"], "not_applicable")
 
+    def test_partial_source_warnings_continue_scanning_and_preserve_rows(self):
+        binary_guid = "5" * 32
+        self.write("Assets/Plugins/Image.png", b"\x89PNG")
+        self.write_meta("Assets/Plugins/Image.png", binary_guid)
+        self.write(
+            "Assets/Scenes/AA_Binary.unity",
+            b"%YAML 1.1\n\x00",
+        )
+        self.write(
+            "Assets/Scenes/BB_Unrecognized.prefab",
+            "This is not Unity YAML.\n",
+        )
+        self.add_source(
+            "Assets/Scenes/ZZ_Valid.unity",
+            [
+                (
+                    1,
+                    "{fileID: 11500000, guid: "
+                    + SCRIPT_GUID
+                    + ", type: 3}",
+                ),
+                (2, "{fileID: 0}"),
+                (3, "{fileID: 11500000}"),
+                (
+                    4,
+                    "{fileID: 11500000, guid: "
+                    + binary_guid
+                    + ", type: 3}",
+                ),
+            ],
+        )
+
+        _, payload = self.query(expected=4)
+
+        self.assertEqual(payload["status"], "partial")
+        self.assertEqual(payload["scan_coverage"], "partial")
+        self.assertEqual(
+            [(warning["code"], warning["path"]) for warning in payload["warnings"]],
+            [
+                ("source_binary", "Assets/Scenes/AA_Binary.unity"),
+                (
+                    "source_unrecognized",
+                    "Assets/Scenes/BB_Unrecognized.prefab",
+                ),
+            ],
+        )
+        self.assertEqual(
+            [row["source_object_file_id"] for row in payload["results"]],
+            ["1", "2", "3", "4"],
+        )
+        self.assertEqual(
+            [row["reference_shape"] for row in payload["results"]],
+            ["structured", "null", "malformed", "structured"],
+        )
+        self.assertEqual(
+            payload["results"][3]["asset_resolution"],
+            "unsupported_binary",
+        )
+
+    def test_unreadable_source_warning_continues_scanning(self):
+        unreadable = self.write(
+            "Assets/Scenes/AA_Unreadable.unity",
+            self.source_text(
+                [
+                    (
+                        1,
+                        "{fileID: 11500000, guid: "
+                        + SCRIPT_GUID
+                        + ", type: 3}",
+                    )
+                ]
+            ),
+        ).resolve()
+        source_path = "Assets/Scenes/ZZ_Readable.unity"
+        self.add_source(
+            source_path,
+            [
+                (
+                    2,
+                    "{fileID: 11500000, guid: "
+                    + SCRIPT_GUID
+                    + ", type: 3}",
+                )
+            ],
+        )
+        original_read_bytes = Path.read_bytes
+
+        def read_bytes(path):
+            if path.resolve() == unreadable:
+                raise PermissionError("synthetic unreadable source")
+            return original_read_bytes(path)
+
+        with mock.patch.object(Path, "read_bytes", read_bytes):
+            payload = unity_bindings.bindings_query(self.root, None, None)
+
+        self.assertEqual(payload["status"], "partial")
+        self.assertEqual(payload["scan_coverage"], "partial")
+        self.assertEqual(unity_bindings.bindings_exit_code(payload), 4)
+        self.assertEqual(
+            [
+                (warning["code"], warning["path"])
+                for warning in payload["warnings"]
+            ],
+            [("source_unreadable", "Assets/Scenes/AA_Unreadable.unity")],
+        )
+        self.assertEqual(
+            [row["source_asset_path"] for row in payload["results"]],
+            [source_path],
+        )
+
     def test_path_filters_use_or_semantics_and_bind_the_cursor(self):
         self.add_source(
             "Assets/Scenes/FilterA.unity",
@@ -738,6 +860,14 @@ class UnityBindingNavigationTests(unittest.TestCase):
                 "Assets/Scenes/FilterA.unity",
                 "Assets/Scenes/FilterB.prefab",
             ],
+        )
+        _, absolute = self.query(
+            "--path",
+            str((self.root / "Assets/Scenes/FilterA.unity").resolve()),
+        )
+        self.assertEqual(
+            absolute["query"],
+            {"source_asset_paths": ["Assets/Scenes/FilterA.unity"]},
         )
 
         _, first = self.query(*arguments, "--limit", "1")
@@ -1015,6 +1145,11 @@ class UnityBindingNavigationTests(unittest.TestCase):
             ],
         )
 
+        _, complete = self.query()
+        self.assertEqual(complete["status"], "ok")
+        self.assertEqual(complete["scan_coverage"], "complete")
+        self.assertEqual(complete["warnings"], [])
+
         _, shapes = self.query(
             "--reference-shape",
             "structured",
@@ -1227,6 +1362,11 @@ class UnityBindingNavigationTests(unittest.TestCase):
             ("--limit", "1001"),
             ("--limit", "not-a-number"),
             ("--cursor", "not-a-cursor"),
+            ("--timeout-seconds", "-0.1"),
+            ("--timeout-seconds", "120.1"),
+            ("--timeout-seconds", "nan"),
+            ("--timeout-seconds", "inf"),
+            ("--timeout-seconds", "not-a-number"),
         ):
             with self.subTest(arguments=arguments):
                 result, payload = self.query(*arguments, expected=3)
@@ -1242,6 +1382,47 @@ class UnityBindingNavigationTests(unittest.TestCase):
                     )
                     + "\n",
                 )
+
+    def test_timeout_reports_partial_json_and_exit_three(self):
+        self.add_source(
+            "Assets/Scenes/Main.unity",
+            [
+                (
+                    1,
+                    "{fileID: 11500000, guid: "
+                    + SCRIPT_GUID
+                    + ", type: 3}",
+                )
+            ],
+        )
+
+        _, maximum = self.query("--timeout-seconds", "120")
+        self.assertEqual(maximum["limits"]["timeout_seconds"], 120.0)
+
+        result, payload = self.query("--timeout-seconds", "0", expected=3)
+
+        message = (
+            "The binding scan timed out after 0 seconds; "
+            "evidence is incomplete."
+        )
+        self.assertEqual(payload["status"], "timeout")
+        self.assertEqual(payload["scan_coverage"], "partial")
+        self.assertEqual(payload["results"], [])
+        self.assertIsNone(payload["next_cursor"])
+        self.assertFalse(payload["truncated"])
+        self.assertEqual(payload["limits"]["timeout_seconds"], 0.0)
+        self.assertEqual(
+            payload["warnings"],
+            [{"code": "timeout", "message": message}],
+        )
+        self.assertEqual(
+            payload["error"],
+            {"code": "timeout", "message": message},
+        )
+        self.assertEqual(
+            result.stdout,
+            json.dumps(payload, sort_keys=True, separators=(",", ":")) + "\n",
+        )
 
     def test_invalid_project_returns_json_errors(self):
         missing = Path(self.temp_dir.name) / "MissingProject"
@@ -1310,20 +1491,128 @@ class UnityBindingNavigationTests(unittest.TestCase):
                 )
             ],
         )
-        before_paths, before_digest = self.digest_tree()
         before_cache = {
             path for path in SCRIPT_ROOT.rglob("__pycache__") if path.is_dir()
         }
+        before = self.inventory_tree()
 
         self.query()
 
-        after_paths, after_digest = self.digest_tree()
+        self.assertEqual(self.inventory_tree(), before)
+
+        self.write("Assets/Scenes/Partial.unity", b"%YAML 1.1\n\x00")
+        before_partial = self.inventory_tree()
+        self.query(expected=4)
+        self.assertEqual(self.inventory_tree(), before_partial)
+
+        self.query("--timeout-seconds", "0", expected=3)
+        self.assertEqual(self.inventory_tree(), before_partial)
+
         after_cache = {
             path for path in SCRIPT_ROOT.rglob("__pycache__") if path.is_dir()
         }
-        self.assertEqual(after_paths, before_paths)
-        self.assertEqual(after_digest, before_digest)
         self.assertEqual(after_cache, before_cache)
+
+    def test_bindings_does_not_read_source_config_or_start_a_decompiler(self):
+        self.add_source(
+            "Assets/Scenes/Main.unity",
+            [
+                (
+                    1,
+                    "{fileID: 11500000, guid: "
+                    + SCRIPT_GUID
+                    + ", type: 3}",
+                )
+            ],
+        )
+        source_root = Path(self.temp_dir.name) / "AuthoritativeSource"
+        source_root.mkdir()
+        (source_root / "Secret.cs").write_text(
+            "class Secret {}\n",
+            encoding="utf-8",
+        )
+        config_path = self.write(
+            "config.yml",
+            f"lightweight_source_code_path: {source_root.as_posix()}\n",
+        )
+
+        audit_root = Path(self.temp_dir.name) / "audit"
+        audit_root.mkdir()
+        audit_log = audit_root / "events.log"
+        (audit_root / "sitecustomize.py").write_text(
+            (
+                "import os\n"
+                "import sys\n"
+                "log_path = os.environ['UNITY_BINDINGS_AUDIT_LOG']\n"
+                "fd = os.open(log_path, os.O_CREAT | os.O_WRONLY | os.O_APPEND, 0o600)\n"
+                "def emit(kind, detail):\n"
+                "    line = kind + '\\t' + detail.replace('\\n', '\\\\n') + '\\n'\n"
+                "    os.write(fd, line.encode('utf-8', 'replace'))\n"
+                "def visible(value):\n"
+                "    try:\n"
+                "        return os.path.normcase(os.path.abspath(os.fsdecode(value)))\n"
+                "    except (TypeError, ValueError):\n"
+                "        return ''\n"
+                "def audit(event, args):\n"
+                "    if event == 'open':\n"
+                "        path = visible(args[0])\n"
+                "        if path:\n"
+                "            emit('open', path)\n"
+                "    elif event.startswith('subprocess.'):\n"
+                "        emit(event, repr(args))\n"
+                "    elif event in {'os.system', 'os.spawn', 'os.posix_spawn'}:\n"
+                "        emit(event, repr(args))\n"
+                "sys.addaudithook(audit)\n"
+            ),
+            encoding="utf-8",
+        )
+        environment = os.environ.copy()
+        environment["PYTHONPATH"] = os.pathsep.join(
+            item
+            for item in (
+                str(audit_root),
+                environment.get("PYTHONPATH", ""),
+            )
+            if item
+        )
+        environment["PYTHONDONTWRITEBYTECODE"] = "1"
+        environment["UNITY_BINDINGS_AUDIT_LOG"] = str(audit_log)
+
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(SCANNER),
+                "bindings",
+                "--project",
+                str(self.root),
+            ],
+            cwd=REPOSITORY_ROOT,
+            env=environment,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            check=False,
+        )
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        events = audit_log.read_text(encoding="utf-8").casefold()
+        for forbidden in (
+            os.path.normcase(str(source_root)),
+            os.path.normcase(str(config_path)),
+        ):
+            self.assertNotIn(forbidden.casefold(), events)
+        event_names = [
+            line.partition("\t")[0]
+            for line in events.splitlines()
+        ]
+        self.assertFalse(
+            any(
+                name.startswith("subprocess.")
+                or name in {"os.system", "os.spawn", "os.posix_spawn"}
+                for name in event_names
+            )
+        )
 
     def test_documentation_routes_bindings_topic(self):
         navigation = (
@@ -1338,7 +1627,15 @@ class UnityBindingNavigationTests(unittest.TestCase):
             "m_Script",
             "--limit",
             "--cursor",
+            "--timeout-seconds",
             "asset_level_only",
+            "source_binary",
+            "source_unreadable",
+            "source_unrecognized",
+            "scan_coverage=partial",
+            "status=timeout",
+            "Read-only safety",
+            "recovery",
             "source analyzer",
             "Completion criteria",
             "Next action",

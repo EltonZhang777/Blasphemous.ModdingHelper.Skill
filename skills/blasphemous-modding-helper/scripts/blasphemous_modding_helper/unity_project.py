@@ -7,6 +7,7 @@ import json
 import os
 import re
 import stat
+import time
 from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Callable, Dict, Iterable, List, Optional, Sequence, Set, Tuple
@@ -188,10 +189,20 @@ def _walk_files(
     included_roots: Sequence[Path],
     stopped: Optional[Callable[[], bool]] = None,
     suffixes: Optional[Sequence[str]] = None,
+    *,
+    deadline: Optional[float] = None,
 ):
     warnings: List[Dict[str, object]] = []
     files: List[Path] = []
     suffixes = frozenset(value.lower() for value in suffixes) if suffixes else None
+
+    def check_deadline() -> None:
+        if deadline is not None and time.monotonic() >= deadline:
+            raise NavigationError(
+                "timeout",
+                "The Unity project scan timed out before evidence collection completed.",
+            )
+
     for included_root in included_roots:
         if stopped is not None and stopped():
             break
@@ -219,11 +230,13 @@ def _walk_files(
         ):
             if stopped is not None and stopped():
                 break
+            check_deadline()
             base = Path(directory)
             kept_names = []
             for name in sorted(names):
                 if stopped is not None and stopped():
                     break
+                check_deadline()
                 child = base / name
                 if name.casefold() in EXCLUDED_DIRECTORY_NAMES:
                     continue
@@ -252,6 +265,7 @@ def _walk_files(
             for name in sorted(filenames):
                 if stopped is not None and stopped():
                     break
+                check_deadline()
                 child = base / name
                 if suffixes is not None and child.suffix.lower() not in suffixes:
                     continue
@@ -440,6 +454,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="Opaque cursor returned by a previous bindings page.",
     )
     bindings.add_argument(
+        "--timeout-seconds",
+        help="Binding scan timeout in seconds (default: 60, maximum: 120).",
+    )
+    bindings.add_argument(
         "--path",
         action="append",
         help="Exact .unity, .prefab, or .asset source path; repeat for OR semantics.",
@@ -546,6 +564,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             Path(args.project),
             args.limit,
             args.cursor,
+            args.timeout_seconds,
             paths=args.path,
             object_file_id=args.object_file_id,
             script_guids=args.script_guid,

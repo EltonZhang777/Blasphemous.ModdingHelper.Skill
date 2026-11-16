@@ -91,6 +91,32 @@ Repeated values within one selector or status axis use OR semantics. Different s
 
 An invalid path, object ID, GUID, status value, or cursor is an `invalid_query` with exit code `3`. An unsupported selector format, such as a non-Unity source path, reports `error.code=unsupported_format` with `status=invalid_query` and exit code `3`. An `--object-file-id` lookup has a uniqueness requirement: no matching object reports `status=not_found`, while more than one row reports `status=ambiguous`; both use exit code `2`. These uniqueness outcomes take precedence over partial coverage, while `scan_coverage` and warnings still report unavailable evidence.
 
+## Partial coverage
+
+Candidate source failures are non-fatal. The scanner continues with later sources and returns stable warning codes:
+
+| Code | Meaning |
+| --- | --- |
+| `source_binary` | A candidate source contains binary data or is not UTF-8 text. |
+| `source_unreadable` | A candidate source could not be read. |
+| `source_unrecognized` | A candidate source is not recognizable Unity text serialization. |
+| `metadata_unusable` | A candidate `.meta` file is unreadable, malformed, or has no valid GUID. |
+| `scan_unreadable` | A project directory could not be traversed. |
+| `symlink_not_followed` | A link inside the project was not traversed. |
+| `symlink_outside_root` | A link resolving outside the project was rejected. |
+
+Any of these warnings makes `scan_coverage=partial`. When no object-ID uniqueness outcome takes precedence, `status=partial` and the command exits with code `4`. Normal pagination and ordinary `resolved`, `missing`, `ambiguous`, `unsupported_binary`, `not_applicable`, `null`, or `malformed` rows remain ordinary evidence and keep an otherwise complete query at `status=ok`.
+
+For recovery, inspect each warning path, restore a valid export or metadata file when appropriate, or query the known-good source paths directly. Rerun the exact query after recovery. The agent MUST NOT treat a missing row from a partial scan as proof that the relationship does not exist.
+
+## Execution limits and timeout
+
+`--timeout-seconds` bounds directory traversal, metadata indexing, source reads, and result preparation. The value is a non-negative decimal number of seconds, defaults to `60`, and cannot exceed `120`. A value of `0` expires immediately. The selected value is echoed in `limits.timeout_seconds`.
+
+On timeout, the command emits one JSON object with `status=timeout`, `scan_coverage=partial`, a warning and error code of `timeout`, and exit code `3`. The result is incomplete even when `results` contains evidence collected before the deadline. The agent MUST NOT cite it as a complete inventory or infer an absent relationship from it.
+
+To recover, rerun with the same query and a larger timeout up to `120` seconds. If the project remains too large, narrow the request with exact `--path` values or selectors before retrying.
+
 ## Pagination
 
 `--limit` controls the page size. The default is `200` and the maximum is `1000`. When another page exists, `next_cursor` is non-null; pass it with `--cursor` to continue:
@@ -110,15 +136,22 @@ A normal middle page and a normal final page for a complete, non-unique query bo
 - `status=ok` uses exit code `0`.
 - `status=partial` uses exit code `4` when source or metadata evidence could not be scanned completely and no object-ID uniqueness outcome takes precedence; `scan_coverage` is then `partial`.
 - `status=not_found` or `status=ambiguous` uses exit code `2` when an object-ID query cannot produce one unique row.
-- `status=invalid_query` uses exit code `3` for an invalid limit, source path, object ID, GUID, status value, unsupported format, or cursor.
+- `status=timeout` uses exit code `3`; evidence is incomplete and the `timeout` warning and error identify the execution condition.
+- `status=invalid_query` uses exit code `3` for an invalid limit, timeout, source path, object ID, GUID, status value, unsupported format, or cursor.
 - `status=invalid_project` uses exit code `3` when the project root is unusable.
+
+## Read-only safety
+
+Path selectors are constrained to the included `Assets` and `Packages` roots. Absolute paths outside the project, parent-directory traversal, and links that resolve outside the project are rejected. Legitimate project-relative paths, including nested paths, remain accepted.
+
+The command opens project evidence read-only and creates no project or Skill index, cache, lock, log, copied asset, or temporary file. It does not read the configured authoritative source tree, and it does not use or invoke the decompiler. This command proves exported binding evidence only; continue with the source analyzer for behavior.
 
 Each binding row is serialized asset evidence. A `.cs` path in this command is not behavioral proof and is not treated as equivalent to the authoritative source tree. For classes, dependencies, call flow, or behavior, continue with the source analyzer.
 
 ## Next action
 
-Report the source asset path, source object file ID, raw script reference, target asset state, and any warning or ambiguity. If a target is a `.cs` asset, report it as asset-level evidence only and select the source analyzer for behavior. The agent MUST NOT infer a class or script behavior from the Unity path.
+Report the source asset path, source object file ID, raw script reference, target asset state, scan coverage, any warning or ambiguity, and the timeout value when execution was bounded. If a target is a `.cs` asset, report it as asset-level evidence only and select the source analyzer for behavior. The agent MUST NOT infer a class or script behavior from the Unity path.
 
 ## Completion criteria
 
-Binding lookup work is complete only when the exact query, project root, status, scan coverage, page boundary, source and target fields, warnings, and source-analyzer handoff are reported.
+Binding lookup work is complete only when the exact query, project root, status, scan coverage, page boundary, timeout setting when relevant, source and target fields, warnings, recovery action for incomplete evidence, and source-analyzer handoff are reported.

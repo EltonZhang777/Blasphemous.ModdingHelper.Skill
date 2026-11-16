@@ -6,8 +6,10 @@ import base64
 import binascii
 import hashlib
 import json
+import math
 import os
 import re
+import time
 from collections import defaultdict
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Sequence, Tuple
@@ -35,6 +37,8 @@ from .unity_project import (
 
 DEFAULT_LIMIT = 200
 MAX_LIMIT = 1000
+DEFAULT_TIMEOUT_SECONDS = 60.0
+MAX_TIMEOUT_SECONDS = 120.0
 SORT_VERSION = 2
 CURSOR_VERSION = 2
 INT64_MIN = -(1 << 63)
@@ -87,6 +91,36 @@ def _parse_limit(value: Optional[str]) -> int:
             f"The limit must be between 1 and {MAX_LIMIT}.",
         )
     return limit
+
+
+def _parse_timeout(value: Optional[str]) -> float:
+    if value is None:
+        return DEFAULT_TIMEOUT_SECONDS
+    try:
+        timeout = float(value)
+    except (TypeError, ValueError) as error:
+        raise NavigationError(
+            "invalid_query",
+            "The timeout must be a number of seconds.",
+        ) from error
+    if (
+        not math.isfinite(timeout)
+        or timeout < 0
+        or timeout > MAX_TIMEOUT_SECONDS
+    ):
+        raise NavigationError(
+            "invalid_query",
+            f"The timeout must be between 0 and {MAX_TIMEOUT_SECONDS:g} seconds.",
+        )
+    return timeout
+
+
+def _check_deadline(deadline: float) -> None:
+    if time.monotonic() >= deadline:
+        raise NavigationError(
+            "timeout",
+            "The binding scan timed out before evidence collection completed.",
+        )
 
 
 def _project_identity(root: Path) -> str:
@@ -422,10 +456,12 @@ def _asset_kind(path: Path) -> str:
 def _build_guid_index(
     root: Path,
     files: Sequence[Path],
+    deadline: float,
 ) -> Tuple[Dict[str, List[Dict[str, object]]], List[Dict[str, object]]]:
     index: Dict[str, List[Dict[str, object]]] = defaultdict(list)
     warnings: List[Dict[str, object]] = []
     for meta_path in files:
+        _check_deadline(deadline)
         if meta_path.suffix.lower() != ".meta":
             continue
         target = meta_path.with_suffix("")
@@ -795,6 +831,7 @@ def bindings_query(
     project: Optional[Path],
     limit: Optional[str],
     cursor: Optional[str],
+    timeout_seconds: Optional[str] = None,
     *,
     paths: Optional[Sequence[str]] = None,
     object_file_id: Optional[str] = None,
@@ -821,6 +858,7 @@ def bindings_query(
     }
     warnings: List[Dict[str, object]] = []
     project_valid = False
+    timeout = DEFAULT_TIMEOUT_SECONDS
     try:
         if project is None:
             raise NavigationError(
@@ -834,6 +872,7 @@ def bindings_query(
         warnings.extend(version_warnings)
 
         page_limit = _parse_limit(limit)
+        timeout = _parse_timeout(timeout_seconds)
         query = _build_binding_query(
             root,
             included_roots,
@@ -854,15 +893,27 @@ def bindings_query(
             "limit": page_limit,
             "default_limit": DEFAULT_LIMIT,
             "max_limit": MAX_LIMIT,
+            "timeout_seconds": timeout,
         }
 
-        files, scan_warnings = _walk_files(root, included_roots)
+        deadline = time.monotonic() + timeout
+        _check_deadline(deadline)
+        files, scan_warnings = _walk_files(
+            root,
+            included_roots,
+            deadline=deadline,
+        )
         warnings.extend(scan_warnings)
-        guid_index, metadata_warnings = _build_guid_index(root, files)
+        guid_index, metadata_warnings = _build_guid_index(
+            root,
+            files,
+            deadline,
+        )
         warnings.extend(metadata_warnings)
         rows: List[Dict[str, object]] = []
         source_warnings: List[Dict[str, object]] = []
         for path in files:
+            _check_deadline(deadline)
             if path.suffix.lower() not in SOURCE_KINDS:
                 continue
             text, warning = _read_source(path, root)
@@ -878,6 +929,7 @@ def bindings_query(
                     )
                 )
                 rows.append(row)
+        _check_deadline(deadline)
         warnings.extend(source_warnings)
         rows = [row for row in rows if _matches_binding_query(row, query)]
 
@@ -892,7 +944,9 @@ def bindings_query(
                 unique_status = "not_found"
             elif len(rows) > 1:
                 unique_status = "ambiguous"
+        _check_deadline(deadline)
         positioned = _positioned_rows(rows)
+        _check_deadline(deadline)
         if cursor_key is not None:
             positioned = [
                 item for item in positioned if item[0] > cursor_key
@@ -914,10 +968,20 @@ def bindings_query(
         else:
             payload["status"] = "ok"
     except NavigationError as error:
-        payload["error"] = {"code": error.code, "message": str(error)}
-        payload["status"] = (
-            "invalid_query" if project_valid else "invalid_project"
-        )
+        if error.code == "timeout":
+            message = (
+                f"The binding scan timed out after {timeout:g} seconds; "
+                "evidence is incomplete."
+            )
+            payload["status"] = "timeout"
+            payload["scan_coverage"] = "partial"
+            warnings.append(_warning("timeout", message))
+            payload["error"] = {"code": "timeout", "message": message}
+        else:
+            payload["error"] = {"code": error.code, "message": str(error)}
+            payload["status"] = (
+                "invalid_query" if project_valid else "invalid_project"
+            )
     except OSError as error:
         payload["status"] = "invalid_project"
         payload["error"] = {"code": "invalid_project", "message": str(error)}
