@@ -114,6 +114,60 @@ class UnityRealProjectAcceptanceTests(unittest.TestCase):
         self.assertNotIn(str(root), message)
         self.assertIn("<UNITY_PROJECT_ROOT>", message)
 
+    def test_manifest_failure_redacts_an_in_project_root(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / "UnityProject"
+            (root / "Assets").mkdir(parents=True)
+            (root / "ProjectSettings").mkdir()
+            (root / "ProjectSettings" / "ProjectVersion.txt").write_text(
+                "m_EditorVersion: 2017.4.40f1\n",
+                encoding="utf-8",
+            )
+            missing = root / "missing-manifest.json"
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(RUNNER),
+                    "--project",
+                    str(root),
+                    "--manifest",
+                    str(missing),
+                ],
+                cwd=REPOSITORY_ROOT,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                check=False,
+            )
+            relative_result = subprocess.run(
+                [
+                    sys.executable,
+                    str(RUNNER),
+                    "--project",
+                    ".",
+                    "--manifest",
+                    "missing.manifest.json",
+                ],
+                cwd=root,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                check=False,
+            )
+
+        report = json.loads(result.stdout)
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(report["project"]["root"], ".")
+        self.assertNotIn(str(root), result.stdout)
+        self.assertIn("<UNITY_PROJECT_ROOT>", report["error"])
+        relative_report = json.loads(relative_result.stdout)
+        self.assertEqual(relative_result.returncode, 1)
+        self.assertEqual(relative_report["project"]["root"], ".")
+        self.assertIn("missing.manifest.json", relative_report["error"])
+        self.assertNotIn(str(root), relative_result.stdout)
+
     def test_real_project_smoke_when_configured(self):
         project = os.environ.get(PROJECT_ENV)
         if not project:

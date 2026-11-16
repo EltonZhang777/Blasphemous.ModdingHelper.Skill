@@ -100,8 +100,21 @@ def _scanner_command(
     return [_redact_project_root(item, project_root) for item in arguments]
 
 
-def _redact_project_root(value: object, project_root: Path) -> str:
-    return str(value).replace(str(project_root), "<UNITY_PROJECT_ROOT>")
+def _redact_project_root(value: object, *project_roots: Path) -> str:
+    variants = set()
+    for project_root in project_roots:
+        if not project_root.is_absolute():
+            continue
+        variants.update({str(project_root), project_root.as_posix()})
+    variants.update(
+        variant.replace("\\", "\\\\")
+        for variant in tuple(variants)
+        if "\\" in variant
+    )
+    text = str(value)
+    for variant in sorted(variants, key=len, reverse=True):
+        text = text.replace(variant, "<UNITY_PROJECT_ROOT>")
+    return text
 
 
 def _run_scanner_with_size(
@@ -861,7 +874,14 @@ def run(
             project,
             f"No real Unity project path was supplied through --project or {PROJECT_ENV}.",
         )
-    project_root = Path(project).expanduser()
+    try:
+        project_input = Path(project).expanduser()
+    except (OSError, RuntimeError):
+        return 2, _blocked_report(
+            project,
+            "The supplied real Unity project root could not be resolved.",
+        )
+    project_root = project_input
     if not project_root.is_dir():
         return 2, _blocked_report(
             str(project_root),
@@ -1265,7 +1285,11 @@ def run(
         )
         return 0, report
     except (SmokeFailure, KeyError, IndexError, TypeError) as error:
-        report["error"] = str(error)
+        report["error"] = _redact_project_root(
+            str(error),
+            project_root,
+            project_input,
+        )
         report["next_action"] = (
             "Fix the real-project evidence or manifest drift and rerun; do not "
             "substitute the synthetic suite for this report."

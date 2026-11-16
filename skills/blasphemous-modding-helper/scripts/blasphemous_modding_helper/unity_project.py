@@ -515,6 +515,11 @@ def _redact_public_payload(
     if resolved is not None and resolved.is_absolute():
         candidates.add(os.fspath(resolved))
         candidates.add(resolved.as_posix())
+    candidates.update(
+        candidate.replace("\\", "\\\\")
+        for candidate in tuple(candidates)
+        if "\\" in candidate
+    )
     patterns = [
         re.compile(
             re.escape(candidate) + r"(?![\w-])",
