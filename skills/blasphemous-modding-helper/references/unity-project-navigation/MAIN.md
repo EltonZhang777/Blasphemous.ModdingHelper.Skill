@@ -8,13 +8,17 @@ This guide provides read-only navigation for an exported Blasphemous Unity proje
 | --- | --- | --- |
 | Project topology, Unity version, included roots, file counts, or scene-set summary | [topology.md](topology.md) | Agent MUST inspect the exported project summary and report any version, completeness, or unreadable-path warning before a narrower lookup. |
 | Exact asset path, GUID, name, or extensionless stem | [assets-and-guids.md](assets-and-guids.md) | Agent MUST report the resolved project-relative evidence, metadata status, ambiguity, and the binary-content limit before selecting a next action. |
+| Script asset path, GUID, or exact name | [scripts.md](scripts.md) | Agent MUST return script asset identity and metadata only. Agent MUST NOT parse C#, infer behavior, dependencies, or class semantics, and MUST report a source gap as `blocked` when authoritative source is unavailable. |
+| Scene-set membership or serialized scene-object evidence | [scenes.md](scenes.md) | Agent MUST report completeness, missing layers, observed evidence limits, and any malformed, ambiguous, or excluded target. |
+| Flattened Prefab objects or components | [prefabs.md](prefabs.md) | Agent MUST identify the evidence as flattened and MUST NOT infer source instance hierarchy, nesting, variant, or modification structure. |
+| Serialized component relations, GUID edges, cycles, or incoming references | [component-relations.md](component-relations.md) | Agent MUST report traversal direction, object scope, unresolved targets, cycles, truncation, and timeout before selecting a next action. |
 | Direct MonoBehaviour `m_Script` bindings | [bindings.md](bindings.md) | Agent MUST report source and target evidence separately and hand behavior questions to the source analyzer. |
 
 ## Evidence boundary
 
 The Unity export is authoritative for exported asset topology and serialized evidence only. The configured source tree remains authoritative for C# behavior, dependencies, and class semantics through [Source analyzer](../sub-skills/source-analyzer.md) and [Blasphemous Source Code Navigation](../source-code-navigation/MAIN.md).
 
-Agent MUST NOT use Unity `.cs` files as behavioral proof. Asset evidence and source evidence MUST be reported separately when one request spans both.
+Script identity from [scripts.md](scripts.md) is asset placement evidence only. Agent MUST NOT use Unity `.cs` files as behavioral proof. Asset evidence and source evidence MUST be reported separately when one request spans both.
 
 ## First query
 

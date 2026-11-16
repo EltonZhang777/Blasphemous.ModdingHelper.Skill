@@ -235,6 +235,17 @@ class UnityProjectNavigationTests(unittest.TestCase):
         self.assertEqual(payload["status"], "invalid_project")
         self.assertEqual(payload["error"]["code"], "invalid_project")
 
+    def test_project_expanduser_failure_returns_invalid_project(self):
+        with mock.patch.object(
+            Path,
+            "expanduser",
+            side_effect=RuntimeError("Unknown user"),
+        ):
+            payload = unity_project.project_summary(Path("~missing_user"))
+
+        self.assertEqual(payload["status"], "invalid_project")
+        self.assertEqual(payload["error"]["code"], "invalid_project")
+
     def test_external_directory_symlink_is_not_traversed(self):
         outside = Path(self.temp_dir.name) / "outside"
         outside.mkdir()

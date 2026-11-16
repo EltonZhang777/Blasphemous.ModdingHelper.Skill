@@ -58,6 +58,34 @@ An asset query MUST provide exactly one of `--path`, `--guid`, or `--name`:
 & $PYTHON3 (Join-Path $SkillRoot 'scripts\unity_project_navigation.py') asset --project '<UNITY_PROJECT_ROOT>' --name Example
 ```
 
+Resolve one flattened Prefab after the project summary:
+
+```bash
+"$PYTHON3" "$SKILL_ROOT/scripts/unity_project_navigation.py" prefab --project "<UNITY_PROJECT_ROOT>" --path "<PREFAB_PATH>"
+"$PYTHON3" "$SKILL_ROOT/scripts/unity_project_navigation.py" prefab --project "<UNITY_PROJECT_ROOT>" --guid "<PREFAB_GUID>"
+"$PYTHON3" "$SKILL_ROOT/scripts/unity_project_navigation.py" prefab --project "<UNITY_PROJECT_ROOT>" --name "<PREFAB_NAME_OR_STEM>"
+```
+
+```powershell
+& $PYTHON3 (Join-Path $SkillRoot 'scripts\unity_project_navigation.py') prefab --project '<UNITY_PROJECT_ROOT>' --path '<PREFAB_PATH>'
+& $PYTHON3 (Join-Path $SkillRoot 'scripts\unity_project_navigation.py') prefab --project '<UNITY_PROJECT_ROOT>' --guid '<PREFAB_GUID>'
+& $PYTHON3 (Join-Path $SkillRoot 'scripts\unity_project_navigation.py') prefab --project '<UNITY_PROJECT_ROOT>' --name '<PREFAB_NAME_OR_STEM>'
+```
+
+Resolve one scene set or one exact scene file after the project summary:
+
+```bash
+"$PYTHON3" "$SKILL_ROOT/scripts/unity_project_navigation.py" scene --project "<UNITY_PROJECT_ROOT>" --name "<SCENE_NAME_OR_STEM>"
+"$PYTHON3" "$SKILL_ROOT/scripts/unity_project_navigation.py" scene --project "<UNITY_PROJECT_ROOT>" --path "<SCENE_PATH>"
+```
+
+```powershell
+& $PYTHON3 (Join-Path $SkillRoot 'scripts\unity_project_navigation.py') scene --project '<UNITY_PROJECT_ROOT>' --name '<SCENE_NAME_OR_STEM>'
+& $PYTHON3 (Join-Path $SkillRoot 'scripts\unity_project_navigation.py') scene --project '<UNITY_PROJECT_ROOT>' --path '<SCENE_PATH>'
+```
+
+Serialized component-relation queries MUST use the `references` command and follow [component-relations](../unity-project-navigation/component-relations.md) for direction, object scope, limits, timeout, and unresolved-evidence reporting.
+
 The scanner reads the configured directory and writes no index, cache, lock, log, copied asset, or project file. The agent MUST NOT start Unity Editor or modify, repair, or reserialize the project.
 
 ## Completion criteria

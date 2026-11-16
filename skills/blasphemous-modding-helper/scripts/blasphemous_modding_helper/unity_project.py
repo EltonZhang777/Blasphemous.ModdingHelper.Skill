@@ -302,7 +302,7 @@ def _scene_counts(files: Sequence[Path], root: Path) -> Dict[str, int]:
 def project_summary(project: Path) -> Dict[str, object]:
     """Return the version-1 project summary envelope."""
 
-    root = Path(project).expanduser()
+    root = Path(project)
     base = {
         "schema_version": SCHEMA_VERSION,
         "command": "project",
@@ -316,6 +316,8 @@ def project_summary(project: Path) -> Dict[str, object]:
         "error": None,
     }
     try:
+        root = root.expanduser()
+        base["project"] = {"root": str(root)}
         root, included_roots = _validated_project(root)
         version, major, compatible, warnings = _unity_version(root)
         files, scan_warnings = _walk_files(root, included_roots)
@@ -355,14 +357,17 @@ def project_summary(project: Path) -> Dict[str, object]:
         )
     except NavigationError as error:
         base["error"] = {"code": error.code, "message": str(error)}
-    except OSError as error:
+    except (OSError, RuntimeError) as error:
         base["status"] = "invalid_project"
         base["error"] = {"code": "invalid_project", "message": str(error)}
     return base
 
 
 def exit_code(payload: Dict[str, object]) -> int:
-    return 0 if payload.get("status") == "ok" else 3
+    status = payload.get("status")
+    if status == "ok":
+        return 0
+    return 2 if status in {"not_found", "ambiguous"} else 3
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -424,11 +429,55 @@ def build_parser() -> argparse.ArgumentParser:
         action="append",
         help="Target object resolution filter; repeat for OR semantics.",
     )
+    prefab = commands.add_parser("prefab", help="Inspect flattened Prefab evidence.")
+    prefab.add_argument("--project", required=True, help="Exported Unity project root.")
+    prefab_selectors = prefab.add_mutually_exclusive_group(required=True)
+    prefab_selectors.add_argument("--path", help="Exact project-relative Prefab path.")
+    prefab_selectors.add_argument("--guid", help="Exact 32-character hexadecimal GUID.")
+    prefab_selectors.add_argument("--name", help="Case-insensitive exact basename or stem.")
+    script = commands.add_parser("script", help="Locate a Unity C# script asset.")
+    script.add_argument("--project", required=True, help="Exported Unity project root.")
+    script_selectors = script.add_mutually_exclusive_group(required=True)
+    script_selectors.add_argument("--path", help="Exact project-relative script path.")
+    script_selectors.add_argument("--guid", help="Exact 32-character hexadecimal GUID.")
+    script_selectors.add_argument("--name", help="Case-insensitive exact basename or stem.")
+    scene = commands.add_parser("scene", help="Resolve a scene set or scene file.")
+    scene.add_argument("--project", required=True, help="Exported Unity project root.")
+    scene.add_argument("--path", help="Project path to one exact .unity file.")
+    scene.add_argument("--name", help="Exact logical scene name or stem.")
+    references = commands.add_parser(
+        "references",
+        help="Trace serialized references from an exported asset or object.",
+    )
+    references.add_argument("--project", required=True, help="Exported Unity project root.")
+    reference_selectors = references.add_mutually_exclusive_group(required=True)
+    reference_selectors.add_argument("--path", help="Exact project-relative asset path.")
+    reference_selectors.add_argument("--guid", help="Exact 32-character hexadecimal GUID.")
+    reference_selectors.add_argument("--name", help="Case-insensitive exact basename or stem.")
+    references.add_argument(
+        "--object-file-id",
+        help="Optional signed 64-bit serialized object file ID.",
+    )
+    references.add_argument(
+        "--direction",
+        default="outgoing",
+        help="Traversal direction: outgoing, incoming, or both.",
+    )
+    references.add_argument("--depth", default="1", help="Traversal depth from 1 to 4.")
+    references.add_argument("--limit", default="30", help="Result edge limit from 1 to 100.")
+    references.add_argument(
+        "--timeout-seconds",
+        default="60",
+        help="Traversal timeout in seconds, up to 120.",
+    )
     return parser
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
-    args = build_parser().parse_args(argv)
+    parser = build_parser()
+    args, unknown = parser.parse_known_args(argv)
+    if unknown and args.command != "scene":
+        parser.error("unrecognized arguments: " + " ".join(unknown))
     if args.command == "project":
         payload = project_summary(Path(args.project))
         return_code = exit_code(payload)
@@ -459,6 +508,55 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             script_object_resolutions=args.script_object_resolution,
         )
         return_code = bindings_exit_code(payload)
+    elif args.command == "prefab":
+        from .unity_assets import asset_exit_code
+        from .unity_prefab import prefab_query
+
+        if args.path is not None:
+            selector, value = "path", args.path
+        elif args.guid is not None:
+            selector, value = "guid", args.guid
+        else:
+            selector, value = "name", args.name
+        payload = prefab_query(Path(args.project), selector, value)
+        return_code = asset_exit_code(payload)
+    elif args.command == "script":
+        from .unity_assets import asset_exit_code
+        from .unity_script import script_query
+
+        if args.path is not None:
+            selector, value = "path", args.path
+        elif args.guid is not None:
+            selector, value = "guid", args.guid
+        else:
+            selector, value = "name", args.name
+        payload = script_query(Path(args.project), selector, value)
+        return_code = asset_exit_code(payload)
+    elif args.command == "scene":
+        from .unity_scene import scene_query
+
+        payload = scene_query(Path(args.project), args.path, args.name, unknown)
+        return_code = exit_code(payload)
+    elif args.command == "references":
+        from .unity_references import references_query
+
+        if args.path is not None:
+            selector, value = "path", args.path
+        elif args.guid is not None:
+            selector, value = "guid", args.guid
+        else:
+            selector, value = "name", args.name
+        payload = references_query(
+            Path(args.project),
+            selector,
+            value,
+            args.object_file_id,
+            args.direction,
+            args.depth,
+            args.limit,
+            args.timeout_seconds,
+        )
+        return_code = exit_code(payload)
     else:  # pragma: no cover - argparse rejects unknown commands.
         raise AssertionError(args.command)
     print(json.dumps(payload, sort_keys=True, separators=(",", ":")))

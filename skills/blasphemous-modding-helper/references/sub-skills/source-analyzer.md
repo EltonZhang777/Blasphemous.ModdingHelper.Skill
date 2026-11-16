@@ -30,5 +30,5 @@ Any delegated source evidence work MUST follow the shared [Read-only evidence de
 
 Agent MUST mark source analysis complete only when active configuration file and source path used are recorded, relevant source evidence has been checked, and every cited class or file path has been verified against selected source tree. If required source paths are missing or invalid, agent MUST report exact missing path and next setup or recovery action instead of claiming completion. The result MUST report status, completion evidence, the blocked reason when applicable, and the next action.
 
-For exported project topology evidence, the agent MUST route through [Unity project navigation](unity-project-navigation.md). Source analysis remains authoritative for C# behavior and MUST NOT infer behavior from exported Unity script files.
+For exported project topology evidence, the agent MUST route through [Unity project navigation](unity-project-navigation.md). For exported script-asset identity evidence only, use [scripts.md](../unity-project-navigation/scripts.md) to resolve a path, GUID, or exact name without C# parsing. Source analysis remains authoritative for C# behavior and MUST NOT infer behavior from exported Unity script files. If this source tree cannot support a behavior, dependency, or class-semantics request, the agent MUST report the source gap as `blocked`.
 
