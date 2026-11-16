@@ -67,7 +67,7 @@ class PreferenceValidationError(LocatedPreferenceError):
 
 
 class UnityProjectPathError(LocatedPreferenceError):
-    """An invalid Unity project path that requires only targeted retry."""
+    """A targeted Unity-project configuration failure that requires only a retry."""
 
 
 if yaml is not None:
@@ -166,132 +166,157 @@ def update_config_text(text: str, updates: Mapping[str, object]) -> str:
     if not updates:
         return text
     serialized = {key: _format_config_value(value) for key, value in updates.items()}
-    flow_mapping = _flow_mapping_node(text)
-    if flow_mapping is not None:
-        flow_serialized = {
-            key: _format_flow_value(value)
-            for key, value in updates.items()
-        }
-        return _update_flow_mapping(text, flow_mapping, flow_serialized)
-    _reject_multiline_managed_values(text, serialized)
-    output = []
-    pending = set(serialized)
-    for line in text.splitlines():
-        match_key = next(
-            (
-                key
-                for key in serialized
-                if re.match(r"^" + _managed_key_pattern(key) + r"\s*:", line)
-            ),
-            None,
-        )
-        if match_key is None:
-            output.append(line)
-            continue
-        match = re.match(
-            r"^(" + _managed_key_pattern(match_key) + r")\s*:\s*(.*)$",
-            line,
-        )
-        assert match is not None
-        output.append(
-            f"{match.group(1)}: {serialized[match_key]}"
-            f"{_inline_comment(match.group(2))}"
-        )
-        pending.discard(match_key)
-    additions = [
-        f"{key}: {serialized[key]}"
-        for key in serialized
-        if key in pending
-    ]
-    if additions:
-        for index, line in enumerate(output):
-            if line.strip() == "...":
-                output[index:index] = additions
-                break
-        else:
-            output.extend(additions)
-    return "\n".join(output) + "\n"
-
-
-def _flow_mapping_node(text: str):
-    if yaml is None:
-        return None
-    try:
-        node = yaml.compose(text, Loader=_UniqueKeyLoader)
-    except yaml.YAMLError:
-        return None
-    if not isinstance(node, yaml.MappingNode) or not node.flow_style:
-        return None
-    return node
-
-
-def _reject_multiline_managed_values(text: str, managed: Mapping[str, str]) -> None:
-    if yaml is None:
-        return
-    try:
-        node = yaml.compose(text, Loader=_UniqueKeyLoader)
-    except yaml.YAMLError:
-        return
-    if not isinstance(node, yaml.MappingNode):
-        return
-    for key_node, value_node in node.value:
-        if not isinstance(key_node, yaml.ScalarNode) or key_node.value not in managed:
-            continue
-        if (
-            not isinstance(value_node, yaml.ScalarNode)
-            or value_node.start_mark.line != value_node.end_mark.line
-        ):
-            raise PreferenceError(
-                f"Cannot safely update multi-line config value '{key_node.value}'; "
-                "edit config.yml or rerun first-time setup."
-            )
-
-
-def _update_flow_mapping(text: str, node, serialized: Mapping[str, str]) -> str:
+    root = None
+    if text.strip():
+        _parse_config(text)
+        root = _mapping_node(text)
     replacements = []
     present = set()
-    for key_node, value_node in node.value:
+    for key_node, value_node in root.value if root is not None else ():
         if not isinstance(key_node, yaml.ScalarNode) or key_node.value not in serialized:
             continue
-        present.add(key_node.value)
+        key = key_node.value
+        present.add(key)
+        replacement = (
+            _format_flow_value(updates[key])
+            if root.flow_style
+            else serialized[key]
+        )
+        alias_span = _alias_value_span(text, key_node)
+        if alias_span is None:
+            start, end = value_node.start_mark.index, value_node.end_mark.index
+            replacement = _replace_config_value(text, value_node, replacement)
+        else:
+            start, end = alias_span
         replacements.append(
             (
-                value_node.start_mark.index,
-                value_node.end_mark.index,
-                serialized[key_node.value],
+                start,
+                end,
+                replacement,
             )
         )
     for start, end, value in sorted(replacements, reverse=True):
         text = text[:start] + value + text[end:]
-    additions = [
-        f"{key}: {value}"
-        for key, value in serialized.items()
-        if key not in present
-    ]
-    if additions:
-        node = _flow_mapping_node(text)
-        if node is None:
-            raise PreferenceError("Could not update flow-style config.yml.")
-        closing = text.rfind("}", 0, node.end_mark.index)
-        if closing < 0:
-            raise PreferenceError("Could not update flow-style config.yml.")
-        addition_text = ", ".join(additions)
-        if node.value:
-            value_end = node.value[-1][1].end_mark.index
-            comma = _flow_separator(text[value_end:closing])
-            if comma is None:
-                text = text[:value_end] + ", " + addition_text + text[value_end:]
-            else:
-                insertion = value_end + comma + 1
-                spacer = "" if text[insertion:insertion + 1].isspace() else " "
-                text = text[:insertion] + spacer + addition_text + text[insertion:]
+
+    missing = [key for key in serialized if key not in present]
+    if missing:
+        if root is not None:
+            root = _mapping_node(text)
+        if root is None:
+            newline = "\r\n" if "\r\n" in text else "\n"
+            prefix = text
+            if prefix and not prefix.endswith(("\n", "\r")):
+                prefix += newline
+            text = (
+                prefix
+                + newline.join(f"{key}: {serialized[key]}" for key in missing)
+                + newline
+            )
+        elif root.flow_style:
+            text = _append_flow_fields(
+                text,
+                root,
+                {
+                    key: _format_flow_value(updates[key])
+                    for key in missing
+                },
+            )
         else:
-            text = text[:closing] + addition_text + text[closing:]
+            text = _append_block_fields(
+                text,
+                root,
+                [f"{key}: {serialized[key]}" for key in missing],
+            )
+
     try:
         _parse_config(text)
     except PreferenceError as error:
-        raise PreferenceError(f"Automated config update would make config.yml invalid: {error}") from error
+        raise PreferenceError(
+            f"Automated config update would make config.yml invalid: {error}"
+        ) from error
     return text
+
+
+def _mapping_node(text: str):
+    node = yaml.compose(text, Loader=_UniqueKeyLoader)
+    assert isinstance(node, yaml.MappingNode)
+    return node
+
+
+def _alias_value_span(text: str, key_node) -> Optional[Tuple[int, int]]:
+    tail = text[key_node.end_mark.index:]
+    match = re.match(r"\s*:\s*(\*[^\s,\]\}#]+)", tail)
+    if match is None:
+        return None
+    return (
+        key_node.end_mark.index + match.start(1),
+        key_node.end_mark.index + match.end(1),
+    )
+
+
+def _replace_config_value(text: str, node, replacement: str) -> str:
+    raw = text[node.start_mark.index:node.end_mark.index]
+    anchor = _scalar_anchor_prefix(raw)
+    if node.style not in ("|", ">"):
+        return anchor + replacement
+    first_line = raw.splitlines(keepends=True)[0]
+    comment = _inline_comment(first_line).rstrip("\r\n")
+    line_ending = (
+        "\r\n"
+        if first_line.endswith("\r\n")
+        else "\n"
+        if first_line.endswith("\n")
+        else ""
+    )
+    return anchor + replacement + comment + line_ending
+
+
+def _scalar_anchor_prefix(raw: str) -> str:
+    properties = re.match(r"^(?:(?:![^\s]+|&[^\s]+)\s+)*", raw)
+    assert properties is not None
+    for token in properties.group(0).split():
+        if token.startswith("&"):
+            return token + " "
+    return ""
+
+
+def _append_flow_fields(text: str, node, additions: Mapping[str, str]) -> str:
+    if not additions:
+        return text
+    closing = text.rfind("}", 0, node.end_mark.index)
+    if closing < 0:
+        raise PreferenceError("Could not update flow-style config.yml.")
+    addition_text = ", ".join(f"{key}: {value}" for key, value in additions.items())
+    if node.value:
+        value_end = node.value[-1][1].end_mark.index
+        comma = _flow_separator(text[value_end:closing])
+        if comma is None:
+            text = text[:value_end] + ", " + addition_text + text[value_end:]
+        else:
+            insertion = value_end + comma + 1
+            spacer = "" if text[insertion:insertion + 1].isspace() else " "
+            text = text[:insertion] + spacer + addition_text + text[insertion:]
+    else:
+        text = text[:closing] + addition_text + text[closing:]
+    return text
+
+
+def _append_block_fields(text: str, node, additions: Iterable[str]) -> str:
+    entries = list(additions)
+    if not entries:
+        return text
+    line_start = text.rfind("\n", 0, node.start_mark.index) + 1
+    indent = text[line_start:node.start_mark.index]
+    if indent.strip():
+        indent = " " * node.start_mark.column
+    newline = "\r\n" if "\r\n" in text else "\n"
+    insertion = node.end_mark.index
+    prefix = text[:insertion]
+    suffix = text[insertion:]
+    if prefix and not prefix.endswith(("\n", "\r")):
+        prefix += newline
+    body = newline.join(f"{indent}{entry}" for entry in entries) + newline
+    return prefix + body + suffix
 
 
 def _format_config_value(value: object) -> str:
@@ -302,11 +327,6 @@ def _format_config_value(value: object) -> str:
     if isinstance(value, int):
         return str(value)
     raise PreferenceError(f"Unsupported managed config value type: {type(value).__name__}.")
-
-
-def _managed_key_pattern(key: str) -> str:
-    escaped = re.escape(key)
-    return rf"(?:{escaped}|'{escaped}'|\"{escaped}\")"
 
 
 def _flow_separator(tail: str) -> Optional[int]:
@@ -715,25 +735,26 @@ def set_unity_project_path(
     except PreferenceError as error:
         raise PreferenceValidationError(str(error), location) from error
     try:
-        try:
-            if not value.strip():
-                raise PreferenceError("path is empty")
-            resolved = resolve_preference_path(value, cwd or Path.cwd())
-            project = validate_unity_project_path(resolved)
-        except PreferenceError as error:
-            raise UnityProjectPathError(
-                f"Invalid unity_project_path: {error}",
-                location,
-            ) from error
+        if not value.strip():
+            raise PreferenceError("path is empty")
+        resolved = resolve_preference_path(value, cwd or Path.cwd())
+        project = validate_unity_project_path(resolved)
+    except PreferenceError as error:
+        raise UnityProjectPathError(
+            f"Invalid unity_project_path: {error}",
+            location,
+        ) from error
+    try:
         updated_text = update_config_text(
             text,
             {"unity_project_path": str(project)},
         )
         _atomic_write_config(location.path, updated_text)
-    except UnityProjectPathError:
-        raise
     except (OSError, PreferenceError) as error:
-        raise PreferenceValidationError(str(error), location) from error
+        raise UnityProjectPathError(
+            f"Could not update unity_project_path: {error}",
+            location,
+        ) from error
     return location, project
 
 

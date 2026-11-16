@@ -1,8 +1,10 @@
+import io
 import os
 import subprocess
 import sys
 import tempfile
 import unittest
+from contextlib import redirect_stdout
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest import mock
@@ -25,6 +27,8 @@ from blasphemous_modding_helper.preferences import (  # noqa: E402
     update_config_text,
     validate_preferences,
 )
+from blasphemous_modding_helper import preferences as preference_module  # noqa: E402
+from check_preferences import main as check_preferences_main  # noqa: E402
 
 
 CHECK_PREFERENCES = SCRIPT_ROOT / "check_preferences.py"
@@ -88,6 +92,21 @@ class PreferencesValidationTests(unittest.TestCase):
             errors="replace",
             check=False,
         )
+
+    def run_set_unity_path_in_process(self, value):
+        output = io.StringIO()
+        with redirect_stdout(output):
+            returncode = check_preferences_main(
+                [
+                    "--cwd",
+                    str(self.root),
+                    "--home",
+                    str(self.home),
+                    "--set-unity-project-path",
+                    str(value),
+                ]
+            )
+        return returncode, output.getvalue()
 
     @staticmethod
     def fields(result):
@@ -405,21 +424,135 @@ class PreferencesValidationTests(unittest.TestCase):
                     1,
                 )
 
-    def test_targeted_unity_path_update_rejects_multiline_value_without_writing(self):
-        unity = self.root / "Unity Multiline"
+    def test_targeted_unity_path_update_replaces_alias_not_its_anchor(self):
+        unity = self.root / "Unity Aliased"
         (unity / "Assets").mkdir(parents=True)
         self.write_config(
-            "unity_project_path: >\n"
-            "  /previous\n"
+            "base_path: &base /previous\n"
+            "unity_project_path: *base # keep alias note\n"
             "modding_profile_path: profile\n"
         )
+
+        result = self.run_set_unity_path(unity)
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        values = parse_preferences(self.config)
+        self.assertEqual(values["base_path"], "/previous")
+        self.assertEqual(values["unity_project_path"], str(unity.resolve()))
+        text = self.config.read_text(encoding="utf-8")
+        self.assertIn("base_path: &base /previous", text)
+        self.assertIn("# keep alias note", text)
+
+    def test_targeted_unity_path_update_preserves_uniform_top_level_indent(self):
+        unity = self.root / "Unity Indented"
+        (unity / "Assets").mkdir(parents=True)
+        self.write_config(
+            "# keep header\n"
+            "    'unknown': {nested: [one, two]}\n"
+            "    modding_profile_path: \"profile\" # keep profile note\n"
+            "    future: {quoted: 'value'}\n"
+        )
+
+        result = self.run_set_unity_path(unity)
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        values = parse_preferences(self.config)
+        self.assertEqual(values["unity_project_path"], str(unity.resolve()))
+        self.assertEqual(values["unknown"], {"nested": ["one", "two"]})
+        self.assertEqual(values["modding_profile_path"], "profile")
+        self.assertEqual(values["future"], {"quoted": "value"})
+        text = self.config.read_text(encoding="utf-8")
+        self.assertIn("# keep header", text)
+        self.assertIn("# keep profile note", text)
+        self.assertIn("\n    unity_project_path:", text)
+        self.assertNotIn("\nunity_project_path:", text)
+        self.assertLess(text.index("'unknown':"), text.index("modding_profile_path:"))
+
+    def test_targeted_unity_path_update_replaces_block_scalar_values(self):
+        unity = self.root / "Unity Block"
+        (unity / "Assets").mkdir(parents=True)
+        for style in ("|", "|-", "|+", ">", ">-", ">+", "|2", ">2"):
+            with self.subTest(style=style):
+                self.write_config(
+                    "# keep header\n"
+                    f"unity_project_path: {style} # keep managed note\n"
+                    "  /previous\n"
+                    "  path\n"
+                    "modding_profile_path: profile # keep profile note\n"
+                )
+
+                result = self.run_set_unity_path(unity)
+
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                values = parse_preferences(self.config)
+                self.assertEqual(values["unity_project_path"], str(unity.resolve()))
+                self.assertEqual(values["modding_profile_path"], "profile")
+                text = self.config.read_text(encoding="utf-8")
+                self.assertIn("# keep header", text)
+                self.assertIn("# keep managed note", text)
+                self.assertIn("# keep profile note", text)
+                self.assertNotIn("/previous", text)
+                self.assertEqual(text.count("unity_project_path"), 1)
+
+    def test_targeted_unity_path_invalid_yaml_requires_setup_without_writing(self):
+        unity = self.root / "Unity Invalid Config"
+        (unity / "Assets").mkdir(parents=True)
+        self.write_config("valid: value\nnot a mapping\n")
         before = self.config.read_bytes()
 
         result = self.run_set_unity_path(unity)
 
         self.assertEqual(result.returncode, 10)
-        self.assertIn("PREFERENCES_SETUP=required", result.stdout)
+        fields = self.fields(result)
+        self.assertEqual(fields["PREFERENCES_SETUP"], "required")
+        self.assertNotIn("PREFERENCES_NEXT_ACTION", fields)
+        self.assertIn("Invalid config.yml", fields["PREFERENCES_VALIDATION_REASON"])
         self.assertEqual(self.config.read_bytes(), before)
+
+    def test_targeted_unity_path_parse_failure_preserves_original_configuration(self):
+        unity = self.root / "Unity Parse Failure"
+        (unity / "Assets").mkdir(parents=True)
+        self.write_config("modding_profile_path: profile\n")
+        before = self.config.read_bytes()
+        original_parse = preference_module._parse_config
+
+        def parse_candidate(text):
+            if "unity_project_path" in text:
+                raise preference_module.PreferenceError("candidate parse failed")
+            return original_parse(text)
+
+        with mock.patch.object(
+            preference_module,
+            "_parse_config",
+            side_effect=parse_candidate,
+        ):
+            returncode, output = self.run_set_unity_path_in_process(unity)
+
+        self.assertEqual(returncode, 10)
+        self.assertIn("PREFERENCES_SETUP=not-required", output)
+        self.assertIn("PREFERENCES_NEXT_ACTION=retry-unity-project-path", output)
+        self.assertIn("Automated config update", output)
+        self.assertEqual(self.config.read_bytes(), before)
+
+    def test_targeted_unity_path_atomic_write_failure_preserves_original(self):
+        unity = self.root / "Unity Atomic Failure"
+        (unity / "Assets").mkdir(parents=True)
+        self.write_config("modding_profile_path: profile\n")
+        before = self.config.read_bytes()
+
+        with mock.patch.object(
+            preference_module.os,
+            "replace",
+            side_effect=OSError("atomic replace failed"),
+        ):
+            returncode, output = self.run_set_unity_path_in_process(unity)
+
+        self.assertEqual(returncode, 10)
+        self.assertIn("PREFERENCES_SETUP=not-required", output)
+        self.assertIn("PREFERENCES_NEXT_ACTION=retry-unity-project-path", output)
+        self.assertIn("atomic replace failed", output)
+        self.assertEqual(self.config.read_bytes(), before)
+        self.assertEqual(list(self.config.parent.glob(".config.yml.*.tmp")), [])
 
     def test_targeted_unity_path_resolution_cycle_stays_retryable(self):
         unity = self.root / "Unity Cycle"
@@ -458,6 +591,13 @@ class PreferencesValidationTests(unittest.TestCase):
         self.assertEqual(values["check_period_days"], 14)
         self.assertEqual(values["last_checked_version"], read_skill_version())
         self.assertIn("# keep inline", updated)
+
+    def test_config_update_initializes_an_empty_configuration(self):
+        updated = update_config_text("", {"check_period_days": 7})
+        self.config.parent.mkdir(parents=True, exist_ok=True)
+        self.config.write_text(updated, encoding="utf-8")
+
+        self.assertEqual(parse_preferences(self.config), {"check_period_days": 7})
 
     def test_targeted_unity_path_update_rejects_invalid_path_without_writing(self):
         self.write_config(
