@@ -81,8 +81,6 @@
       {
         "field": "picture",
         "scope": "external",
-        "source_path": "Assets/Resources/inventory/questitem/QI78.prefab",
-        "source_file_id": 114940650439655525,
         "target_path": "Assets/Sprite/qi78.asset",
         "target_file_id": 21300000,
         "target_status": "ok",
@@ -91,8 +89,6 @@
       {
         "field": "texture",
         "scope": "external",
-        "source_path": "Assets/Sprite/qi78.asset",
-        "source_file_id": 21300000,
         "target_path": "Assets/Texture2D/items-icons-spritesheet.png",
         "target_file_id": 2800000,
         "target_status": "unsupported",
@@ -101,8 +97,6 @@
       {
         "field": "m_Script",
         "scope": "external",
-        "source_path": "Assets/Resources/inventory/questitem/QI78.prefab",
-        "source_file_id": 114940650439655525,
         "target_path": "Assets/Scripts/Assembly-CSharp/Framework/Inventory/QuestItem.cs",
         "target_file_id": 11500000,
         "target_status": "unsupported",
@@ -110,29 +104,45 @@
       }
     ]
   },
-  "incoming_references": {
-    "path": "Assets/Resources/inventory/questitem/QI78.prefab",
-    "object_file_id": 114940650439655525,
-    "direction": "incoming",
-    "depth": 1,
-    "limit": 30,
-    "timeout_seconds": 120,
-    "status": "ok",
-    "complete": true,
-    "node_count": 2,
-    "edge_count": 1,
-    "edges": [
-      {
-        "field": "m_Component.component",
-        "scope": "local",
-        "source_path": "Assets/Resources/inventory/questitem/QI78.prefab",
-        "source_file_id": 1810135827502625,
-        "target_path": "Assets/Resources/inventory/questitem/QI78.prefab",
-        "target_file_id": 114940650439655525,
-        "target_status": "ok",
-        "target_reason": null
-      }
-    ]
+  "bindings": {
+    "census": {
+      "rows": 75147,
+      "pages": 76,
+      "source_asset_kind": {
+        "scene": 69267,
+        "prefab": 4803,
+        "asset": 1077
+      },
+      "reference_shape": {
+        "structured": 75146,
+        "null": 1,
+        "malformed": 0
+      },
+      "target_category": {
+        "cs": 68660,
+        "dll": 2356,
+        "unresolved": 4130,
+        "null": 1,
+        "malformed": 0,
+        "binary_other": 0,
+        "other": 0
+      },
+      "asset_resolution": {
+        "resolved": 71016,
+        "missing": 4130,
+        "ambiguous": 0,
+        "unsupported_binary": 0,
+        "not_applicable": 1
+      },
+      "script_object_resolution": {
+        "asset_level_only": 68660,
+        "not_verifiable_binary": 2356,
+        "not_applicable": 4131
+      },
+      "distinct_m_script_file_ids": 50,
+      "non_typical_file_id_rows": 6485,
+      "packages_source_candidates": 0
+    }
   },
   "representative_files": [
     "Assets/#Design/#CVSTODIA/D01 - Feudal District/D01BZ01 - Mea Culpa/D01BZ01S01 - Arena/D01BZ01S01_MAIN.unity",

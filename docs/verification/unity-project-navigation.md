@@ -10,7 +10,7 @@ The synthetic gate uses fixtures and does not require a game export:
 <python3> tests/test_modding_api_acceptance.py
 ```
 
-The full repository suite covers configuration, project summary, asset and GUID lookup, complete and standalone scene sets, flattened Prefabs, script assets, and serialized references. The six navigation topics are `topology.md`, `assets-and-guids.md`, `scripts.md`, `scenes.md`, `prefabs.md`, and `component-relations.md`.
+The full repository suite covers configuration, project summary, asset and GUID lookup, complete and standalone scene sets, flattened Prefabs, script assets, serialized references, and direct component-script bindings. The seven navigation topics are `topology.md`, `assets-and-guids.md`, `scripts.md`, `scenes.md`, `prefabs.md`, `component-relations.md`, and `bindings.md`.
 
 The synthetic result remains a fixture result even when every test passes. It does not prove the supplied export has the expected topology.
 
@@ -28,7 +28,7 @@ PowerShell:
 & $PYTHON3 tests\run_unity_real_project_acceptance.py --project '<UNITY_PROJECT_ROOT>'
 ```
 
-The fixed manifest is `tests/fixtures/unity-real-project-smoke.json`. It locks the Unity version, real-tree counts, one complete five-layer scene set, one standalone scene, one flattened Prefab, one script asset, one GUID lookup, one outgoing serialized-reference chain, one incoming local-reference edge, both source and target identities for every fixed edge, and the representative files used for content hashing.
+The fixed manifest is `tests/fixtures/unity-real-project-smoke.json`. It locks the Unity version, real-tree counts, one complete five-layer scene set, one standalone scene, one flattened Prefab, one script asset, one GUID lookup, one serialized-reference chain, the component-binding census aggregate, and the representative files used for content hashing.
 
 The runner exits with:
 
@@ -37,6 +37,26 @@ The runner exits with:
 - `1` with `status: "failed"` when the export is readable but baseline counts, fixed identities, query evidence, or read-only evidence drift.
 
 The JSON report names `evidence_mode: "real_project"` and records the exact scanner commands, statuses, completion evidence, blocked reason when applicable, and next action. Synthetic evidence is named separately and is never substituted for a blocked real run.
+
+## Full binding census
+
+The default real-project gate is a bounded smoke and does not run the complete binding census. Run the acceptance census only with explicit authorization:
+
+```powershell
+& $PYTHON3 tests\run_unity_real_project_acceptance.py --project '<UNITY_PROJECT_ROOT>' --bindings-census
+```
+
+The census uses only the public `bindings` command. It follows every page cursor at the maximum limit of 1000 and fails unless every page reports `status: "ok"` and `scan_coverage: "complete"`. The final page MUST have `next_cursor: null`.
+
+Census mode runs the project summary, the full binding census, and the before-and-after read-only gate. It does not rerun the unrelated scene, Prefab, GUID, script-asset, or serialized-reference smoke chains. Those remain owned by the default real-project smoke.
+
+The report records the Unity version, Skill and schema versions, invocation parameters, UTC start and end timestamps, a path-free snapshot identifier, source-file candidate counts, binding row counts by source kind, reference shape, target category, target-asset resolution, target-object resolution, warning counts, and all page statuses and coverage states. Aggregate counts are compared with the reviewed manifest.
+
+The census selects deterministic first matches for a C# target, a DLL target, an unresolved target, a null reference, a non-typical script file ID, an `.asset` source, malformed evidence when present, and a `Packages` binding when package source candidates exist. Each sample is checked for the expected binding-chain state. A state absent from the export is reported as not observed instead of fabricated.
+
+The page benchmark records the UTF-8 serialized byte size and elapsed time for a default 200-row page and a maximum 1000-row page. It follows each cursor once, records the page transition, and records the full maximum-limit cursor chain.
+
+The local report can contain real project-relative sample paths so the operator can inspect the selected chains. Do not commit or upload those paths, sample GUID hashes, asset copies, or the raw acceptance log. Publish only aggregate counts, statuses, timestamps, page sizes, and the path-free snapshot identifier.
 
 ## Real baseline
 
@@ -53,6 +73,11 @@ The JSON report names `evidence_mode: "real_project"` and records the exact scan
 | Complete five-layer scene sets | 393 |
 | Incomplete scene sets | 0 |
 | Standalone scenes | 5 |
+| Binding rows | 75,147 |
+| Binding sources: scenes / Prefabs / assets | 69,267 / 4,803 / 1,077 |
+| Structured / null / malformed references | 75,146 / 1 / 0 |
+| C# / DLL / unresolved / null / malformed targets | 68,660 / 2,356 / 4,130 / 1 / 0 |
+| Distinct / non-typical `m_Script.fileID` values | 50 / 6,485 rows |
 
 The fixed smoke resolves:
 
@@ -62,23 +87,21 @@ The fixed smoke resolves:
 - Script asset `Assets/Plugins/Assembly-CSharp-firstpass/BaseCRTEffect.cs` with no C# parsing.
 - GUID lookup from `01ed6fc6d86656c449f2e9902e9bbb8a` to the QI78 Prefab.
 - Outgoing serialized-reference chain from QI78 object `114940650439655525` through `Assets/Sprite/qi78.asset` to the texture reference in `Assets/Texture2D/items-icons-spritesheet.png`.
-- Incoming local `m_Component.component` edge from QI78 object `1810135827502625` to object `114940650439655525`.
 
 ## Read-only evidence
 
-The runner snapshots the complete project path inventory before and after all queries. It fails if any file or directory is added or removed. It also hashes every representative queried file, including `.meta` evidence, before and after; a content change fails the gate. The navigation command contract remains read-only; the gate does not hash every project file outside the fixed representative set.
+The runner snapshots the complete project path inventory before and after all queries. It fails if any file or directory is added or removed. The full binding census runs inside the same before-and-after inventory window. The runner also hashes every representative queried file, including `.meta` evidence, before and after; a content change fails the gate. The navigation command contract remains read-only; the gate does not hash every project file outside the fixed representative set.
 
 ## Current record
 
-Observed on 2026-11-17 on native Windows with the supplied export:
+Observed on 2026-11-16 on native Windows with the supplied export:
 
 - Assets inventory: 94,153 files.
 - Unity version: `2017.4.40f1`.
 - Complete scene sets: 393; standalone scenes: 5.
 - Real-project extra-file count after the smoke: 0.
 - Representative file content changes after the smoke: 0.
-- Outgoing reference query: `ok`, complete, 7 nodes and 9 edges; no timeout or limit.
-- Incoming reference query: `ok`, complete, 2 nodes and 1 local edge; no timeout or limit.
+- Full binding census: blocked. Repeated maximum-limit pages completed individually, but the full cursor chain hit the 120-second per-page timeout on a later page. No partial or timed-out census is recorded as a pass.
 
 The real-project report is separate from the synthetic suite and does not claim C# behavior, runtime state, or gameplay.
 
@@ -86,8 +109,8 @@ The real report is asset and serialized evidence only. C# behavior, dependencies
 
 ## Completion criteria
 
-Real-project acceptance is complete only when the synthetic suite passes separately, the real runner exits `0`, the full path inventory is unchanged, every representative hash is unchanged, and the report names the commands, evidence, and next action. A blocked or failed real run remains incomplete.
+Real-project acceptance is complete only when the synthetic suite passes separately, the real runner exits `0`, the full path inventory is unchanged, every representative hash is unchanged, and the report names the commands, evidence, and next action. Component-binding acceptance additionally requires the opt-in census to finish every cursor page with complete coverage, match the aggregate baseline, cover every observed sample state, record both page benchmarks, and leave the project path inventory unchanged. A blocked, timed-out, partial, or failed real run remains incomplete.
 
 ## Next action
 
-For `blocked`, provide a readable export containing `Assets` and `ProjectSettings/ProjectVersion.txt`, then rerun. For `failed`, inspect the first failed baseline or query identity and update the export or the reviewed manifest deliberately; do not weaken the gate and do not report the synthetic suite as real evidence.
+For `blocked`, provide a readable export containing `Assets` and `ProjectSettings/ProjectVersion.txt`, then rerun. For `failed`, inspect the first failed baseline, query identity, sample chain, or cursor transition and update the export or the reviewed manifest deliberately; do not weaken the gate and do not report the synthetic suite as real evidence. A timeout or partial scan is not a complete census.

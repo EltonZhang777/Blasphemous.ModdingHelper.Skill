@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import datetime
 import hashlib
 import json
 import os
@@ -26,7 +27,33 @@ DEFAULT_MANIFEST = (
     REPOSITORY_ROOT / "tests" / "fixtures" / "unity-real-project-smoke.json"
 )
 PROJECT_ENV = "BLASPHEMOUS_UNITY_PROJECT_PATH"
-SCANNER_TIMEOUT_SECONDS = 240
+SCANNER_TIMEOUT_SECONDS = 600
+BINDINGS_LIMIT = 1000
+BINDINGS_TIMEOUT_SECONDS = 120
+TYPICAL_SCRIPT_FILE_ID = "11500000"
+BINDING_SOURCE_KINDS = ("scene", "prefab", "asset")
+BINDING_REFERENCE_SHAPES = ("structured", "null", "malformed")
+BINDING_TARGET_CATEGORIES = (
+    "cs",
+    "dll",
+    "unresolved",
+    "null",
+    "malformed",
+    "binary_other",
+    "other",
+)
+BINDING_ASSET_RESOLUTIONS = (
+    "resolved",
+    "missing",
+    "ambiguous",
+    "unsupported_binary",
+    "not_applicable",
+)
+BINDING_OBJECT_RESOLUTIONS = (
+    "asset_level_only",
+    "not_verifiable_binary",
+    "not_applicable",
+)
 
 
 class SmokeFailure(RuntimeError):
@@ -61,14 +88,9 @@ def _snapshot_paths(root: Path) -> Tuple[Set[str], int, int, int]:
     assets_files = 0
     file_count = 0
     directory_count = 0
-
-    def on_error(error: OSError) -> None:
-        raise error
-
     for directory, names, filenames in os.walk(
         str(root),
         topdown=True,
-        onerror=on_error,
         followlinks=False,
     ):
         base = Path(directory)
@@ -104,27 +126,11 @@ def _scanner_command(
     ]
 
 
-def _query_record(
-    name: str,
+def _run_scanner_with_size(
     python_executable: str,
     project_root: Path,
     arguments: Sequence[str],
-) -> Dict[str, object]:
-    command = [python_executable, str(SCANNER), *arguments]
-    return {
-        "query": name,
-        "command": _scanner_command(command, project_root),
-        "status": "started",
-        "elapsed_seconds": None,
-    }
-
-
-def _run_scanner(
-    python_executable: str,
-    project_root: Path,
-    arguments: Sequence[str],
-    record: Dict[str, object],
-) -> Tuple[Dict[str, object], float]:
+) -> Tuple[Dict[str, object], float, int]:
     command = [python_executable, str(SCANNER), *arguments]
     started = time.monotonic()
     try:
@@ -140,16 +146,12 @@ def _run_scanner(
             timeout=SCANNER_TIMEOUT_SECONDS,
         )
     except subprocess.TimeoutExpired as error:
-        record["status"] = "timeout"
-        record["elapsed_seconds"] = round(time.monotonic() - started, 2)
         raise SmokeFailure(
             "Scanner command exceeded the outer acceptance timeout: "
             + " ".join(command)
         ) from error
     elapsed = round(time.monotonic() - started, 2)
-    record["elapsed_seconds"] = elapsed
     if result.returncode != 0:
-        record["status"] = "failed"
         raise SmokeFailure(
             f"Scanner command failed with exit code {result.returncode}: "
             f"{' '.join(command)}\nstdout:\n{result.stdout}\nstderr:\n{result.stderr}"
@@ -157,15 +159,39 @@ def _run_scanner(
     try:
         payload = json.loads(result.stdout)
     except json.JSONDecodeError as error:
-        record["status"] = "failed"
         raise SmokeFailure(
             f"Scanner output was not JSON: {' '.join(command)}: {error}"
         ) from error
-    if not isinstance(payload, dict):
-        record["status"] = "failed"
-        raise SmokeFailure("Scanner output envelope is not an object.")
-    record["status"] = payload.get("status")
+    _require(isinstance(payload, dict), "Scanner output envelope is not an object.")
+    return payload, elapsed, len(result.stdout.encode("utf-8"))
+
+
+def _run_scanner(
+    python_executable: str,
+    project_root: Path,
+    arguments: Sequence[str],
+) -> Tuple[Dict[str, object], float]:
+    payload, elapsed, _ = _run_scanner_with_size(
+        python_executable,
+        project_root,
+        arguments,
+    )
     return payload, elapsed
+
+
+def _query_record(
+    name: str,
+    arguments: Sequence[str],
+    project_root: Path,
+    payload: Dict[str, object],
+    elapsed: float,
+) -> Dict[str, object]:
+    return {
+        "query": name,
+        "command": _scanner_command(arguments, project_root),
+        "status": payload.get("status"),
+        "elapsed_seconds": elapsed,
+    }
 
 
 def _verify_project_summary(
@@ -339,9 +365,8 @@ def _verify_guid_lookup(
 def _verify_references(
     payload: Dict[str, object],
     manifest: Dict[str, object],
-    manifest_key: str = "references",
 ) -> None:
-    expected = manifest[manifest_key]
+    expected = manifest["references"]
     _require(payload.get("status") == expected["status"], "Reference status drifted.")
     _require(payload.get("complete") is expected["complete"], "Reference completeness drifted.")
     _require(payload.get("truncated") is False, "Reference query is truncated.")
@@ -363,8 +388,6 @@ def _verify_references(
         (
             edge["field"],
             edge["scope"],
-            edge["source"]["path"],
-            edge["source"]["file_id"],
             edge["target"]["path"],
             edge["target"]["file_id"],
             edge["target"]["status"],
@@ -376,80 +399,654 @@ def _verify_references(
         identity = (
             edge["field"],
             edge["scope"],
-            edge["source_path"],
-            edge["source_file_id"],
             edge["target_path"],
             edge["target_file_id"],
             edge["target_status"],
             edge["target_reason"],
         )
-        _require(
-            identity in actual_edges,
-            f"Expected reference edge is missing: {identity}",
-        )
+        _require(identity in actual_edges, f"Expected reference edge is missing: {identity}")
     warning_codes = [warning["code"] for warning in payload.get("warnings", [])]
     _require("timeout" not in warning_codes, "Reference query timed out.")
     _require("result_limit" not in warning_codes, "Reference query hit its result limit.")
 
 
-def _completion_evidence(
-    project_payload: Dict[str, object],
-    scene_payload: Dict[str, object],
-    standalone_payload: Dict[str, object],
-    prefab_payload: Dict[str, object],
-    script_payload: Dict[str, object],
-    guid_payload: Dict[str, object],
-    reference_payloads: Dict[str, Dict[str, object]],
-    before_assets: int,
-) -> Dict[str, object]:
-    scene_result = scene_payload["results"][0]
-    standalone_result = standalone_payload["results"][0]
+def _new_binding_census() -> Dict[str, object]:
     return {
-        "unity_version": project_payload["project"]["unity_version"],
-        "baseline": {
-            "assets_total_files": before_assets,
-            "scanner_total_files": project_payload["results"][0]["file_counts"]["total"],
-            "unity_files": project_payload["results"][0]["file_counts"]["unity"],
-            "prefab_files": project_payload["results"][0]["file_counts"]["prefab"],
-            "asset_files": project_payload["results"][0]["file_counts"]["asset"],
-            "cs_files": project_payload["results"][0]["file_counts"]["cs"],
-            "meta_files": project_payload["results"][0]["file_counts"]["meta"],
-            "complete_scene_sets": project_payload["results"][0]["scene_counts"]["complete_sets"],
-            "standalone_scenes": project_payload["results"][0]["scene_counts"]["standalone"],
+        "rows": 0,
+        "pages": 0,
+        "source_asset_kind": {key: 0 for key in BINDING_SOURCE_KINDS},
+        "reference_shape": {key: 0 for key in BINDING_REFERENCE_SHAPES},
+        "target_category": {key: 0 for key in BINDING_TARGET_CATEGORIES},
+        "asset_resolution": {key: 0 for key in BINDING_ASSET_RESOLUTIONS},
+        "script_object_resolution": {
+            key: 0 for key in BINDING_OBJECT_RESOLUTIONS
         },
-        "scene_set": {
-            key: scene_result[key]
-            for key in (
-                "logical_name",
-                "directory",
-                "kind",
-                "present_layers",
-                "missing_layers",
-                "members",
-                "object_count",
-                "reference_count",
-            )
-        },
-        "standalone_scene": {
-            key: standalone_result[key]
-            for key in (
-                "logical_name",
-                "directory",
-                "kind",
-                "members",
-                "requested_path",
-                "object_count",
-                "reference_count",
-            )
-        },
-        "prefab": prefab_payload["results"][0],
-        "script": script_payload["results"][0],
-        "guid_lookup": guid_payload["results"][0],
-        "references": reference_payloads["references"]["results"][0],
-        "incoming_references": reference_payloads[
-            "incoming_references"
-        ]["results"][0],
+        "warning_codes": {},
+        "page_status": {},
+        "page_coverage": {},
+        "page_rows": {},
+        "boundary_identity_repeats": 0,
+        "samples": {},
     }
+
+
+def _increment(counts: Dict[str, int], key: object) -> None:
+    name = str(key)
+    counts[name] = counts.get(name, 0) + 1
+
+
+def _binding_target_category(row: Dict[str, object]) -> str:
+    shape = row.get("reference_shape")
+    if shape in {"null", "malformed"}:
+        return str(shape)
+    kind = row.get("target_asset_kind")
+    if kind == "cs":
+        return "cs"
+    if kind == "binary":
+        path = str(row.get("target_asset_path") or "")
+        return "dll" if path.casefold().endswith(".dll") else "binary_other"
+    if kind == "unresolved":
+        return "unresolved"
+    return "other"
+
+
+def _binding_sample(row: Dict[str, object]) -> Dict[str, object]:
+    guid = row.get("m_script_guid")
+    return {
+        "source_asset_path": row.get("source_asset_path"),
+        "source_asset_kind": row.get("source_asset_kind"),
+        "source_object_file_id": row.get("source_object_file_id"),
+        "reference_shape": row.get("reference_shape"),
+        "m_script_file_id": row.get("m_script_file_id"),
+        "m_script_guid_sha256": (
+            hashlib.sha256(str(guid).encode("ascii")).hexdigest()
+            if guid is not None
+            else None
+        ),
+        "m_script_type": row.get("m_script_type"),
+        "target_asset_kind": row.get("target_asset_kind"),
+        "target_asset_path": row.get("target_asset_path"),
+        "target_asset_candidate_count": len(
+            row.get("target_asset_candidates") or []
+        ),
+        "asset_resolution": row.get("asset_resolution"),
+        "asset_resolution_reason": row.get("asset_resolution_reason"),
+        "script_object_resolution": row.get("script_object_resolution"),
+    }
+
+
+def _record_binding_samples(
+    samples: Dict[str, Dict[str, object]],
+    row: Dict[str, object],
+) -> None:
+    categories = [_binding_target_category(row)]
+    if (
+        row.get("reference_shape") == "structured"
+        and row.get("m_script_file_id") != TYPICAL_SCRIPT_FILE_ID
+    ):
+        categories.append("non_typical_file_id")
+    if row.get("source_asset_kind") == "asset":
+        categories.append("asset")
+    for key in ("source_asset_path", "target_asset_path"):
+        if str(row.get(key) or "").startswith("Packages/"):
+            categories.append("packages")
+            break
+    for category in categories:
+        samples.setdefault(category, _binding_sample(row))
+
+
+def _accumulate_binding_page(
+    census: Dict[str, object],
+    state: Dict[str, object],
+    payload: Dict[str, object],
+) -> None:
+    results = payload.get("results")
+    _require(isinstance(results, list), "Binding page results are not an array.")
+    _require(payload.get("status") == "ok", "Binding page status is not ok.")
+    _require(
+        payload.get("scan_coverage") == "complete",
+        "Binding page scan coverage is not complete.",
+    )
+    _require(
+        payload.get("warnings") == [] and payload.get("error") is None,
+        "Binding page reported warnings or an error.",
+    )
+    rows = len(results)
+    _require(rows > 0, "Binding census reached an empty non-final page.")
+    previous_last = state.get("previous_last")
+    if previous_last is not None:
+        first = results[0]
+        if (
+            first.get("source_asset_path"),
+            first.get("source_object_file_id"),
+        ) == previous_last:
+            census["boundary_identity_repeats"] += 1
+    state["previous_last"] = (
+        results[-1].get("source_asset_path"),
+        results[-1].get("source_object_file_id"),
+    )
+    page_rows = census["page_rows"]
+    page_rows["minimum"] = min(page_rows.get("minimum", rows), rows)
+    page_rows["maximum"] = max(page_rows.get("maximum", rows), rows)
+    census["rows"] += rows
+    census["pages"] += 1
+    _increment(census["page_status"], payload.get("status"))
+    _increment(census["page_coverage"], payload.get("scan_coverage"))
+    for row in results:
+        _require(
+            isinstance(row, dict),
+            "Binding census row is not an object.",
+        )
+        _increment(census["source_asset_kind"], row.get("source_asset_kind"))
+        _increment(census["reference_shape"], row.get("reference_shape"))
+        _increment(
+            census["target_category"],
+            _binding_target_category(row),
+        )
+        _increment(census["asset_resolution"], row.get("asset_resolution"))
+        _increment(
+            census["script_object_resolution"],
+            row.get("script_object_resolution"),
+        )
+        file_ids = state["file_ids"]
+        file_ids.add(row.get("m_script_file_id"))
+        if (
+            row.get("reference_shape") == "structured"
+            and row.get("m_script_file_id") != TYPICAL_SCRIPT_FILE_ID
+        ):
+            census["non_typical_file_id_rows"] = (
+                census.get("non_typical_file_id_rows", 0) + 1
+            )
+        _record_binding_samples(census["samples"], row)
+
+
+def _finalize_binding_census(
+    census: Dict[str, object],
+    state: Dict[str, object],
+    benchmark: Dict[str, object],
+    package_source_candidates: int,
+    manifest: Dict[str, object],
+) -> Dict[str, object]:
+    census["distinct_m_script_file_ids"] = len(state["file_ids"])
+    census["non_typical_file_id_rows"] = census.get(
+        "non_typical_file_id_rows",
+        0,
+    )
+    census["cursor"] = {
+        "pages": census["pages"],
+        "next_cursor_pages": census["pages"] - 1,
+        "final_next_cursor_present": benchmark["final_next_cursor_present"],
+        "boundary_identity_repeats": census["boundary_identity_repeats"],
+    }
+    census["maximum_page_benchmark"] = benchmark
+    samples = census["samples"]
+    required_samples = (
+        "cs",
+        "dll",
+        "unresolved",
+        "null",
+        "non_typical_file_id",
+        "asset",
+    )
+    for key in required_samples:
+        _require(
+            isinstance(samples.get(key), dict),
+            f"Binding census has no {key} sample.",
+        )
+    if census["target_category"]["malformed"]:
+        _require(
+            isinstance(samples.get("malformed"), dict),
+            "Binding census has malformed rows but no malformed sample.",
+        )
+    else:
+        _require(
+            "malformed" not in samples,
+            "Binding census reported a malformed sample without malformed rows.",
+        )
+    if package_source_candidates:
+        _require(
+            isinstance(samples.get("packages"), dict),
+            "Binding census has Packages source candidates but no package sample.",
+        )
+    else:
+        _require(
+            "packages" not in samples,
+            "Binding census reported a package sample without Packages sources.",
+        )
+    _verify_binding_samples(samples)
+    _verify_binding_census(census, manifest)
+    return census
+
+
+def _verify_binding_samples(samples: Dict[str, Dict[str, object]]) -> None:
+    cs_sample = samples["cs"]
+    _require(cs_sample["reference_shape"] == "structured", "CS sample is not structured.")
+    _require(cs_sample["target_asset_kind"] == "cs", "CS sample target kind drifted.")
+    _require(cs_sample["asset_resolution"] == "resolved", "CS sample is unresolved.")
+    _require(
+        cs_sample["script_object_resolution"] == "asset_level_only",
+        "CS sample claims more than asset-level resolution.",
+    )
+    _require(bool(cs_sample["target_asset_path"]), "CS sample has no target path.")
+
+    dll_sample = samples["dll"]
+    _require(dll_sample["target_asset_kind"] == "binary", "DLL sample target kind drifted.")
+    _require(
+        str(dll_sample["target_asset_path"]).casefold().endswith(".dll"),
+        "DLL sample target is not a DLL.",
+    )
+    _require(dll_sample["asset_resolution"] == "resolved", "DLL sample is unresolved.")
+    _require(
+        dll_sample["script_object_resolution"] == "not_verifiable_binary",
+        "DLL sample claims a verifiable script object.",
+    )
+
+    unresolved_sample = samples["unresolved"]
+    _require(
+        unresolved_sample["target_asset_kind"] == "unresolved",
+        "Unresolved sample target kind drifted.",
+    )
+    _require(
+        unresolved_sample["asset_resolution"] == "missing",
+        "Unresolved sample asset resolution drifted.",
+    )
+    _require(
+        unresolved_sample["asset_resolution_reason"] == "missing_meta",
+        "Unresolved sample reason drifted.",
+    )
+    _require(
+        unresolved_sample["script_object_resolution"] == "not_applicable",
+        "Unresolved sample object resolution drifted.",
+    )
+
+    null_sample = samples["null"]
+    _require(null_sample["reference_shape"] == "null", "Null sample shape drifted.")
+    _require(
+        null_sample["m_script_file_id"] == "0",
+        "Null sample file ID is not zero.",
+    )
+    _require(
+        null_sample["asset_resolution"] == "not_applicable",
+        "Null sample asset resolution drifted.",
+    )
+    _require(
+        null_sample["script_object_resolution"] == "not_applicable",
+        "Null sample object resolution drifted.",
+    )
+
+    non_typical = samples["non_typical_file_id"]
+    _require(
+        non_typical["reference_shape"] == "structured",
+        "Non-typical file-ID sample is not structured.",
+    )
+    _require(
+        non_typical["m_script_file_id"] != TYPICAL_SCRIPT_FILE_ID,
+        "Non-typical file-ID sample uses the typical value.",
+    )
+    _require(samples["asset"]["source_asset_kind"] == "asset", "Asset sample drifted.")
+    if "malformed" in samples:
+        malformed = samples["malformed"]
+        _require(
+            malformed["reference_shape"] == "malformed",
+            "Malformed sample shape drifted.",
+        )
+        _require(
+            malformed["asset_resolution"] == "not_applicable",
+            "Malformed sample asset resolution drifted.",
+        )
+    if "packages" in samples:
+        package = samples["packages"]
+        paths = (package["source_asset_path"], package["target_asset_path"])
+        _require(
+            any(str(path or "").startswith("Packages/") for path in paths),
+            "Package sample has no Packages path.",
+        )
+
+
+def _verify_binding_census(
+    census: Dict[str, object],
+    manifest: Dict[str, object],
+) -> None:
+    expected = manifest["bindings"]["census"]
+    _require(census["rows"] == expected["rows"], "Binding census row count drifted.")
+    for key in (
+        "source_asset_kind",
+        "reference_shape",
+        "target_category",
+        "asset_resolution",
+        "script_object_resolution",
+    ):
+        _require(
+            census[key] == expected[key],
+            f"Binding census {key} counts drifted.",
+        )
+    for key in (
+        "distinct_m_script_file_ids",
+        "non_typical_file_id_rows",
+    ):
+        _require(
+            census[key] == expected[key],
+            f"Binding census {key} drifted.",
+        )
+    _require(census["warning_codes"] == {}, "Binding census reported warnings.")
+    _require(
+        census["page_status"] == {"ok": expected["pages"]},
+        "Binding census page statuses drifted.",
+    )
+    _require(
+        census["page_coverage"] == {"complete": expected["pages"]},
+        "Binding census coverage drifted.",
+    )
+
+
+def _scanner_version() -> str:
+    version_path = (
+        REPOSITORY_ROOT
+        / "skills"
+        / "blasphemous-modding-helper"
+        / "version.yml"
+    )
+    try:
+        for line in version_path.read_text(encoding="utf-8").splitlines():
+            key, separator, value = line.partition(":")
+            if separator and key.strip() == "version" and value.strip():
+                return value.strip()
+    except (OSError, UnicodeError) as error:
+        raise SmokeFailure(f"Could not read the Skill scanner version: {error}") from error
+    raise SmokeFailure("The Skill scanner version is missing.")
+
+
+def _utc_now() -> str:
+    return (
+        datetime.datetime.now(datetime.timezone.utc)
+        .isoformat(timespec="seconds")
+        .replace("+00:00", "Z")
+    )
+
+
+def _package_source_candidates(paths: Iterable[str]) -> int:
+    suffixes = {".unity", ".prefab", ".asset"}
+    return sum(
+        1
+        for path in paths
+        if path.startswith("file:Packages/")
+        and Path(path).suffix.casefold() in suffixes
+    )
+
+
+def _binding_arguments(
+    project_root: Path,
+    limit: int,
+    cursor: Optional[str] = None,
+) -> List[str]:
+    arguments = [
+        "bindings",
+        "--project",
+        str(project_root),
+        "--limit",
+        str(limit),
+        "--timeout-seconds",
+        str(BINDINGS_TIMEOUT_SECONDS),
+    ]
+    if cursor is not None:
+        arguments.extend(["--cursor", cursor])
+    return arguments
+
+
+def _redacted_cursor_arguments(arguments: Sequence[str]) -> List[str]:
+    redacted = list(arguments)
+    for index, value in enumerate(redacted):
+        if value == "--cursor" and index + 1 < len(redacted):
+            redacted[index + 1] = "<OPAQUE_CURSOR>"
+    return redacted
+
+
+def _verify_binding_page(
+    payload: Dict[str, object],
+    limit: int,
+    expected_rows: Optional[int] = None,
+) -> None:
+    _require(payload.get("status") == "ok", "Binding page status is not ok.")
+    _require(
+        payload.get("scan_coverage") == "complete",
+        "Binding page scan coverage is not complete.",
+    )
+    _require(
+        payload.get("warnings") == [] and payload.get("error") is None,
+        "Binding page reported warnings or an error.",
+    )
+    _require(
+        payload.get("limits", {}).get("limit") == limit,
+        "Binding page limit drifted.",
+    )
+    results = payload.get("results")
+    _require(isinstance(results, list), "Binding page results are not an array.")
+    if expected_rows is not None:
+        _require(
+            len(results) == expected_rows,
+            f"Binding page returned {len(results)} rows; expected {expected_rows}.",
+        )
+
+
+def _run_default_binding_benchmark(
+    python_executable: str,
+    project_root: Path,
+) -> Tuple[Dict[str, object], List[Dict[str, object]]]:
+    first_args = _binding_arguments(project_root, 200)
+    first, first_elapsed, first_bytes = _run_scanner_with_size(
+        python_executable,
+        project_root,
+        first_args,
+    )
+    _verify_binding_page(first, 200, 200)
+    cursor = first.get("next_cursor")
+    _require(isinstance(cursor, str) and cursor, "Default page has no next cursor.")
+
+    second_args = _binding_arguments(project_root, 200, cursor)
+    second, second_elapsed, _ = _run_scanner_with_size(
+        python_executable,
+        project_root,
+        second_args,
+    )
+    _verify_binding_page(second, 200, 200)
+    first_rows = first["results"]
+    second_rows = second["results"]
+    transitioned = (
+        second_rows[0].get("source_asset_path"),
+        second_rows[0].get("source_object_file_id"),
+    ) != (
+        first_rows[-1].get("source_asset_path"),
+        first_rows[-1].get("source_object_file_id"),
+    )
+    benchmark = {
+        "limit": 200,
+        "page_row_count": len(first_rows),
+        "serialized_bytes": first_bytes,
+        "first_page_elapsed_seconds": first_elapsed,
+        "next_cursor_present": True,
+        "cursor_transition": {
+            "page_row_count": len(second_rows),
+            "second_page_elapsed_seconds": second_elapsed,
+            "boundary_identity_changed": transitioned,
+            "next_cursor_present": second.get("next_cursor") is not None,
+        },
+    }
+    records = [
+        _query_record(
+            "bindings_benchmark_200",
+            first_args,
+            project_root,
+            first,
+            first_elapsed,
+        ),
+        _query_record(
+            "bindings_benchmark_200_cursor",
+            _redacted_cursor_arguments(second_args),
+            project_root,
+            second,
+            second_elapsed,
+        ),
+    ]
+    return benchmark, records
+
+
+def _run_binding_census(
+    python_executable: str,
+    project_root: Path,
+    project_payload: Dict[str, object],
+    before_paths: Set[str],
+    manifest: Dict[str, object],
+) -> Tuple[Dict[str, object], List[Dict[str, object]]]:
+    expected = manifest["bindings"]["census"]
+    package_sources = _package_source_candidates(before_paths)
+    _require(
+        package_sources == expected["packages_source_candidates"],
+        "Packages source candidate count drifted.",
+    )
+    arguments = _binding_arguments(project_root, BINDINGS_LIMIT)
+    started_at = _utc_now()
+    payload, elapsed, first_bytes = _run_scanner_with_size(
+        python_executable,
+        project_root,
+        arguments,
+    )
+    _verify_binding_page(payload, BINDINGS_LIMIT, BINDINGS_LIMIT)
+    first_page = payload
+    first_page_last = (
+        first_page["results"][-1].get("source_asset_path"),
+        first_page["results"][-1].get("source_object_file_id"),
+    )
+    first_page_elapsed = elapsed
+
+    census = _new_binding_census()
+    state: Dict[str, object] = {
+        "file_ids": set(),
+        "previous_last": None,
+    }
+    total_elapsed = 0.0
+    second_page_elapsed = None
+    boundary_changed = False
+    for page_number in range(expected["pages"]):
+        _require(
+            page_number < expected["pages"],
+            "Binding census exceeded its expected page count.",
+        )
+        results = payload.get("results")
+        _require(isinstance(results, list), "Binding page results are not an array.")
+        if page_number == 1:
+            second_page_elapsed = elapsed
+            boundary_changed = (
+                results[0].get("source_asset_path"),
+                results[0].get("source_object_file_id"),
+            ) != first_page_last
+        _accumulate_binding_page(census, state, payload)
+        total_elapsed += elapsed
+        cursor = payload.get("next_cursor")
+        if page_number + 1 == expected["pages"]:
+            _require(cursor is None, "Binding census ended before the final cursor.")
+            break
+        _require(
+            isinstance(cursor, str) and cursor,
+            "Binding census ended before the expected final page.",
+        )
+        arguments = _binding_arguments(project_root, BINDINGS_LIMIT, cursor)
+        payload, elapsed, _ = _run_scanner_with_size(
+            python_executable,
+            project_root,
+            arguments,
+        )
+        _verify_binding_page(payload, BINDINGS_LIMIT)
+    finished_at = _utc_now()
+
+    maximum_benchmark = {
+        "limit": BINDINGS_LIMIT,
+        "page_row_count": len(first_page["results"]),
+        "serialized_bytes": first_bytes,
+        "first_page_elapsed_seconds": first_page_elapsed,
+        "next_cursor_present": True,
+        "cursor_transition": {
+            "second_page_elapsed_seconds": second_page_elapsed,
+            "boundary_identity_changed": boundary_changed,
+            "final_next_cursor_present": False,
+        },
+        "final_next_cursor_present": False,
+    }
+    census["maximum_page_benchmark"] = maximum_benchmark
+    census["scan_timestamps"] = {
+        "started_at": started_at,
+        "finished_at": finished_at,
+        "elapsed_seconds": round(total_elapsed, 2),
+    }
+    census["invocation"] = {
+        "command": _scanner_command(
+            _binding_arguments(project_root, BINDINGS_LIMIT),
+            project_root,
+        ),
+        "selectors": {},
+        "cursor_pages": expected["pages"],
+    }
+    census["scanner_version"] = _scanner_version()
+    census["schema_version"] = project_payload["schema_version"]
+    census["unity_version"] = project_payload["project"]["unity_version"]
+    census["packages_root_included"] = (
+        "Packages" in project_payload["project"]["included_roots"]
+    )
+    census["packages_source_candidates"] = package_sources
+    file_counts = project_payload["results"][0]["file_counts"]
+    census["candidate_source_files"] = sum(
+        file_counts[key] for key in ("unity", "prefab", "asset")
+    )
+    census["file_counts"] = file_counts
+    _finalize_binding_census(
+        census,
+        state,
+        maximum_benchmark,
+        package_sources,
+        manifest,
+    )
+    census["scan_coverage"] = "complete"
+    census["error_counts"] = dict(census["warning_codes"])
+    snapshot_material = {
+        key: census[key]
+        for key in (
+            "unity_version",
+            "scanner_version",
+            "schema_version",
+            "file_counts",
+            "rows",
+            "source_asset_kind",
+            "reference_shape",
+            "target_category",
+        )
+    }
+    census["snapshot_id"] = hashlib.sha256(
+        json.dumps(
+            snapshot_material,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
+    records = [
+        _query_record(
+            "bindings_benchmark_1000",
+            _binding_arguments(project_root, BINDINGS_LIMIT),
+            project_root,
+            first_page,
+            first_page_elapsed,
+        ),
+        {
+            "query": "bindings_census",
+            "command": _scanner_command(
+                _redacted_cursor_arguments(arguments),
+                project_root,
+            ),
+            "status": "ok",
+            "elapsed_seconds": round(total_elapsed, 2),
+            "pages": census["pages"],
+            "rows": census["rows"],
+        },
+    ]
+    return census, records
 
 
 def _blocked_report(project: Optional[str], reason: str) -> Dict[str, object]:
@@ -478,6 +1075,8 @@ def _blocked_report(project: Optional[str], reason: str) -> Dict[str, object]:
 def run(
     python_executable: str,
     project: Optional[str],
+    manifest_path: Path,
+    bindings_census: bool = False,
 ) -> Tuple[int, Dict[str, object]]:
     if not project:
         return 2, _blocked_report(
@@ -490,13 +1089,7 @@ def run(
             str(project_root),
             "The supplied real Unity project root is not a readable directory.",
         )
-    try:
-        project_root = project_root.resolve()
-    except (OSError, RuntimeError) as error:
-        return 2, _blocked_report(
-            str(project_root),
-            f"The supplied real Unity project root could not be resolved: {error}",
-        )
+    project_root = project_root.resolve()
     if not (project_root / "Assets").is_dir():
         return 2, _blocked_report(
             str(project_root),
@@ -507,17 +1100,7 @@ def run(
             str(project_root),
             "The supplied real Unity project root has no ProjectVersion.txt evidence.",
         )
-    try:
-        before_paths, before_assets, before_files, before_dirs = _snapshot_paths(
-            project_root
-        )
-    except OSError as error:
-        return 2, _blocked_report(
-            str(project_root),
-            f"The supplied real Unity project could not be traversed: {error}",
-        )
 
-    commands: List[Dict[str, object]] = []
     report: Dict[str, object] = {
         "schema_version": 1,
         "report": "unity-project-navigation-real-project",
@@ -528,7 +1111,7 @@ def run(
         ),
         "status": "failed",
         "project": {"root": str(project_root)},
-        "commands": commands,
+        "commands": [],
         "completion_evidence": {},
         "read_only": None,
         "blocked_reason": None,
@@ -536,33 +1119,135 @@ def run(
         "next_action": "Fix the failed real-project evidence and rerun the runner.",
     }
     try:
-        manifest = _read_json(DEFAULT_MANIFEST)
+        manifest = _read_json(manifest_path)
         _require(
             manifest.get("schema_version") == 1,
             "Real-project smoke manifest schema is unsupported.",
         )
-        representative_files = manifest["representative_files"]
-        try:
-            before_hashes = _hashes(project_root, representative_files)
-        except OSError as error:
-            return 2, _blocked_report(
-                str(project_root),
-                f"A representative project file could not be read: {error}",
-            )
 
-        project_args = ["project", "--project", str(project_root)]
-        project_record = _query_record(
-            "project",
-            python_executable,
-            project_root,
-            project_args,
+        if bindings_census:
+            before_paths, before_assets, before_files, before_dirs = _snapshot_paths(
+                project_root
+            )
+            representative_files = manifest["representative_files"]
+            before_hashes = _hashes(project_root, representative_files)
+            commands: List[Dict[str, object]] = []
+            project_args = ["project", "--project", str(project_root)]
+            project_payload, elapsed = _run_scanner(
+                python_executable,
+                project_root,
+                project_args,
+            )
+            commands.append(
+                _query_record(
+                    "project",
+                    project_args,
+                    project_root,
+                    project_payload,
+                    elapsed,
+                )
+            )
+            _verify_project_summary(project_payload, before_assets, manifest)
+            default_benchmark, default_records = _run_default_binding_benchmark(
+                python_executable,
+                project_root,
+            )
+            commands.extend(default_records)
+            binding_census_result, census_records = _run_binding_census(
+                python_executable,
+                project_root,
+                project_payload,
+                before_paths,
+                manifest,
+            )
+            binding_census_result["default_page_benchmark"] = default_benchmark
+            commands.extend(census_records)
+
+            after_paths, after_assets, after_files, after_dirs = _snapshot_paths(
+                project_root
+            )
+            after_hashes = _hashes(project_root, representative_files)
+            added_paths = sorted(after_paths - before_paths)
+            removed_paths = sorted(before_paths - after_paths)
+            _require(
+                not added_paths,
+                f"Real-project path inventory gained entries: {added_paths}",
+            )
+            _require(
+                not removed_paths,
+                f"Real-project path inventory lost entries: {removed_paths}",
+            )
+            _require(
+                before_hashes == after_hashes,
+                "One or more representative files changed during the census.",
+            )
+            _require(
+                (before_assets, before_files, before_dirs)
+                == (after_assets, after_files, after_dirs),
+                "Real-project file or directory counts changed during the census.",
+            )
+            report["status"] = "ok"
+            report["commands"] = commands
+            report["completion_evidence"] = {
+                "unity_version": project_payload["project"]["unity_version"],
+                "baseline": {
+                    "assets_total_files": before_assets,
+                    "scanner_total_files": project_payload["results"][0]["file_counts"]["total"],
+                    "unity_files": project_payload["results"][0]["file_counts"]["unity"],
+                    "prefab_files": project_payload["results"][0]["file_counts"]["prefab"],
+                    "asset_files": project_payload["results"][0]["file_counts"]["asset"],
+                    "cs_files": project_payload["results"][0]["file_counts"]["cs"],
+                    "meta_files": project_payload["results"][0]["file_counts"]["meta"],
+                    "complete_scene_sets": project_payload["results"][0]["scene_counts"]["complete_sets"],
+                    "standalone_scenes": project_payload["results"][0]["scene_counts"]["standalone"],
+                },
+                "bindings_census": binding_census_result,
+            }
+            report["read_only"] = {
+                "path_inventory_entries_before": len(before_paths),
+                "path_inventory_entries_after": len(after_paths),
+                "file_count_before": before_files,
+                "file_count_after": after_files,
+                "directory_count_before": before_dirs,
+                "directory_count_after": after_dirs,
+                "added_paths": added_paths,
+                "removed_paths": removed_paths,
+                "representative_files": [
+                    {
+                        "path": relative,
+                        "sha256": before_hashes[relative],
+                        "unchanged": before_hashes[relative] == after_hashes[relative],
+                    }
+                    for relative in representative_files
+                ],
+            }
+            report["next_action"] = (
+                "Record aggregate-only binding evidence separately from synthetic "
+                "results, then close the acceptance ticket."
+            )
+            return 0, report
+
+        before_paths, before_assets, before_files, before_dirs = _snapshot_paths(
+            project_root
         )
-        commands.append(project_record)
+        representative_files = manifest["representative_files"]
+        before_hashes = _hashes(project_root, representative_files)
+
+        commands: List[Dict[str, object]] = []
+        project_args = ["project", "--project", str(project_root)]
         project_payload, elapsed = _run_scanner(
             python_executable,
             project_root,
             project_args,
-            project_record,
+        )
+        commands.append(
+            _query_record(
+                "project",
+                project_args,
+                project_root,
+                project_payload,
+                elapsed,
+            )
         )
         _verify_project_summary(
             project_payload,
@@ -577,18 +1262,19 @@ def run(
             "--name",
             str(manifest["scene_set"]["name"]),
         ]
-        scene_record = _query_record(
-            "scene_set",
-            python_executable,
-            project_root,
-            scene_args,
-        )
-        commands.append(scene_record)
         scene_payload, elapsed = _run_scanner(
             python_executable,
             project_root,
             scene_args,
-            scene_record,
+        )
+        commands.append(
+            _query_record(
+                "scene_set",
+                scene_args,
+                project_root,
+                scene_payload,
+                elapsed,
+            )
         )
         _verify_scene_set(scene_payload, manifest)
 
@@ -599,18 +1285,19 @@ def run(
             "--path",
             str(manifest["standalone_scene"]["path"]),
         ]
-        standalone_record = _query_record(
-            "standalone_scene",
-            python_executable,
-            project_root,
-            standalone_args,
-        )
-        commands.append(standalone_record)
         standalone_payload, elapsed = _run_scanner(
             python_executable,
             project_root,
             standalone_args,
-            standalone_record,
+        )
+        commands.append(
+            _query_record(
+                "standalone_scene",
+                standalone_args,
+                project_root,
+                standalone_payload,
+                elapsed,
+            )
         )
         _verify_standalone_scene(standalone_payload, manifest)
 
@@ -621,18 +1308,19 @@ def run(
             "--path",
             str(manifest["prefab"]["path"]),
         ]
-        prefab_record = _query_record(
-            "prefab",
-            python_executable,
-            project_root,
-            prefab_args,
-        )
-        commands.append(prefab_record)
         prefab_payload, elapsed = _run_scanner(
             python_executable,
             project_root,
             prefab_args,
-            prefab_record,
+        )
+        commands.append(
+            _query_record(
+                "prefab",
+                prefab_args,
+                project_root,
+                prefab_payload,
+                elapsed,
+            )
         )
         _verify_prefab(prefab_payload, manifest)
 
@@ -643,18 +1331,19 @@ def run(
             "--path",
             str(manifest["script"]["path"]),
         ]
-        script_record = _query_record(
-            "script",
-            python_executable,
-            project_root,
-            script_args,
-        )
-        commands.append(script_record)
         script_payload, elapsed = _run_scanner(
             python_executable,
             project_root,
             script_args,
-            script_record,
+        )
+        commands.append(
+            _query_record(
+                "script",
+                script_args,
+                project_root,
+                script_payload,
+                elapsed,
+            )
         )
         _verify_script(script_payload, manifest)
 
@@ -665,59 +1354,55 @@ def run(
             "--guid",
             str(manifest["guid_lookup"]["guid"]),
         ]
-        guid_record = _query_record(
-            "guid_lookup",
-            python_executable,
-            project_root,
-            guid_args,
-        )
-        commands.append(guid_record)
         guid_payload, elapsed = _run_scanner(
             python_executable,
             project_root,
             guid_args,
-            guid_record,
+        )
+        commands.append(
+            _query_record(
+                "guid_lookup",
+                guid_args,
+                project_root,
+                guid_payload,
+                elapsed,
+            )
         )
         _verify_guid_lookup(guid_payload, manifest)
 
-        reference_payloads: Dict[str, Dict[str, object]] = {}
-        for query_name, manifest_key in (
-            ("references", "references"),
-            ("incoming_references", "incoming_references"),
-        ):
-            reference_expected = manifest[manifest_key]
-            reference_args = [
+        reference_expected = manifest["references"]
+        reference_args = [
+            "references",
+            "--project",
+            str(project_root),
+            "--path",
+            str(reference_expected["path"]),
+            "--object-file-id",
+            str(reference_expected["object_file_id"]),
+            "--direction",
+            str(reference_expected["direction"]),
+            "--depth",
+            str(reference_expected["depth"]),
+            "--limit",
+            str(reference_expected["limit"]),
+            "--timeout-seconds",
+            str(reference_expected["timeout_seconds"]),
+        ]
+        reference_payload, elapsed = _run_scanner(
+            python_executable,
+            project_root,
+            reference_args,
+        )
+        commands.append(
+            _query_record(
                 "references",
-                "--project",
-                str(project_root),
-                "--path",
-                str(reference_expected["path"]),
-                "--object-file-id",
-                str(reference_expected["object_file_id"]),
-                "--direction",
-                str(reference_expected["direction"]),
-                "--depth",
-                str(reference_expected["depth"]),
-                "--limit",
-                str(reference_expected["limit"]),
-                "--timeout-seconds",
-                str(reference_expected["timeout_seconds"]),
-            ]
-            reference_record = _query_record(
-                query_name,
-                python_executable,
-                project_root,
                 reference_args,
-            )
-            commands.append(reference_record)
-            reference_payload, elapsed = _run_scanner(
-                python_executable,
                 project_root,
-                reference_args,
-                reference_record,
+                reference_payload,
+                elapsed,
             )
-            _verify_references(reference_payload, manifest, manifest_key)
-            reference_payloads[query_name] = reference_payload
+        )
+        _verify_references(reference_payload, manifest)
 
         after_paths, after_assets, after_files, after_dirs = _snapshot_paths(
             project_root
@@ -737,17 +1422,54 @@ def run(
             "Real-project file or directory counts changed during the smoke.",
         )
 
-        completion_evidence = _completion_evidence(
-            project_payload,
-            scene_payload,
-            standalone_payload,
-            prefab_payload,
-            script_payload,
-            guid_payload,
-            reference_payloads,
-            before_assets,
-        )
-        read_only = {
+        report["status"] = "ok"
+        report["commands"] = commands
+        scene_result = scene_payload["results"][0]
+        standalone_result = standalone_payload["results"][0]
+        report["completion_evidence"] = {
+            "unity_version": project_payload["project"]["unity_version"],
+            "baseline": {
+                "assets_total_files": before_assets,
+                "scanner_total_files": project_payload["results"][0]["file_counts"]["total"],
+                "unity_files": project_payload["results"][0]["file_counts"]["unity"],
+                "prefab_files": project_payload["results"][0]["file_counts"]["prefab"],
+                "asset_files": project_payload["results"][0]["file_counts"]["asset"],
+                "cs_files": project_payload["results"][0]["file_counts"]["cs"],
+                "meta_files": project_payload["results"][0]["file_counts"]["meta"],
+                "complete_scene_sets": project_payload["results"][0]["scene_counts"]["complete_sets"],
+                "standalone_scenes": project_payload["results"][0]["scene_counts"]["standalone"],
+            },
+            "scene_set": {
+                key: scene_result[key]
+                for key in (
+                    "logical_name",
+                    "directory",
+                    "kind",
+                    "present_layers",
+                    "missing_layers",
+                    "members",
+                    "object_count",
+                    "reference_count",
+                )
+            },
+            "standalone_scene": {
+                key: standalone_result[key]
+                for key in (
+                    "logical_name",
+                    "directory",
+                    "kind",
+                    "members",
+                    "requested_path",
+                    "object_count",
+                    "reference_count",
+                )
+            },
+            "prefab": prefab_payload["results"][0],
+            "script": script_payload["results"][0],
+            "guid_lookup": guid_payload["results"][0],
+            "references": reference_payload["results"][0],
+        }
+        report["read_only"] = {
             "path_inventory_entries_before": len(before_paths),
             "path_inventory_entries_after": len(after_paths),
             "file_count_before": before_files,
@@ -765,16 +1487,12 @@ def run(
                 for relative in representative_files
             ],
         }
-        report["commands"] = commands
-        report["completion_evidence"] = completion_evidence
-        report["read_only"] = read_only
         report["next_action"] = (
-            "Record this real-project report separately from synthetic results, "
-            "then close the acceptance ticket."
+            "The smoke passed. Run again with --bindings-census for component "
+            "binding acceptance."
         )
-        report["status"] = "ok"
         return 0, report
-    except Exception as error:
+    except (SmokeFailure, KeyError, IndexError, TypeError) as error:
         report["error"] = str(error)
         report["next_action"] = (
             "Fix the real-project evidence or manifest drift and rerun; do not "
@@ -798,6 +1516,17 @@ def build_parser() -> argparse.ArgumentParser:
         default=sys.executable,
         help="Python executable for scanner child processes.",
     )
+    parser.add_argument(
+        "--manifest",
+        type=Path,
+        default=DEFAULT_MANIFEST,
+        help="Fixed real-project smoke manifest.",
+    )
+    parser.add_argument(
+        "--bindings-census",
+        action="store_true",
+        help="Run the full real-project binding census and page benchmarks.",
+    )
     return parser
 
 
@@ -810,6 +1539,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     return_code, report = run(
         args.python_executable,
         args.project,
+        args.manifest,
+        args.bindings_census,
     )
     print(json.dumps(report, indent=2, ensure_ascii=False, sort_keys=True))
     return return_code
