@@ -104,6 +104,46 @@
       }
     ]
   },
+  "bindings": {
+    "census": {
+      "rows": 75147,
+      "pages": 76,
+      "source_asset_kind": {
+        "scene": 69267,
+        "prefab": 4803,
+        "asset": 1077
+      },
+      "reference_shape": {
+        "structured": 75146,
+        "null": 1,
+        "malformed": 0
+      },
+      "target_category": {
+        "cs": 68660,
+        "dll": 2356,
+        "unresolved": 4130,
+        "null": 1,
+        "malformed": 0,
+        "binary_other": 0,
+        "other": 0
+      },
+      "asset_resolution": {
+        "resolved": 71016,
+        "missing": 4130,
+        "ambiguous": 0,
+        "unsupported_binary": 0,
+        "not_applicable": 1
+      },
+      "script_object_resolution": {
+        "asset_level_only": 68660,
+        "not_verifiable_binary": 2356,
+        "not_applicable": 4131
+      },
+      "distinct_m_script_file_ids": 50,
+      "non_typical_file_id_rows": 6485,
+      "packages_source_candidates": 0
+    }
+  },
   "representative_files": [
     "Assets/#Design/#CVSTODIA/D01 - Feudal District/D01BZ01 - Mea Culpa/D01BZ01S01 - Arena/D01BZ01S01_MAIN.unity",
     "Assets/#Design/#CVSTODIA/D01 - Feudal District/D01BZ01 - Mea Culpa/D01BZ01S01 - Arena/D01BZ01S01_LOGIC.unity",

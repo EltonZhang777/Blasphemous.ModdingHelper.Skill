@@ -1,3 +1,4 @@
+import importlib.util
 import json
 import os
 import re
@@ -20,6 +21,7 @@ TOPICS = (
     "scenes.md",
     "prefabs.md",
     "component-relations.md",
+    "bindings.md",
 )
 
 
@@ -38,6 +40,16 @@ def run_runner(project=None):
         errors="replace",
         check=False,
     )
+
+
+def load_runner():
+    spec = importlib.util.spec_from_file_location(
+        "unity_real_project_acceptance_runner",
+        RUNNER,
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 class UnityRealProjectAcceptanceTests(unittest.TestCase):
@@ -96,8 +108,144 @@ class UnityRealProjectAcceptanceTests(unittest.TestCase):
             "binary_asset_not_inspected",
             [edge["target_reason"] for edge in manifest["references"]["edges"]],
         )
+        bindings = manifest["bindings"]["census"]
+        self.assertEqual(bindings["rows"], 75147)
+        self.assertEqual(bindings["pages"], 76)
+        self.assertEqual(bindings["target_category"]["cs"], 68660)
+        self.assertEqual(bindings["target_category"]["dll"], 2356)
+        self.assertEqual(bindings["target_category"]["unresolved"], 4130)
+        self.assertEqual(bindings["target_category"]["null"], 1)
+        self.assertEqual(bindings["target_category"]["malformed"], 0)
+        self.assertEqual(bindings["distinct_m_script_file_ids"], 50)
+        self.assertEqual(bindings["non_typical_file_id_rows"], 6485)
+        self.assertEqual(bindings["packages_source_candidates"], 0)
 
-    def test_six_navigation_topics_are_english_and_reachable(self):
+    def test_binding_census_aggregates_states_and_samples(self):
+        runner = load_runner()
+        census = runner._new_binding_census()
+        state = {"file_ids": set(), "previous_last": None}
+        rows = [
+            self.binding_row("Assets/Scenes/Main.unity", "scene", "1", "cs"),
+            self.binding_row("Assets/Prefabs/Dll.prefab", "prefab", "2", "dll"),
+            self.binding_row(
+                "Assets/Data/Config.asset",
+                "asset",
+                "3",
+                "unresolved",
+            ),
+            self.binding_row("Assets/Scenes/Null.unity", "scene", "4", "null"),
+            self.binding_row(
+                "Assets/Prefabs/Malformed.prefab",
+                "prefab",
+                "5",
+                "malformed",
+            ),
+        ]
+
+        runner._accumulate_binding_page(
+            census,
+            state,
+            {
+                "status": "ok",
+                "scan_coverage": "complete",
+                "warnings": [],
+                "error": None,
+                "results": rows,
+            },
+        )
+
+        self.assertEqual(census["rows"], 5)
+        self.assertEqual(census["pages"], 1)
+        self.assertEqual(
+            census["source_asset_kind"],
+            {"scene": 2, "prefab": 2, "asset": 1},
+        )
+        self.assertEqual(
+            census["target_category"],
+            {
+                "cs": 1,
+                "dll": 1,
+                "unresolved": 1,
+                "null": 1,
+                "malformed": 1,
+                "binary_other": 0,
+                "other": 0,
+            },
+        )
+        self.assertEqual(
+            set(census["samples"]),
+            {
+                "cs",
+                "dll",
+                "unresolved",
+                "null",
+                "malformed",
+                "non_typical_file_id",
+                "asset",
+            },
+        )
+        self.assertEqual(len(state["file_ids"]), 4)
+
+    @staticmethod
+    def binding_row(source_path, source_kind, file_id, category):
+        guid = "a" * 32
+        base = {
+            "source_asset_path": source_path,
+            "source_asset_kind": source_kind,
+            "source_object_file_id": file_id,
+            "reference_shape": "structured",
+            "m_script_file_id": "11500000",
+            "m_script_guid": guid,
+            "m_script_type": 3,
+            "target_asset_kind": "cs",
+            "target_asset_path": "Assets/Scripts/Example.cs",
+            "target_asset_candidates": [],
+            "asset_resolution": "resolved",
+            "asset_resolution_reason": None,
+            "script_object_resolution": "asset_level_only",
+        }
+        if category == "cs":
+            return base
+        if category == "dll":
+            return {
+                **base,
+                "m_script_file_id": "11500001",
+                "target_asset_kind": "binary",
+                "target_asset_path": "Assets/Plugins/Example.dll",
+                "script_object_resolution": "not_verifiable_binary",
+            }
+        if category == "unresolved":
+            return {
+                **base,
+                "target_asset_kind": "unresolved",
+                "target_asset_path": None,
+                "asset_resolution": "missing",
+                "asset_resolution_reason": "missing_meta",
+                "script_object_resolution": "not_applicable",
+            }
+        if category == "null":
+            return {
+                **base,
+                "reference_shape": "null",
+                "m_script_file_id": "0",
+                "m_script_guid": None,
+                "target_asset_kind": "not_applicable",
+                "target_asset_path": None,
+                "asset_resolution": "not_applicable",
+                "script_object_resolution": "not_applicable",
+            }
+        return {
+            **base,
+            "reference_shape": "malformed",
+            "m_script_file_id": None,
+            "m_script_guid": None,
+            "target_asset_kind": "not_applicable",
+            "target_asset_path": None,
+            "asset_resolution": "not_applicable",
+            "script_object_resolution": "not_applicable",
+        }
+
+    def test_seven_navigation_topics_are_english_and_reachable(self):
         index = (NAVIGATION / "MAIN.md").read_text(encoding="utf-8")
         for topic in TOPICS:
             with self.subTest(topic=topic):
@@ -117,7 +265,9 @@ class UnityRealProjectAcceptanceTests(unittest.TestCase):
             "blocked",
             "separate",
             "94,153",
-            "six",
+            "seven",
+            "bindings",
+            "census",
             "Completion criteria",
             "Next action",
         ):
