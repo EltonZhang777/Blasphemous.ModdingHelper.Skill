@@ -18,6 +18,7 @@ from .unity_assets import (
     META_GUID,
     META_VERSION,
     _project_info,
+    _normalize_path,
 )
 from .unity_project import (
     SCHEMA_VERSION,
@@ -34,8 +35,8 @@ from .unity_project import (
 
 DEFAULT_LIMIT = 200
 MAX_LIMIT = 1000
-SORT_VERSION = 1
-CURSOR_VERSION = 1
+SORT_VERSION = 2
+CURSOR_VERSION = 2
 INT64_MIN = -(1 << 63)
 INT64_MAX = (1 << 63) - 1
 SOURCE_KINDS = {
@@ -43,6 +44,23 @@ SOURCE_KINDS = {
     ".prefab": "prefab",
     ".asset": "asset",
 }
+REFERENCE_SHAPES = frozenset({"structured", "null", "malformed"})
+ASSET_RESOLUTIONS = frozenset(
+    {
+        "resolved",
+        "missing",
+        "ambiguous",
+        "unsupported_binary",
+        "not_applicable",
+    }
+)
+SCRIPT_OBJECT_RESOLUTIONS = frozenset(
+    {
+        "asset_level_only",
+        "not_verifiable_binary",
+        "not_applicable",
+    }
+)
 DOCUMENT_HEADER = re.compile(
     r"^--- !u!(?P<class_id>\d+) &(?P<file_id>-?\d+)(?:\s+stripped)?\s*$"
 )
@@ -97,10 +115,18 @@ def _query_signature(root: Path, query: Dict[str, object]) -> str:
 def _encode_cursor(
     root: Path,
     query: Dict[str, object],
-    key: Tuple[str, int, str, str, str, str],
+    key: Tuple[str, int, str, str, str, str, int],
 ) -> str:
     payload = {
-        "p": [key[0], str(key[1]), key[2], key[3], key[4], key[5]],
+        "p": [
+            key[0],
+            str(key[1]),
+            key[2],
+            key[3],
+            key[4],
+            key[5],
+            str(key[6]),
+        ],
         "q": _query_signature(root, query),
         "s": SORT_VERSION,
         "v": CURSOR_VERSION,
@@ -115,7 +141,7 @@ def _decode_cursor(
     root: Path,
     query: Dict[str, object],
     value: str,
-) -> Tuple[str, int, str, str, str, str]:
+) -> Tuple[str, int, str, str, str, str, int]:
     if not value:
         raise NavigationError("invalid_query", "The cursor is empty.")
     try:
@@ -145,17 +171,23 @@ def _decode_cursor(
     position = payload.get("p")
     if (
         not isinstance(position, list)
-        or len(position) != 6
+        or len(position) != 7
         or not all(isinstance(item, str) for item in position)
     ):
         raise NavigationError("invalid_query", "The cursor position is invalid.")
     try:
         object_id = int(position[1])
+        occurrence = int(position[6])
     except ValueError as error:
         raise NavigationError(
             "invalid_query",
             "The cursor position is invalid.",
         ) from error
+    if occurrence < 0:
+        raise NavigationError(
+            "invalid_query",
+            "The cursor position is invalid.",
+        )
     return (
         position[0],
         object_id,
@@ -163,6 +195,7 @@ def _decode_cursor(
         position[3],
         position[4],
         position[5],
+        occurrence,
     )
 
 
@@ -558,6 +591,26 @@ def _row_key(
     )
 
 
+def _positioned_rows(
+    rows: Sequence[Dict[str, object]],
+) -> List[Tuple[Tuple[str, int, str, str, str, str, int], Dict[str, object]]]:
+    keyed = [(_row_key(row), row) for row in rows]
+    keyed.sort(key=lambda item: item[0])
+    positioned: List[
+        Tuple[Tuple[str, int, str, str, str, str, int], Dict[str, object]]
+    ] = []
+    previous = None
+    occurrence = 0
+    for key, row in keyed:
+        if key == previous:
+            occurrence += 1
+        else:
+            previous = key
+            occurrence = 0
+        positioned.append((key + (occurrence,), row))
+    return positioned
+
+
 def _read_source(
     path: Path,
     root: Path,
@@ -594,10 +647,161 @@ def _read_source(
     return text, None
 
 
+def _normalized_values(
+    values: Optional[Sequence[str]],
+    allowed: frozenset,
+    label: str,
+) -> List[str]:
+    if not values:
+        return []
+    normalized = set()
+    for value in values:
+        if value not in allowed:
+            raise NavigationError(
+                "invalid_query",
+                f"Unsupported {label}: {value}",
+            )
+        normalized.add(value)
+    return sorted(normalized)
+
+
+def _normalized_source_paths(
+    root: Path,
+    included_roots: Sequence[Path],
+    values: Optional[Sequence[str]],
+) -> List[str]:
+    if not values:
+        return []
+    normalized = set()
+    for value in values:
+        target = _normalize_path(root, included_roots, value)
+        relative = _relative(target, root)
+        if target.suffix.lower() not in SOURCE_KINDS:
+            raise NavigationError(
+                "unsupported_format",
+                "Binding paths must name .unity, .prefab, or .asset sources.",
+            )
+        if not target.is_file():
+            raise NavigationError(
+                "invalid_query",
+                f"Binding source asset does not exist or is not a file: {relative}",
+            )
+        normalized.add(relative)
+    return sorted(normalized, key=lambda value: (value.casefold(), value))
+
+
+def _normalized_script_guids(
+    values: Optional[Sequence[str]],
+) -> List[str]:
+    if not values:
+        return []
+    normalized = set()
+    for value in values:
+        if GUID_PATTERN.fullmatch(value) is None:
+            raise NavigationError(
+                "invalid_query",
+                "Script GUID filters require 32 hexadecimal characters.",
+            )
+        normalized.add(value.lower())
+    return sorted(normalized)
+
+
+def _build_binding_query(
+    root: Path,
+    included_roots: Sequence[Path],
+    paths: Optional[Sequence[str]],
+    object_file_id: Optional[str],
+    script_guids: Optional[Sequence[str]],
+    reference_shapes: Optional[Sequence[str]],
+    asset_resolutions: Optional[Sequence[str]],
+    script_object_resolutions: Optional[Sequence[str]],
+) -> Dict[str, object]:
+    if object_file_id is not None and (
+        paths is None or len(paths) != 1
+    ):
+        raise NavigationError(
+            "invalid_query",
+            "--object-file-id requires exactly one --path.",
+        )
+    source_paths = _normalized_source_paths(root, included_roots, paths)
+    query: Dict[str, object] = {}
+    if source_paths:
+        query["source_asset_paths"] = source_paths
+    if object_file_id is not None:
+        parsed_object_id = _decimal_integer(
+            object_file_id,
+            INT64_MIN,
+            INT64_MAX,
+        )
+        if parsed_object_id is None:
+            raise NavigationError(
+                "invalid_query",
+                "--object-file-id requires a signed 64-bit decimal integer.",
+            )
+        query["source_object_file_id"] = str(parsed_object_id)
+    normalized_guids = _normalized_script_guids(script_guids)
+    if normalized_guids:
+        query["script_guids"] = normalized_guids
+    normalized_shapes = _normalized_values(
+        reference_shapes,
+        REFERENCE_SHAPES,
+        "reference shape",
+    )
+    if normalized_shapes:
+        query["reference_shapes"] = normalized_shapes
+    normalized_asset_resolutions = _normalized_values(
+        asset_resolutions,
+        ASSET_RESOLUTIONS,
+        "asset resolution",
+    )
+    if normalized_asset_resolutions:
+        query["asset_resolutions"] = normalized_asset_resolutions
+    normalized_object_resolutions = _normalized_values(
+        script_object_resolutions,
+        SCRIPT_OBJECT_RESOLUTIONS,
+        "script object resolution",
+    )
+    if normalized_object_resolutions:
+        query["script_object_resolutions"] = normalized_object_resolutions
+    return query
+
+
+def _matches_binding_query(
+    row: Dict[str, object],
+    query: Dict[str, object],
+) -> bool:
+    source_paths = query.get("source_asset_paths")
+    if source_paths and row["source_asset_path"] not in source_paths:
+        return False
+    object_file_id = query.get("source_object_file_id")
+    if object_file_id and row["source_object_file_id"] != object_file_id:
+        return False
+    script_guids = query.get("script_guids")
+    if script_guids and row.get("m_script_guid") not in script_guids:
+        return False
+    reference_shapes = query.get("reference_shapes")
+    if reference_shapes and row["reference_shape"] not in reference_shapes:
+        return False
+    asset_resolutions = query.get("asset_resolutions")
+    if asset_resolutions and row["asset_resolution"] not in asset_resolutions:
+        return False
+    object_resolutions = query.get("script_object_resolutions")
+    if object_resolutions and row["script_object_resolution"] not in object_resolutions:
+        return False
+    return True
+
+
 def bindings_query(
     project: Optional[Path],
     limit: Optional[str],
     cursor: Optional[str],
+    *,
+    paths: Optional[Sequence[str]] = None,
+    object_file_id: Optional[str] = None,
+    script_guids: Optional[Sequence[str]] = None,
+    reference_shapes: Optional[Sequence[str]] = None,
+    asset_resolutions: Optional[Sequence[str]] = None,
+    script_object_resolutions: Optional[Sequence[str]] = None,
 ) -> Dict[str, object]:
     """Return a version-1 component-script binding envelope."""
 
@@ -630,7 +834,17 @@ def bindings_query(
         warnings.extend(version_warnings)
 
         page_limit = _parse_limit(limit)
-        query: Dict[str, object] = {}
+        query = _build_binding_query(
+            root,
+            included_roots,
+            paths,
+            object_file_id,
+            script_guids,
+            reference_shapes,
+            asset_resolutions,
+            script_object_resolutions,
+        )
+        payload["query"] = query
         cursor_key = (
             _decode_cursor(root, query, cursor)
             if cursor is not None
@@ -665,25 +879,40 @@ def bindings_query(
                 )
                 rows.append(row)
         warnings.extend(source_warnings)
+        rows = [row for row in rows if _matches_binding_query(row, query)]
 
         coverage = (
             "partial"
             if scan_warnings or source_warnings or metadata_warnings
             else "complete"
         )
-        rows.sort(key=_row_key)
+        unique_status = None
+        if object_file_id is not None:
+            if not rows:
+                unique_status = "not_found"
+            elif len(rows) > 1:
+                unique_status = "ambiguous"
+        positioned = _positioned_rows(rows)
         if cursor_key is not None:
-            rows = [row for row in rows if _row_key(row) > cursor_key]
-        page = rows[:page_limit]
-        has_more = len(rows) > page_limit
+            positioned = [
+                item for item in positioned if item[0] > cursor_key
+            ]
+        page_positions = positioned[:page_limit]
+        page = [row for _, row in page_positions]
+        has_more = len(positioned) > page_limit
         payload["results"] = page
         payload["next_cursor"] = (
-            _encode_cursor(root, query, _row_key(page[-1]))
+            _encode_cursor(root, query, page_positions[-1][0])
             if has_more and page
             else None
         )
         payload["scan_coverage"] = coverage
-        payload["status"] = "partial" if coverage == "partial" else "ok"
+        if unique_status is not None:
+            payload["status"] = unique_status
+        elif coverage == "partial":
+            payload["status"] = "partial"
+        else:
+            payload["status"] = "ok"
     except NavigationError as error:
         payload["error"] = {"code": error.code, "message": str(error)}
         payload["status"] = (
@@ -700,6 +929,8 @@ def bindings_exit_code(payload: Dict[str, object]) -> int:
     status = payload.get("status")
     if status == "ok":
         return 0
+    if status in {"ambiguous", "not_found"}:
+        return 2
     if status == "partial":
         return 4
     return 3

@@ -439,6 +439,35 @@ def build_parser() -> argparse.ArgumentParser:
         "--cursor",
         help="Opaque cursor returned by a previous bindings page.",
     )
+    bindings.add_argument(
+        "--path",
+        action="append",
+        help="Exact .unity, .prefab, or .asset source path; repeat for OR semantics.",
+    )
+    bindings.add_argument(
+        "--object-file-id",
+        help="Exact source object file ID; requires exactly one --path.",
+    )
+    bindings.add_argument(
+        "--script-guid",
+        action="append",
+        help="Raw m_Script GUID; repeat for OR semantics.",
+    )
+    bindings.add_argument(
+        "--reference-shape",
+        action="append",
+        help="Reference shape filter; repeat for OR semantics.",
+    )
+    bindings.add_argument(
+        "--asset-resolution",
+        action="append",
+        help="Target asset resolution filter; repeat for OR semantics.",
+    )
+    bindings.add_argument(
+        "--script-object-resolution",
+        action="append",
+        help="Target object resolution filter; repeat for OR semantics.",
+    )
     return parser
 
 
@@ -513,7 +542,17 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     elif args.command == "bindings":
         from .unity_bindings import bindings_exit_code, bindings_query
 
-        payload = bindings_query(Path(args.project), args.limit, args.cursor)
+        payload = bindings_query(
+            Path(args.project),
+            args.limit,
+            args.cursor,
+            paths=args.path,
+            object_file_id=args.object_file_id,
+            script_guids=args.script_guid,
+            reference_shapes=args.reference_shape,
+            asset_resolutions=args.asset_resolution,
+            script_object_resolutions=args.script_object_resolution,
+        )
         return_code = bindings_exit_code(payload)
     else:  # pragma: no cover - argparse rejects unknown commands.
         raise AssertionError(args.command)
