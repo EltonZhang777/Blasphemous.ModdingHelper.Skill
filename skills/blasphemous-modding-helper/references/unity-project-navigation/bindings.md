@@ -64,6 +64,33 @@ All rows keep the same target fields. Null and malformed rows use `asset_resolut
 
 DLL results retain the asset GUID, path, and raw reference only. No inferred MonoScript, class, candidate class, namespace, or behavior appears in a DLL result. Other target kinds remain separate from `.cs` evidence.
 
+## Selectors and filters
+
+No selector means project-wide enumeration. Filters narrow that inventory:
+
+- `--path` names one exact project-relative `.unity`, `.prefab`, or `.asset` source file. The option may be repeated.
+- `--object-file-id` selects one source object by its signed 64-bit decimal file ID. It requires exactly one `--path`.
+- `--script-guid` performs a raw `m_Script.guid` reverse lookup. It may be repeated and includes bindings whose target is unresolved.
+- `--reference-shape` accepts `structured`, `null`, or `malformed`.
+- `--asset-resolution` accepts `resolved`, `missing`, `ambiguous`, `unsupported_binary`, or `not_applicable`.
+- `--script-object-resolution` accepts `asset_level_only`, `not_verifiable_binary`, or `not_applicable`.
+
+Repeated values within one selector or status axis use OR semantics. Different selector and status dimensions use AND semantics. Path and GUID values are normalized, deduplicated, and echoed in the JSON `query` object. A cursor is valid only for the same normalized query and project.
+
+```bash
+"$PYTHON3" "$SKILL_ROOT/scripts/unity_project_navigation.py" bindings --project "<UNITY_PROJECT_ROOT>" --path "Assets/Scenes/Main.unity" --path "Assets/Prefabs/Widget.prefab"
+"$PYTHON3" "$SKILL_ROOT/scripts/unity_project_navigation.py" bindings --project "<UNITY_PROJECT_ROOT>" --path "Assets/Scenes/Main.unity" --object-file-id 100
+"$PYTHON3" "$SKILL_ROOT/scripts/unity_project_navigation.py" bindings --project "<UNITY_PROJECT_ROOT>" --script-guid 0123456789abcdef0123456789abcdef --reference-shape structured --asset-resolution missing
+```
+
+```powershell
+& $PYTHON3 (Join-Path $SkillRoot 'scripts\unity_project_navigation.py') bindings --project '<UNITY_PROJECT_ROOT>' --path 'Assets/Scenes/Main.unity' --path 'Assets/Prefabs/Widget.prefab'
+& $PYTHON3 (Join-Path $SkillRoot 'scripts\unity_project_navigation.py') bindings --project '<UNITY_PROJECT_ROOT>' --path 'Assets/Scenes/Main.unity' --object-file-id 100
+& $PYTHON3 (Join-Path $SkillRoot 'scripts\unity_project_navigation.py') bindings --project '<UNITY_PROJECT_ROOT>' --script-guid 0123456789abcdef0123456789abcdef --reference-shape structured --asset-resolution missing
+```
+
+An invalid path, object ID, GUID, status value, or cursor is an `invalid_query` with exit code `3`. An unsupported selector format, such as a non-Unity source path, reports `error.code=unsupported_format` with `status=invalid_query` and exit code `3`. An `--object-file-id` lookup has a uniqueness requirement: no matching object reports `status=not_found`, while more than one row reports `status=ambiguous`; both use exit code `2`. These uniqueness outcomes take precedence over partial coverage, while `scan_coverage` and warnings still report unavailable evidence.
+
 ## Pagination
 
 `--limit` controls the page size. The default is `200` and the maximum is `1000`. When another page exists, `next_cursor` is non-null; pass it with `--cursor` to continue:
@@ -76,13 +103,14 @@ DLL results retain the asset GUID, path, and raw reference only. No inferred Mon
 & $PYTHON3 (Join-Path $SkillRoot 'scripts\unity_project_navigation.py') bindings --project '<UNITY_PROJECT_ROOT>' --limit 200 --cursor '<NEXT_CURSOR>'
 ```
 
-A middle page and a final page both report `status=ok`. A final page has `next_cursor=null`.
+A normal middle page and a normal final page for a complete, non-unique query both report `status=ok`. A final page has `next_cursor=null`. Object-ID not-found or ambiguous outcomes and partial coverage use their documented non-success status.
 
 ## Status and limits
 
 - `status=ok` uses exit code `0`.
-- `status=partial` uses exit code `4` when source or metadata evidence could not be scanned completely; `scan_coverage` is then `partial`.
-- `status=invalid_query` uses exit code `3` for an invalid limit or cursor.
+- `status=partial` uses exit code `4` when source or metadata evidence could not be scanned completely and no object-ID uniqueness outcome takes precedence; `scan_coverage` is then `partial`.
+- `status=not_found` or `status=ambiguous` uses exit code `2` when an object-ID query cannot produce one unique row.
+- `status=invalid_query` uses exit code `3` for an invalid limit, source path, object ID, GUID, status value, unsupported format, or cursor.
 - `status=invalid_project` uses exit code `3` when the project root is unusable.
 
 Each binding row is serialized asset evidence. A `.cs` path in this command is not behavioral proof and is not treated as equivalent to the authoritative source tree. For classes, dependencies, call flow, or behavior, continue with the source analyzer.

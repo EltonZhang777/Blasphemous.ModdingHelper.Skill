@@ -688,6 +688,527 @@ class UnityBindingNavigationTests(unittest.TestCase):
         self.assertEqual(row["asset_resolution_reason"], "unreadable_meta")
         self.assertEqual(row["script_object_resolution"], "not_applicable")
 
+    def test_path_filters_use_or_semantics_and_bind_the_cursor(self):
+        self.add_source(
+            "Assets/Scenes/FilterA.unity",
+            [
+                (
+                    1,
+                    "{fileID: 11500000, guid: "
+                    + SCRIPT_GUID
+                    + ", type: 3}",
+                )
+            ],
+        )
+        self.add_source(
+            "Assets/Scenes/FilterB.prefab",
+            [
+                (
+                    2,
+                    "{fileID: 11500000, guid: "
+                    + SCRIPT_GUID
+                    + ", type: 3}",
+                )
+            ],
+        )
+        arguments = (
+            "--path",
+            "Assets/Scenes/FilterB.prefab",
+            "--path",
+            "Assets/Scenes/FilterA.unity",
+        )
+
+        _, payload = self.query(*arguments)
+
+        self.assertEqual(
+            payload["query"],
+            {
+                "source_asset_paths": [
+                    "Assets/Scenes/FilterA.unity",
+                    "Assets/Scenes/FilterB.prefab",
+                ]
+            },
+        )
+        self.assertEqual(
+            [
+                row["source_asset_path"]
+                for row in payload["results"]
+            ],
+            [
+                "Assets/Scenes/FilterA.unity",
+                "Assets/Scenes/FilterB.prefab",
+            ],
+        )
+
+        _, first = self.query(*arguments, "--limit", "1")
+        _, second = self.query(
+            *arguments,
+            "--limit",
+            "1",
+            "--cursor",
+            first["next_cursor"],
+        )
+        _, invalid = self.query(
+            "--path",
+            "Assets/Scenes/FilterA.unity",
+            "--limit",
+            "1",
+            "--cursor",
+            first["next_cursor"],
+            expected=3,
+        )
+
+        self.assertEqual(
+            first["results"][0]["source_asset_path"],
+            "Assets/Scenes/FilterA.unity",
+        )
+        self.assertEqual(
+            second["results"][0]["source_asset_path"],
+            "Assets/Scenes/FilterB.prefab",
+        )
+        self.assertEqual(invalid["status"], "invalid_query")
+
+    def test_object_file_id_requires_one_path_and_a_unique_match(self):
+        source_path = "Assets/Scenes/Objects.unity"
+        self.add_source(
+            source_path,
+            [
+                (
+                    10,
+                    "{fileID: 11500000, guid: "
+                    + SCRIPT_GUID
+                    + ", type: 3}",
+                ),
+                (
+                    20,
+                    "{fileID: 11500000, guid: "
+                    + SCRIPT_GUID
+                    + ", type: 3}",
+                ),
+                (
+                    30,
+                    "{fileID: 11500000, guid: "
+                    + SCRIPT_GUID
+                    + ", type: 3}",
+                ),
+                (
+                    30,
+                    "{fileID: 11500000, guid: "
+                    + SCRIPT_GUID
+                    + ", type: 3}",
+                ),
+            ],
+        )
+        self.add_source("Assets/Scenes/Other.unity", [])
+
+        _, payload = self.query(
+            "--path",
+            source_path,
+            "--object-file-id",
+            "+0020",
+        )
+
+        self.assertEqual(
+            payload["query"],
+            {
+                "source_asset_paths": [source_path],
+                "source_object_file_id": "20",
+            },
+        )
+        self.assertEqual(len(payload["results"]), 1)
+        self.assertEqual(
+            payload["results"][0]["source_object_file_id"],
+            "20",
+        )
+
+        for arguments in (
+            ("--object-file-id", "20"),
+            (
+                "--path",
+                source_path,
+                "--path",
+                "Assets/Scenes/Other.unity",
+                "--object-file-id",
+                "20",
+            ),
+            (
+                "--path",
+                source_path,
+                "--path",
+                source_path,
+                "--object-file-id",
+                "20",
+            ),
+            (
+                "--path",
+                source_path,
+                "--object-file-id",
+                "1_0",
+            ),
+            (
+                "--path",
+                source_path,
+                "--object-file-id",
+                "9223372036854775808",
+            ),
+        ):
+            with self.subTest(arguments=arguments):
+                _, invalid = self.query(*arguments, expected=3)
+                self.assertEqual(invalid["status"], "invalid_query")
+                self.assertEqual(invalid["results"], [])
+
+        _, not_found = self.query(
+            "--path",
+            source_path,
+            "--object-file-id",
+            "99",
+            expected=2,
+        )
+        self.assertEqual(not_found["status"], "not_found")
+        self.assertEqual(not_found["results"], [])
+
+        _, ambiguous = self.query(
+            "--path",
+            source_path,
+            "--object-file-id",
+            "30",
+            expected=2,
+        )
+        self.assertEqual(ambiguous["status"], "ambiguous")
+        self.assertEqual(len(ambiguous["results"]), 2)
+
+    def test_identical_bindings_do_not_disappear_between_pages(self):
+        self.add_source(
+            "Assets/Scenes/Identical.unity",
+            [
+                (
+                    40,
+                    "{fileID: 11500000, guid: "
+                    + SCRIPT_GUID
+                    + ", type: 3}",
+                ),
+                (
+                    40,
+                    "{fileID: 11500000, guid: "
+                    + SCRIPT_GUID
+                    + ", type: 3}",
+                ),
+            ],
+        )
+        arguments = ("--script-guid", SCRIPT_GUID, "--limit", "1")
+
+        _, first = self.query(*arguments)
+        _, second = self.query(
+            *arguments,
+            "--cursor",
+            first["next_cursor"],
+        )
+
+        self.assertEqual(len(first["results"]), 1)
+        self.assertIsNotNone(first["next_cursor"])
+        self.assertEqual(len(second["results"]), 1)
+        self.assertIsNone(second["next_cursor"])
+        self.assertEqual(
+            first["results"][0]["source_object_file_id"],
+            second["results"][0]["source_object_file_id"],
+        )
+
+    def test_script_guid_reverse_lookup_keeps_unresolved_instances(self):
+        unresolved_guid = "b" * 32
+        self.add_source(
+            "Assets/Scenes/Reverse.unity",
+            [
+                (
+                    1,
+                    "{fileID: 11500000, guid: "
+                    + SCRIPT_GUID
+                    + ", type: 3}",
+                ),
+                (
+                    2,
+                    "{fileID: 11500000, guid: "
+                    + SCRIPT_GUID
+                    + ", type: 3}",
+                ),
+                (
+                    3,
+                    "{fileID: 11500000, guid: "
+                    + unresolved_guid.upper()
+                    + ", type: 3}",
+                ),
+            ],
+        )
+
+        _, payload = self.query(
+            "--script-guid",
+            unresolved_guid.upper(),
+            "--script-guid",
+            SCRIPT_GUID.upper(),
+        )
+
+        self.assertEqual(
+            payload["query"],
+            {
+                "script_guids": [
+                    SCRIPT_GUID,
+                    unresolved_guid,
+                ]
+            },
+        )
+        self.assertEqual(len(payload["results"]), 3)
+        self.assertEqual(
+            [
+                row["source_object_file_id"]
+                for row in payload["results"]
+                if row["m_script_guid"] == SCRIPT_GUID
+            ],
+            ["1", "2"],
+        )
+        unresolved_row = next(
+            row
+            for row in payload["results"]
+            if row["m_script_guid"] == unresolved_guid
+        )
+        self.assertEqual(unresolved_row["asset_resolution"], "missing")
+        self.assertEqual(
+            unresolved_row["asset_resolution_reason"],
+            "missing_meta",
+        )
+
+    def test_status_filters_use_or_within_axes_and_and_across_axes(self):
+        missing_guid = "5" * 32
+        dll_guid = "6" * 32
+        unsupported_guid = "7" * 32
+        self.write("Assets/Plugins/Filter.dll", b"MZ")
+        self.write_meta("Assets/Plugins/Filter.dll", dll_guid)
+        self.write("Assets/Textures/Filter.png", b"\x89PNG")
+        self.write_meta("Assets/Textures/Filter.png", unsupported_guid)
+        self.add_source(
+            "Assets/Scenes/Statuses.unity",
+            [
+                (
+                    1,
+                    "{fileID: 11500000, guid: "
+                    + SCRIPT_GUID
+                    + ", type: 3}",
+                ),
+                (2, "{fileID: 0}"),
+                (3, "{fileID: 11500000}"),
+                (
+                    4,
+                    "{fileID: 11500000, guid: "
+                    + missing_guid
+                    + ", type: 3}",
+                ),
+                (
+                    5,
+                    "{fileID: 11500000, guid: "
+                    + dll_guid
+                    + ", type: 3}",
+                ),
+                (
+                    6,
+                    "{fileID: 11500000, guid: "
+                    + unsupported_guid
+                    + ", type: 3}",
+                ),
+            ],
+        )
+
+        _, shapes = self.query(
+            "--reference-shape",
+            "structured",
+            "--reference-shape",
+            "null",
+        )
+        self.assertEqual(shapes["status"], "ok")
+        self.assertEqual(
+            set(row["reference_shape"] for row in shapes["results"]),
+            {"structured", "null"},
+        )
+        _, malformed = self.query("--reference-shape", "malformed")
+        self.assertEqual(
+            [row["source_object_file_id"] for row in malformed["results"]],
+            ["3"],
+        )
+
+        _, assets = self.query(
+            "--asset-resolution",
+            "resolved",
+            "--asset-resolution",
+            "missing",
+        )
+        self.assertEqual(
+            [row["source_object_file_id"] for row in assets["results"]],
+            ["1", "4", "5"],
+        )
+        _, unsupported = self.query(
+            "--asset-resolution",
+            "unsupported_binary",
+            "--asset-resolution",
+            "not_applicable",
+        )
+        self.assertEqual(
+            [row["source_object_file_id"] for row in unsupported["results"]],
+            ["2", "3", "6"],
+        )
+
+        _, objects = self.query(
+            "--script-object-resolution",
+            "asset_level_only",
+            "--script-object-resolution",
+            "not_verifiable_binary",
+        )
+        self.assertEqual(
+            [row["source_object_file_id"] for row in objects["results"]],
+            ["1", "5"],
+        )
+        _, not_applicable = self.query(
+            "--script-object-resolution",
+            "not_applicable",
+        )
+        self.assertEqual(
+            [
+                row["source_object_file_id"]
+                for row in not_applicable["results"]
+            ],
+            ["2", "3", "4", "6"],
+        )
+
+        _, crossed = self.query(
+            "--reference-shape",
+            "structured",
+            "--asset-resolution",
+            "resolved",
+            "--script-object-resolution",
+            "not_verifiable_binary",
+        )
+        self.assertEqual(
+            [row["source_object_file_id"] for row in crossed["results"]],
+            ["5"],
+        )
+        _, selector_and_status = self.query(
+            "--path",
+            "Assets/Scenes/Statuses.unity",
+            "--script-guid",
+            dll_guid,
+            "--asset-resolution",
+            "resolved",
+        )
+        self.assertEqual(
+            [
+                row["source_object_file_id"]
+                for row in selector_and_status["results"]
+            ],
+            ["5"],
+        )
+
+        _, empty = self.query(
+            "--reference-shape",
+            "null",
+            "--asset-resolution",
+            "resolved",
+        )
+        self.assertEqual(empty["status"], "ok")
+        self.assertEqual(empty["results"], [])
+
+    def test_invalid_path_and_filter_queries_return_json_errors(self):
+        self.add_script("Assets/Scripts/UsesPath.cs", "8" * 32)
+        outside = Path(self.temp_dir.name) / "outside.unity"
+        for arguments in (
+            ("--path", "Assets/Scenes/Missing.unity"),
+            ("--path", "Assets/Scripts/UsesPath.cs"),
+            ("--path", "../outside.unity"),
+            ("--path", str(outside)),
+            ("--path", "ProjectSettings/ProjectVersion.txt"),
+            ("--path", "Assets/Library/Hidden.unity"),
+            ("--script-guid", "not-a-guid"),
+            ("--reference-shape", "unknown"),
+            ("--asset-resolution", "unknown"),
+            ("--script-object-resolution", "unknown"),
+        ):
+            with self.subTest(arguments=arguments):
+                _, payload = self.query(*arguments, expected=3)
+                self.assertEqual(payload["status"], "invalid_query")
+                self.assertEqual(payload["results"], [])
+                self.assertIsNotNone(payload["error"])
+
+        _, unsupported = self.query(
+            "--path",
+            "Assets/Scripts/UsesPath.cs",
+            expected=3,
+        )
+        self.assertEqual(
+            unsupported["error"]["code"],
+            "unsupported_format",
+        )
+
+        directory = self.root / "Assets/Scenes/Folder.unity"
+        directory.mkdir(parents=True)
+        _, invalid_directory = self.query(
+            "--path",
+            "Assets/Scenes/Folder.unity",
+            expected=3,
+        )
+        self.assertEqual(invalid_directory["status"], "invalid_query")
+
+    def test_external_symlink_source_path_is_rejected(self):
+        outside = Path(self.temp_dir.name) / "outside.unity"
+        outside.write_text("%YAML 1.1\n", encoding="utf-8")
+        link = self.root / "Assets/Scenes/External.unity"
+        try:
+            link.symlink_to(outside)
+        except OSError as error:
+            self.skipTest(f"file symlink unavailable: {error}")
+
+        _, payload = self.query(
+            "--path",
+            "Assets/Scenes/External.unity",
+            expected=3,
+        )
+
+        self.assertEqual(payload["status"], "invalid_query")
+        self.assertEqual(
+            payload["error"]["code"],
+            "symlink_outside_root",
+        )
+
+    def test_not_found_precedes_partial_coverage_for_unique_queries(self):
+        broken_guid = "9" * 32
+        source_path = "Assets/Scenes/PartialUnique.unity"
+        self.write("Assets/Scripts/Broken.cs", "class Broken {}\n")
+        self.write(
+            "Assets/Scripts/Broken.cs.meta",
+            (
+                "fileFormatVersion: 2\n"
+                f"guid: {broken_guid}\n"
+            ).encode("utf-8")
+            + b"\xff",
+        )
+        self.add_source(
+            source_path,
+            [
+                (
+                    1,
+                    "{fileID: 11500000, guid: "
+                    + SCRIPT_GUID
+                    + ", type: 3}",
+                )
+            ],
+        )
+
+        _, payload = self.query(
+            "--path",
+            source_path,
+            "--object-file-id",
+            "99",
+            expected=2,
+        )
+
+        self.assertEqual(payload["status"], "not_found")
+        self.assertEqual(payload["scan_coverage"], "partial")
+        self.assertEqual(payload["results"], [])
+
     def test_invalid_limit_and_cursor_return_json_errors(self):
         self.add_source(
             "Assets/Scenes/Main.unity",
