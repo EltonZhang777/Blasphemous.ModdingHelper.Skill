@@ -47,6 +47,7 @@ ROUTE_DOCUMENTS = (
     "references/unity-project-navigation/MAIN.md",
     "references/unity-project-navigation/topology.md",
     "references/unity-project-navigation/assets-and-guids.md",
+    "references/unity-project-navigation/bindings.md",
 )
 DEPENDENCY_GUIDANCE = (
     REPOSITORY_ROOT / "README.md",
@@ -185,6 +186,11 @@ ROUTING_CONTRACTS = (
                 "Exact asset path, GUID, name, or extensionless stem",
                 "assets-and-guids.md",
                 "MUST report the resolved project-relative evidence",
+            ),
+            (
+                "Direct MonoBehaviour `m_Script` bindings",
+                "bindings.md",
+                "MUST report source and target evidence separately",
             ),
         ),
     ),
