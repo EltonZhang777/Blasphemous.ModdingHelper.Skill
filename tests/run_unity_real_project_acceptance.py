@@ -97,10 +97,11 @@ def _scanner_command(
     arguments: Sequence[str],
     project_root: Path,
 ) -> List[str]:
-    return [
-        item.replace(str(project_root), "<UNITY_PROJECT_ROOT>")
-        for item in arguments
-    ]
+    return [_redact_project_root(item, project_root) for item in arguments]
+
+
+def _redact_project_root(value: object, project_root: Path) -> str:
+    return str(value).replace(str(project_root), "<UNITY_PROJECT_ROOT>")
 
 
 def _run_scanner_with_size(
@@ -125,19 +126,22 @@ def _run_scanner_with_size(
     except subprocess.TimeoutExpired as error:
         raise SmokeFailure(
             "Scanner command exceeded the outer acceptance timeout: "
-            + " ".join(command)
+            + " ".join(_scanner_command(command, project_root))
         ) from error
     elapsed = round(time.monotonic() - started, 2)
     if result.returncode != 0:
         raise SmokeFailure(
             f"Scanner command failed with exit code {result.returncode}: "
-            f"{' '.join(command)}\nstdout:\n{result.stdout}\nstderr:\n{result.stderr}"
+            f"{' '.join(_scanner_command(command, project_root))}\n"
+            f"stdout:\n{_redact_project_root(result.stdout, project_root)}\n"
+            f"stderr:\n{_redact_project_root(result.stderr, project_root)}"
         )
     try:
         payload = json.loads(result.stdout)
     except json.JSONDecodeError as error:
         raise SmokeFailure(
-            f"Scanner output was not JSON: {' '.join(command)}: {error}"
+            "Scanner output was not JSON: "
+            f"{' '.join(_scanner_command(command, project_root))}: {error}"
         ) from error
     _require(isinstance(payload, dict), "Scanner output envelope is not an object.")
     return payload, elapsed, len(result.stdout.encode("utf-8"))
@@ -833,7 +837,7 @@ def _blocked_report(project: Optional[str], reason: str) -> Dict[str, object]:
             "synthetic success is not substituted for this report"
         ),
         "status": "blocked",
-        "project": {"root": project},
+        "project": {"root": "." if project else None},
         "commands": [],
         "completion_evidence": {},
         "read_only": None,
@@ -884,7 +888,7 @@ def run(
             "synthetic success is not substituted for this report"
         ),
         "status": "failed",
-        "project": {"root": str(project_root)},
+        "project": {"root": "."},
         "commands": [],
         "completion_evidence": {},
         "read_only": None,

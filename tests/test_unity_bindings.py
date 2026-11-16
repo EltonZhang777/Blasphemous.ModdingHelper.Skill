@@ -835,6 +835,57 @@ class UnityBindingNavigationTests(unittest.TestCase):
         self.assertEqual(row["asset_resolution_reason"], "unreadable_meta")
         self.assertEqual(row["script_object_resolution"], "not_applicable")
 
+    def test_missing_or_invalid_metadata_version_is_unreadable(self):
+        cases = (
+            ("Assets/Scripts/MissingVersion.cs", "6" * 32, ""),
+            (
+                "Assets/Scripts/InvalidVersion.cs",
+                "7" * 32,
+                "fileFormatVersion: invalid\n",
+            ),
+        )
+        for index, (path, guid, version_line) in enumerate(cases):
+            self.write(path, "class Broken {}\n")
+            self.write(path + ".meta", version_line + f"guid: {guid}\n")
+            self.add_source(
+                f"Assets/Scenes/BrokenMeta{index}.unity",
+                [
+                    (
+                        index + 1,
+                        "{fileID: 11500000, guid: "
+                        + guid
+                        + ", type: 3}",
+                    )
+                ],
+            )
+
+        _, payload = self.query(expected=4)
+
+        self.assertEqual(payload["status"], "partial")
+        self.assertEqual(payload["scan_coverage"], "partial")
+        self.assertEqual(
+            [warning["code"] for warning in payload["warnings"]],
+            ["metadata_unusable", "metadata_unusable"],
+        )
+        messages = {warning["message"] for warning in payload["warnings"]}
+        self.assertEqual(
+            messages,
+            {"Metadata has no usable fileFormatVersion."},
+        )
+        self.assertNotIn("absent", " ".join(messages))
+        self.assertEqual(len(payload["results"]), 2)
+        for row in payload["results"]:
+            self.assertEqual(row["target_asset_kind"], "unresolved")
+            self.assertEqual(row["asset_resolution"], "missing")
+            self.assertEqual(
+                row["asset_resolution_reason"],
+                "unreadable_meta",
+            )
+            self.assertEqual(
+                row["script_object_resolution"],
+                "not_applicable",
+            )
+
     def test_metadata_reads_preserve_order_and_keep_the_deadline(self):
         paths = []
         for index in range(4):

@@ -681,10 +681,20 @@ def _build_guid_index(
             )
             continue
         version_match = META_VERSION.search(text)
-        if version_match is not None:
+        if version_match is None:
+            unreadable = True
+            warnings.append(
+                _warning(
+                    "metadata_unusable",
+                    "Metadata has no usable fileFormatVersion.",
+                    relative,
+                )
+            )
+        else:
             try:
                 int(version_match.group(1))
             except ValueError:
+                unreadable = True
                 warnings.append(
                     _warning(
                         "metadata_unusable",
@@ -692,7 +702,6 @@ def _build_guid_index(
                         relative,
                     )
                 )
-                continue
         guid = guid_match.group(1).lower()
         try:
             exists = (

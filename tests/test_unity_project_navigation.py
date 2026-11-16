@@ -1,10 +1,12 @@
 import hashlib
+import io
 import json
 import os
 import subprocess
 import sys
 import tempfile
 import unittest
+from contextlib import redirect_stdout
 from pathlib import Path
 
 
@@ -77,6 +79,31 @@ class UnityProjectNavigationTests(unittest.TestCase):
         self.assertEqual(result.stderr, "")
         return result, json.loads(result.stdout)
 
+    def assert_public_output_omits_root(self, result, root):
+        variants = {str(root), root.as_posix()}
+        for variant in variants:
+            self.assertNotIn(variant, result.stdout)
+            self.assertNotIn(json.dumps(variant)[1:-1], result.stdout)
+
+        payload = json.loads(result.stdout)
+        strings = []
+
+        def collect(value):
+            if isinstance(value, dict):
+                for item in value.values():
+                    collect(item)
+            elif isinstance(value, list):
+                for item in value:
+                    collect(item)
+            elif isinstance(value, str):
+                strings.append(value)
+
+        collect(payload)
+        for value in strings:
+            for variant in variants:
+                self.assertNotIn(variant.casefold(), value.casefold())
+        return payload
+
     def digest_tree(self):
         digest = hashlib.sha256()
         paths = []
@@ -105,7 +132,7 @@ class UnityProjectNavigationTests(unittest.TestCase):
         self.assertEqual(payload["schema_version"], 1)
         self.assertEqual(payload["command"], "project")
         self.assertEqual(payload["status"], "ok")
-        self.assertEqual(payload["project"]["root"], str(self.root.resolve()))
+        self.assertEqual(payload["project"]["root"], ".")
         self.assertEqual(payload["project"]["unity_version"], "2017.4.40f1")
         self.assertEqual(payload["project"]["unity_major"], "2017")
         self.assertTrue(payload["project"]["unity_major_compatible"])
@@ -143,6 +170,113 @@ class UnityProjectNavigationTests(unittest.TestCase):
 
         self.assertEqual(first.stdout, second.stdout)
         self.assertEqual(first_payload, second_payload)
+
+    def test_public_cli_output_contains_no_absolute_project_root(self):
+        self.write(
+            "Assets/Prefabs/Widget.prefab",
+            "%YAML 1.1\n--- !u!114 &1\nMonoBehaviour:\n  m_Script: {fileID: 11500000}\n",
+        )
+        commands = (
+            ("project",),
+            ("asset", "--path", "Assets/Data/item.asset"),
+            ("scene", "--path", "Assets/Scenes/Standalone.unity"),
+            ("prefab", "--path", "Assets/Prefabs/Widget.prefab"),
+            ("script", "--path", "Assets/Scripts/Example.cs"),
+            ("bindings",),
+            ("references", "--path", "Assets/Data/item.asset"),
+        )
+        for command in commands:
+            with self.subTest(command=command[0]):
+                result = self.run_scanner(
+                    *command,
+                    "--project",
+                    str(self.root),
+                )
+                self.assertEqual(result.stderr, "")
+                payload = self.assert_public_output_omits_root(result, self.root)
+                self.assertEqual(payload["project"]["root"], ".")
+
+        self.write(
+            "ProjectSettings/ProjectVersion.txt",
+            "m_EditorVersion: 2021.3.10f1\n",
+        )
+        warning_result = self.run_scanner("project", "--project", str(self.root))
+        warning_payload = self.assert_public_output_omits_root(
+            warning_result,
+            self.root,
+        )
+        self.assertTrue(warning_payload["warnings"])
+
+    def test_invalid_project_error_contains_no_absolute_project_root(self):
+        missing = self.root.parent / "PrivateMissingProject"
+
+        result = self.run_scanner("project", "--project", str(missing))
+
+        self.assertEqual(result.returncode, 3)
+        payload = self.assert_public_output_omits_root(result, missing)
+        self.assertEqual(payload["project"]["root"], ".")
+
+    def test_public_cli_os_error_redacts_project_root(self):
+        script = f"""
+import sys
+from pathlib import Path
+from unittest import mock
+
+sys.path.insert(0, {str(SCRIPT_ROOT)!r})
+from blasphemous_modding_helper import unity_project
+
+root = Path({str(self.root)!r})
+
+def walk(top, topdown=True, onerror=None, followlinks=False):
+    if onerror is not None:
+        onerror(PermissionError(13, "Access denied for " + str(root) + " now"))
+    yield top, [], []
+
+with mock.patch.object(unity_project.os, "walk", walk):
+    raise SystemExit(unity_project.main(["project", "--project", str(root)]))
+"""
+        result = subprocess.run(
+            [sys.executable, "-c", script],
+            cwd=REPOSITORY_ROOT,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            check=False,
+        )
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        payload = self.assert_public_output_omits_root(result, self.root)
+        self.assertTrue(payload["warnings"])
+        self.assertEqual(payload["project"]["root"], ".")
+
+    def test_invalid_relative_project_does_not_echo_the_supplied_root(self):
+        relative = "tests/missing-private-project"
+        resolved = (REPOSITORY_ROOT / relative).resolve()
+
+        result = self.run_scanner("project", "--project", relative)
+
+        self.assertEqual(result.returncode, 3)
+        payload = self.assert_public_output_omits_root(result, resolved)
+        self.assertEqual(payload["project"]["root"], ".")
+
+    def test_expanduser_failure_still_returns_a_public_envelope(self):
+        stream = io.StringIO()
+        with mock.patch.object(
+            Path,
+            "expanduser",
+            side_effect=RuntimeError("Unknown user"),
+        ):
+            with redirect_stdout(stream):
+                return_code = unity_project.main(
+                    ["project", "--project", "~missing_user"]
+                )
+
+        payload = json.loads(stream.getvalue())
+        self.assertEqual(return_code, 3)
+        self.assertEqual(payload["status"], "invalid_project")
+        self.assertEqual(payload["project"]["root"], ".")
+        self.assertNotIn("~missing_user", stream.getvalue())
 
     def test_non_2017_major_warns_without_rejection(self):
         self.write("ProjectSettings/ProjectVersion.txt", "m_EditorVersion: 2021.3.10f1\n")
