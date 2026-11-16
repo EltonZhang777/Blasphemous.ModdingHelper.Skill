@@ -27,9 +27,9 @@ Source fields identify the serialized component:
 Reference fields preserve the serialized `m_Script` value:
 
 - `reference_shape`: `structured`, `null`, or `malformed`.
-- `m_script_file_id`: decimal string, including negative values and `"0"`.
+- `m_script_file_id`: decimal string, including negative values and `"0"`; valid values remain within the signed 64-bit range.
 - `m_script_guid`: lowercase 32-character hexadecimal GUID when valid.
-- `m_script_type`: JSON integer when present.
+- `m_script_type`: JSON integer when present and valid.
 
 Asset resolution and object resolution remain separate in the target fields:
 
@@ -38,6 +38,31 @@ Asset resolution and object resolution remain separate in the target fields:
 - `script_object_resolution`.
 
 A uniquely resolved `.cs` target reports `asset_resolution=resolved` and `script_object_resolution=asset_level_only`. This proves only that the GUID maps to a `.cs` asset. It does not prove a class, namespace, dependency, or behavior.
+
+## Reference states
+
+- `structured` retains a valid file ID and GUID and enters target resolution.
+- `null` represents an explicit `fileID: 0` reference. It does not mean that the source component or target metadata is missing.
+- `malformed` means the direct `m_Script` value is present but required fields are absent or invalid, a field type is invalid, or the inline map is incomplete. The row may include a bounded, sanitized `raw_reference` for diagnosis.
+
+All rows keep the same target fields. Null and malformed rows use `asset_resolution=not_applicable` and `script_object_resolution=not_applicable`.
+
+## Target states
+
+`target_asset_path` is non-null only when one target path resolves uniquely. `target_asset_candidates` contains every sorted candidate when a GUID is duplicated.
+
+| Observation | Target fields |
+| --- | --- |
+| No `.meta` supplies the referenced GUID | `target_asset_kind=unresolved`, `asset_resolution=missing`, `asset_resolution_reason=missing_meta` |
+| `.meta` supplies the GUID but the target file is absent or not a file | `target_asset_kind=unresolved`, `asset_resolution=missing`, `asset_resolution_reason=missing_target` |
+| The matching `.meta` is unreadable or malformed | `target_asset_kind=unresolved`, `asset_resolution=missing`, `asset_resolution_reason=unreadable_meta`, with a `metadata_unusable` warning |
+| More than one target uses the GUID | `target_asset_kind=unresolved`, `asset_resolution=ambiguous`, `asset_resolution_reason=duplicate_guid`, with every candidate listed |
+| One `.cs` target resolves | `target_asset_kind=cs`, `asset_resolution=resolved`, `script_object_resolution=asset_level_only` |
+| One DLL target resolves | `target_asset_kind=binary`, `asset_resolution=resolved`, `script_object_resolution=not_verifiable_binary` |
+| One other binary target resolves | `target_asset_kind=binary`, `asset_resolution=unsupported_binary`, `asset_resolution_reason=unsupported_format` |
+| One non-C# text or other target resolves | `target_asset_kind=other`, `asset_resolution=resolved`, `script_object_resolution=not_applicable` |
+
+DLL results retain the asset GUID, path, and raw reference only. No inferred MonoScript, class, candidate class, namespace, or behavior appears in a DLL result. Other target kinds remain separate from `.cs` evidence.
 
 ## Pagination
 
@@ -56,6 +81,7 @@ A middle page and a final page both report `status=ok`. A final page has `next_c
 ## Status and limits
 
 - `status=ok` uses exit code `0`.
+- `status=partial` uses exit code `4` when source or metadata evidence could not be scanned completely; `scan_coverage` is then `partial`.
 - `status=invalid_query` uses exit code `3` for an invalid limit or cursor.
 - `status=invalid_project` uses exit code `3` when the project root is unusable.
 
@@ -67,4 +93,4 @@ Report the source asset path, source object file ID, raw script reference, targe
 
 ## Completion criteria
 
-Binding lookup work is complete only when the exact query, project root, status, page boundary, source and target fields, warnings, and source-analyzer handoff are reported.
+Binding lookup work is complete only when the exact query, project root, status, scan coverage, page boundary, source and target fields, warnings, and source-analyzer handoff are reported.

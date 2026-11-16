@@ -13,6 +13,23 @@ SCRIPT_ROOT = REPOSITORY_ROOT / "skills" / "blasphemous-modding-helper" / "scrip
 SCANNER = SCRIPT_ROOT / "unity_project_navigation.py"
 
 SCRIPT_GUID = "a" * 32
+BINDING_FIELDS = {
+    "source_asset_path",
+    "source_asset_kind",
+    "source_object_file_id",
+    "source_class_id",
+    "source_class_name",
+    "reference_shape",
+    "m_script_file_id",
+    "m_script_guid",
+    "m_script_type",
+    "target_asset_kind",
+    "target_asset_path",
+    "target_asset_candidates",
+    "asset_resolution",
+    "asset_resolution_reason",
+    "script_object_resolution",
+}
 
 
 class UnityBindingNavigationTests(unittest.TestCase):
@@ -113,26 +130,7 @@ class UnityBindingNavigationTests(unittest.TestCase):
         return paths, digest.hexdigest()
 
     def assert_cs_row(self, row, path, source_kind, object_id):
-        self.assertEqual(
-            set(row),
-            {
-                "source_asset_path",
-                "source_asset_kind",
-                "source_object_file_id",
-                "source_class_id",
-                "source_class_name",
-                "reference_shape",
-                "m_script_file_id",
-                "m_script_guid",
-                "m_script_type",
-                "target_asset_kind",
-                "target_asset_path",
-                "target_asset_candidates",
-                "asset_resolution",
-                "asset_resolution_reason",
-                "script_object_resolution",
-            },
-        )
+        self.assertEqual(set(row), BINDING_FIELDS)
         self.assertEqual(row["source_asset_path"], path)
         self.assertEqual(row["source_asset_kind"], source_kind)
         self.assertEqual(row["source_object_file_id"], object_id)
@@ -396,6 +394,298 @@ class UnityBindingNavigationTests(unittest.TestCase):
         self.assertIsNone(row["target_asset_path"])
         self.assertEqual(row["asset_resolution"], "missing")
         self.assertEqual(row["asset_resolution_reason"], "missing_target")
+        self.assertEqual(row["script_object_resolution"], "not_applicable")
+
+    def test_null_and_malformed_references_keep_the_target_schema(self):
+        oversized = "x" * 600
+        self.add_source(
+            "Assets/Scenes/Invalid.unity",
+            [
+                (1, "{fileID: 0}"),
+                (2, [("fileID", "0")]),
+                (3, "{fileID: 11500000}"),
+                (
+                    4,
+                    "{fileID: 11500000, guid: not-a-guid, type: 3}",
+                ),
+                (
+                    5,
+                    "{fileID: nope, guid: "
+                    + SCRIPT_GUID
+                    + ", type: 3}",
+                ),
+                (
+                    6,
+                    "{fileID: 9223372036854775808, guid: "
+                    + SCRIPT_GUID
+                    + ", type: 3}",
+                ),
+                (
+                    7,
+                    "{fileID: 11500000, guid: "
+                    + SCRIPT_GUID
+                    + ", type: 3",
+                ),
+                (8, oversized),
+                (9, "{fileID: 0, type: invalid}"),
+                (
+                    10,
+                    "{fileID: 11500000, guid: "
+                    + SCRIPT_GUID
+                    + ", type: 3, junk: value}",
+                ),
+                (
+                    11,
+                    "{wrapper: {fileID: 11500000, guid: "
+                    + SCRIPT_GUID
+                    + ", type: 3}}",
+                ),
+                (
+                    12,
+                    "{fileID: 1_0, guid: "
+                    + SCRIPT_GUID
+                    + ", type: 3}",
+                ),
+            ],
+        )
+
+        _, payload = self.query()
+
+        self.assertEqual(payload["status"], "ok")
+        self.assertEqual(
+            [row["reference_shape"] for row in payload["results"]],
+            [
+                "null",
+                "null",
+                "malformed",
+                "malformed",
+                "malformed",
+                "malformed",
+                "malformed",
+                "malformed",
+                "malformed",
+                "malformed",
+                "malformed",
+                "malformed",
+            ],
+        )
+        for row in payload["results"]:
+            expected_fields = set(BINDING_FIELDS)
+            if row["reference_shape"] == "malformed":
+                expected_fields.add("raw_reference")
+            self.assertEqual(set(row), expected_fields)
+            self.assertEqual(row["target_asset_kind"], "not_applicable")
+            self.assertIsNone(row["target_asset_path"])
+            self.assertEqual(row["target_asset_candidates"], [])
+            self.assertEqual(row["asset_resolution"], "not_applicable")
+            self.assertIsNone(row["asset_resolution_reason"])
+            self.assertEqual(row["script_object_resolution"], "not_applicable")
+            if row["reference_shape"] == "malformed":
+                self.assertIn("raw_reference", row)
+                self.assertLessEqual(len(row["raw_reference"]), 512)
+            else:
+                self.assertNotIn("raw_reference", row)
+        self.assertEqual(payload["results"][0]["m_script_file_id"], "0")
+        self.assertEqual(payload["results"][1]["m_script_file_id"], "0")
+        self.assertIsNone(payload["results"][5]["m_script_file_id"])
+        self.assertTrue(payload["results"][6]["raw_reference"].endswith(", type: 3"))
+
+    def test_target_resolution_states_remain_separate(self):
+        missing_meta = "d" * 32
+        missing_target = "e" * 32
+        duplicate = "f" * 32
+        dll_target = "1" * 32
+        unsupported_target = "2" * 32
+        other_target = "3" * 32
+        self.write_meta("Assets/Scripts/MissingTarget.cs", missing_target)
+        self.add_script("Assets/Scripts/CopyA.cs", duplicate)
+        self.add_script("Assets/Scripts/CopyB.cs", duplicate)
+        self.write("Assets/Plugins/Example.dll", b"MZ")
+        self.write_meta("Assets/Plugins/Example.dll", dll_target)
+        self.write("Assets/Textures/Example.png", b"\x89PNG")
+        self.write_meta("Assets/Textures/Example.png", unsupported_target)
+        self.write("Assets/Data/Example.txt", "data\n")
+        self.write_meta("Assets/Data/Example.txt", other_target)
+        self.add_source(
+            "Assets/Scenes/Targets.unity",
+            [
+                (
+                    1,
+                    "{fileID: -7, guid: "
+                    + missing_meta
+                    + ", type: 3}",
+                ),
+                (
+                    2,
+                    "{fileID: 9007199254740993, guid: "
+                    + missing_target
+                    + ", type: 3}",
+                ),
+                (
+                    3,
+                    "{fileID: 11500000, guid: "
+                    + duplicate
+                    + ", type: 3}",
+                ),
+                (
+                    4,
+                    "{fileID: 11500000, guid: "
+                    + dll_target
+                    + ", type: 3}",
+                ),
+                (
+                    5,
+                    "{fileID: 11500000, guid: "
+                    + unsupported_target
+                    + ", type: 3}",
+                ),
+                (
+                    6,
+                    "{fileID: 11500000, guid: "
+                    + other_target
+                    + ", type: 3}",
+                ),
+            ],
+        )
+
+        _, payload = self.query()
+
+        self.assertEqual(payload["status"], "ok")
+        self.assertEqual(len(payload["results"]), 6)
+        (
+            missing_meta_row,
+            missing_target_row,
+            duplicate_row,
+            dll_row,
+            unsupported_row,
+            other_row,
+        ) = payload["results"]
+
+        self.assertEqual(missing_meta_row["m_script_file_id"], "-7")
+        self.assertEqual(missing_meta_row["target_asset_kind"], "unresolved")
+        self.assertEqual(missing_meta_row["asset_resolution"], "missing")
+        self.assertEqual(
+            missing_meta_row["asset_resolution_reason"],
+            "missing_meta",
+        )
+        self.assertEqual(
+            missing_target_row["m_script_file_id"],
+            "9007199254740993",
+        )
+        self.assertEqual(missing_target_row["asset_resolution"], "missing")
+        self.assertEqual(
+            missing_target_row["asset_resolution_reason"],
+            "missing_target",
+        )
+        self.assertEqual(duplicate_row["asset_resolution"], "ambiguous")
+        self.assertEqual(
+            duplicate_row["asset_resolution_reason"],
+            "duplicate_guid",
+        )
+        self.assertIsNone(duplicate_row["target_asset_path"])
+        self.assertEqual(
+            duplicate_row["target_asset_candidates"],
+            [
+                {"kind": "cs", "path": "Assets/Scripts/CopyA.cs"},
+                {"kind": "cs", "path": "Assets/Scripts/CopyB.cs"},
+            ],
+        )
+        self.assertEqual(dll_row["target_asset_kind"], "binary")
+        self.assertEqual(
+            dll_row["target_asset_path"],
+            "Assets/Plugins/Example.dll",
+        )
+        self.assertEqual(dll_row["asset_resolution"], "resolved")
+        self.assertIsNone(dll_row["asset_resolution_reason"])
+        self.assertEqual(
+            dll_row["script_object_resolution"],
+            "not_verifiable_binary",
+        )
+        self.assertEqual(unsupported_row["target_asset_kind"], "binary")
+        self.assertEqual(
+            unsupported_row["target_asset_path"],
+            "Assets/Textures/Example.png",
+        )
+        self.assertEqual(
+            unsupported_row["asset_resolution"],
+            "unsupported_binary",
+        )
+        self.assertEqual(
+            unsupported_row["asset_resolution_reason"],
+            "unsupported_format",
+        )
+        self.assertEqual(other_row["target_asset_kind"], "other")
+        self.assertEqual(other_row["asset_resolution"], "resolved")
+        self.assertEqual(
+            other_row["script_object_resolution"],
+            "not_applicable",
+        )
+        for row in (
+            missing_meta_row,
+            missing_target_row,
+            duplicate_row,
+        ):
+            self.assertEqual(
+                row["script_object_resolution"],
+                "not_applicable",
+            )
+        for row in payload["results"]:
+            self.assertEqual(set(row), BINDING_FIELDS)
+            for field in (
+                "target_asset_kind",
+                "target_asset_path",
+                "target_asset_candidates",
+                "asset_resolution",
+                "asset_resolution_reason",
+                "script_object_resolution",
+            ):
+                self.assertIn(field, row)
+
+    def test_unreadable_metadata_is_not_reported_as_complete(self):
+        broken_guid = "4" * 32
+        self.write("Assets/Scripts/Broken.cs", "class Broken {}\n")
+        self.write(
+            "Assets/Scripts/Broken.cs.meta",
+            (
+                "fileFormatVersion: 2\n"
+                f"guid: {broken_guid}\n"
+            ).encode("utf-8")
+            + b"\xff",
+        )
+        self.add_source(
+            "Assets/Scenes/BrokenMeta.unity",
+            [
+                (
+                    1,
+                    "{fileID: 11500000, guid: "
+                    + broken_guid
+                    + ", type: 3}",
+                )
+            ],
+        )
+
+        _, payload = self.query(expected=4)
+
+        self.assertEqual(payload["status"], "partial")
+        self.assertEqual(payload["scan_coverage"], "partial")
+        self.assertEqual(
+            payload["warnings"],
+            [
+                {
+                    "code": "metadata_unusable",
+                    "message": (
+                        "Metadata is not valid UTF-8 and was only partially read."
+                    ),
+                    "path": "Assets/Scripts/Broken.cs.meta",
+                }
+            ],
+        )
+        row = payload["results"][0]
+        self.assertEqual(set(row), BINDING_FIELDS)
+        self.assertEqual(row["target_asset_kind"], "unresolved")
+        self.assertIsNone(row["target_asset_path"])
+        self.assertEqual(row["asset_resolution"], "missing")
+        self.assertEqual(row["asset_resolution_reason"], "unreadable_meta")
         self.assertEqual(row["script_object_resolution"], "not_applicable")
 
     def test_invalid_limit_and_cursor_return_json_errors(self):
