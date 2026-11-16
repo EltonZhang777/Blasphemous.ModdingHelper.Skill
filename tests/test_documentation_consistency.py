@@ -47,6 +47,7 @@ ROUTE_DOCUMENTS = (
     "references/unity-project-navigation/MAIN.md",
     "references/unity-project-navigation/topology.md",
     "references/unity-project-navigation/assets-and-guids.md",
+    "references/unity-project-navigation/scripts.md",
     "references/unity-project-navigation/prefabs.md",
     "references/unity-project-navigation/scenes.md",
 )
@@ -81,7 +82,7 @@ ROUTING_CONTRACTS = (
         (
             ("natural-language identify", "Localization lookup", "MUST NOT require configuration"),
             ("Find or explain decompiled game source", "Source analyzer", "source-path gate"),
-            ("Inspect exported Unity project topology, assets, GUIDs, flattened Prefabs, Unity version, or scene-set summary", "Unity project navigation", "MUST keep exported asset evidence separate from C# behavior"),
+            ("Inspect exported Unity project topology, assets, GUIDs, script assets, flattened Prefabs, Unity version, or scene-set summary", "Unity project navigation", "MUST keep exported asset evidence separate from C# behavior"),
             ("Diagnose BepInEx or Unity logs", "Log analyzer", "MUST resolve required log sources"),
             ("Test a Mod; build/deploy/launch a profile", "Mod-test entry", "classify the request"),
             ("Generate, modify, review, or refactor Mod-owned C#", "Coding standards", "ownership boundary"),
@@ -187,6 +188,11 @@ ROUTING_CONTRACTS = (
                 "Exact asset path, GUID, name, or extensionless stem",
                 "assets-and-guids.md",
                 "MUST report the resolved project-relative evidence",
+            ),
+            (
+                "Script asset path, GUID, or exact name",
+                "scripts.md",
+                "MUST return script asset identity and metadata only",
             ),
             (
                 "Flattened Prefab objects or components",

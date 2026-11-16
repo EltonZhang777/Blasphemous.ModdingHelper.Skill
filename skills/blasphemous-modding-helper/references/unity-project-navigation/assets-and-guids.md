@@ -47,6 +47,8 @@ Binary assets are reported only by path, GUID, type, and metadata evidence. Thei
 
 The asset query establishes identity and location only. It MUST NOT be used as proof of C# behavior, runtime state, serialized component relationships, or gameplay. Behavior questions remain owned by the [Source analyzer](../sub-skills/source-analyzer.md), even when a Unity `.cs` asset has the same path.
 
+When the requested identity is specifically a `.cs` script asset, use [scripts.md](scripts.md). That query applies the same identity contract without parsing C#.
+
 ## Next action
 
 After an `ok` result, cite the project-relative path, type, GUID, and metadata status, then select the narrowest topic needed for the next question. For ambiguity, present the sorted candidates and ask for one identity; the agent MUST NOT infer the intended asset. For a missing identity, verify the selector and project root before trying another query. For binary evidence, continue with metadata or topology only; the agent MUST NOT inspect or reserialize the asset. For behavior, hand the request to the source analyzer.
