@@ -11,6 +11,7 @@ This guide provides read-only navigation for an exported Blasphemous Unity proje
 | Script asset path, GUID, or exact name | [scripts.md](scripts.md) | Agent MUST return script asset identity and metadata only. Agent MUST NOT parse C#, infer behavior, dependencies, or class semantics, and MUST report a source gap as `blocked` when authoritative source is unavailable. |
 | Scene-set membership or serialized scene-object evidence | [scenes.md](scenes.md) | Agent MUST report completeness, missing layers, observed evidence limits, and any malformed, ambiguous, or excluded target. |
 | Flattened Prefab objects or components | [prefabs.md](prefabs.md) | Agent MUST identify the evidence as flattened and MUST NOT infer source instance hierarchy, nesting, variant, or modification structure. |
+| Serialized component relations, GUID edges, cycles, or incoming references | [component-relations.md](component-relations.md) | Agent MUST report traversal direction, object scope, unresolved targets, cycles, truncation, and timeout before selecting a next action. |
 
 ## Evidence boundary
 

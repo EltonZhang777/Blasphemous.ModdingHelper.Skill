@@ -50,6 +50,7 @@ ROUTE_DOCUMENTS = (
     "references/unity-project-navigation/scripts.md",
     "references/unity-project-navigation/prefabs.md",
     "references/unity-project-navigation/scenes.md",
+    "references/unity-project-navigation/component-relations.md",
 )
 DEPENDENCY_GUIDANCE = (
     REPOSITORY_ROOT / "README.md",
@@ -200,6 +201,11 @@ ROUTING_CONTRACTS = (
                 "MUST identify the evidence as flattened",
             ),
             ("Scene-set membership", "scenes.md", "MUST report completeness, missing layers"),
+            (
+                "Serialized component relations",
+                "component-relations.md",
+                "MUST report traversal direction, object scope, unresolved targets",
+            ),
         ),
     ),
 )

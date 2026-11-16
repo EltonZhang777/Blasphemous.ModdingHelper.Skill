@@ -382,6 +382,31 @@ def build_parser() -> argparse.ArgumentParser:
     scene.add_argument("--project", required=True, help="Exported Unity project root.")
     scene.add_argument("--path", help="Project path to one exact .unity file.")
     scene.add_argument("--name", help="Exact logical scene name or stem.")
+    references = commands.add_parser(
+        "references",
+        help="Trace serialized references from an exported asset or object.",
+    )
+    references.add_argument("--project", required=True, help="Exported Unity project root.")
+    reference_selectors = references.add_mutually_exclusive_group(required=True)
+    reference_selectors.add_argument("--path", help="Exact project-relative asset path.")
+    reference_selectors.add_argument("--guid", help="Exact 32-character hexadecimal GUID.")
+    reference_selectors.add_argument("--name", help="Case-insensitive exact basename or stem.")
+    references.add_argument(
+        "--object-file-id",
+        help="Optional signed 64-bit serialized object file ID.",
+    )
+    references.add_argument(
+        "--direction",
+        default="outgoing",
+        help="Traversal direction: outgoing, incoming, or both.",
+    )
+    references.add_argument("--depth", default="1", help="Traversal depth from 1 to 4.")
+    references.add_argument("--limit", default="30", help="Result edge limit from 1 to 100.")
+    references.add_argument(
+        "--timeout-seconds",
+        default="60",
+        help="Traversal timeout in seconds, up to 120.",
+    )
     return parser
 
 
@@ -432,6 +457,26 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         from .unity_scene import scene_query
 
         payload = scene_query(Path(args.project), args.path, args.name, unknown)
+        return_code = exit_code(payload)
+    elif args.command == "references":
+        from .unity_references import references_query
+
+        if args.path is not None:
+            selector, value = "path", args.path
+        elif args.guid is not None:
+            selector, value = "guid", args.guid
+        else:
+            selector, value = "name", args.name
+        payload = references_query(
+            Path(args.project),
+            selector,
+            value,
+            args.object_file_id,
+            args.direction,
+            args.depth,
+            args.limit,
+            args.timeout_seconds,
+        )
         return_code = exit_code(payload)
     else:  # pragma: no cover - argparse rejects unknown commands.
         raise AssertionError(args.command)
