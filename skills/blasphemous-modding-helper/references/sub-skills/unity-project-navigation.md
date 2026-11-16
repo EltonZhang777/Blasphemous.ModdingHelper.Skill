@@ -58,6 +58,18 @@ An asset query MUST provide exactly one of `--path`, `--guid`, or `--name`:
 & $PYTHON3 (Join-Path $SkillRoot 'scripts\unity_project_navigation.py') asset --project '<UNITY_PROJECT_ROOT>' --name Example
 ```
 
+Resolve one scene set or one exact scene file after the project summary:
+
+```bash
+"$PYTHON3" "$SKILL_ROOT/scripts/unity_project_navigation.py" scene --project "<UNITY_PROJECT_ROOT>" --name "<SCENE_NAME_OR_STEM>"
+"$PYTHON3" "$SKILL_ROOT/scripts/unity_project_navigation.py" scene --project "<UNITY_PROJECT_ROOT>" --path "<SCENE_PATH>"
+```
+
+```powershell
+& $PYTHON3 (Join-Path $SkillRoot 'scripts\unity_project_navigation.py') scene --project '<UNITY_PROJECT_ROOT>' --name '<SCENE_NAME_OR_STEM>'
+& $PYTHON3 (Join-Path $SkillRoot 'scripts\unity_project_navigation.py') scene --project '<UNITY_PROJECT_ROOT>' --path '<SCENE_PATH>'
+```
+
 The scanner reads the configured directory and writes no index, cache, lock, log, copied asset, or project file. The agent MUST NOT start Unity Editor or modify, repair, or reserialize the project.
 
 ## Completion criteria

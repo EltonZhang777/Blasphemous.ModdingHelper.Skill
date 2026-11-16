@@ -47,6 +47,7 @@ ROUTE_DOCUMENTS = (
     "references/unity-project-navigation/MAIN.md",
     "references/unity-project-navigation/topology.md",
     "references/unity-project-navigation/assets-and-guids.md",
+    "references/unity-project-navigation/scenes.md",
 )
 DEPENDENCY_GUIDANCE = (
     REPOSITORY_ROOT / "README.md",
@@ -186,6 +187,7 @@ ROUTING_CONTRACTS = (
                 "assets-and-guids.md",
                 "MUST report the resolved project-relative evidence",
             ),
+            ("Scene-set membership", "scenes.md", "MUST report completeness, missing layers"),
         ),
     ),
 )

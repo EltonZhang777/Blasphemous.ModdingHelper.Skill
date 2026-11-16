@@ -285,7 +285,7 @@ def _scene_counts(files: Sequence[Path], root: Path) -> Dict[str, int]:
 def project_summary(project: Path) -> Dict[str, object]:
     """Return the version-1 project summary envelope."""
 
-    root = Path(project).expanduser()
+    root = Path(project)
     base = {
         "schema_version": SCHEMA_VERSION,
         "command": "project",
@@ -299,6 +299,8 @@ def project_summary(project: Path) -> Dict[str, object]:
         "error": None,
     }
     try:
+        root = root.expanduser()
+        base["project"] = {"root": str(root)}
         root, included_roots = _validated_project(root)
         version, major, compatible, warnings = _unity_version(root)
         files, scan_warnings = _walk_files(root, included_roots)
@@ -338,14 +340,17 @@ def project_summary(project: Path) -> Dict[str, object]:
         )
     except NavigationError as error:
         base["error"] = {"code": error.code, "message": str(error)}
-    except OSError as error:
+    except (OSError, RuntimeError) as error:
         base["status"] = "invalid_project"
         base["error"] = {"code": "invalid_project", "message": str(error)}
     return base
 
 
 def exit_code(payload: Dict[str, object]) -> int:
-    return 0 if payload.get("status") == "ok" else 3
+    status = payload.get("status")
+    if status == "ok":
+        return 0
+    return 2 if status in {"not_found", "ambiguous"} else 3
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -361,11 +366,18 @@ def build_parser() -> argparse.ArgumentParser:
     selectors.add_argument("--path", help="Exact project-relative asset path.")
     selectors.add_argument("--guid", help="Exact 32-character hexadecimal GUID.")
     selectors.add_argument("--name", help="Case-insensitive exact basename or stem.")
+    scene = commands.add_parser("scene", help="Resolve a scene set or scene file.")
+    scene.add_argument("--project", required=True, help="Exported Unity project root.")
+    scene.add_argument("--path", help="Project path to one exact .unity file.")
+    scene.add_argument("--name", help="Exact logical scene name or stem.")
     return parser
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
-    args = build_parser().parse_args(argv)
+    parser = build_parser()
+    args, unknown = parser.parse_known_args(argv)
+    if unknown and args.command != "scene":
+        parser.error("unrecognized arguments: " + " ".join(unknown))
     if args.command == "project":
         payload = project_summary(Path(args.project))
         return_code = exit_code(payload)
@@ -380,6 +392,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             selector, value = "name", args.name
         payload = asset_query(Path(args.project), selector, value)
         return_code = asset_exit_code(payload)
+    elif args.command == "scene":
+        from .unity_scene import scene_query
+
+        payload = scene_query(Path(args.project), args.path, args.name, unknown)
+        return_code = exit_code(payload)
     else:  # pragma: no cover - argparse rejects unknown commands.
         raise AssertionError(args.command)
     print(json.dumps(payload, sort_keys=True, separators=(",", ":")))
