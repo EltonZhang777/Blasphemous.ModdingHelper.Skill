@@ -35,6 +35,12 @@ Each result contains only:
 
 The query MUST NOT add class names, members, dependencies, call sites, decompiled code, or inferred runtime meaning.
 
+## Binding lookup
+
+The agent MUST select `bindings` when the question is which script asset one scene, Prefab, or text asset object references. The query reports the source asset path and object file ID, raw `m_script_file_id`, `m_script_guid`, `m_script_type`, the target asset state, and the target-object state. Its stable target fields include `target_asset_kind`, `target_asset_path`, `asset_resolution`, `asset_resolution_reason`, and `script_object_resolution`.
+
+A unique `.cs` target proves only that the GUID resolves to that script asset. A DLL target retains asset provenance but cannot establish the class or MonoScript object inside the binary. The agent MUST consult [bindings.md](bindings.md) for the complete schema, filters, pagination, and sample limits.
+
 ## Failures and warnings
 
 - `ok` means the selector resolved one script asset. Exit code `0`.
@@ -47,9 +53,9 @@ The query MUST NOT add class names, members, dependencies, call sites, decompile
 
 ## Evidence boundary
 
-A Unity `.cs` result proves only that the exported project contains that script path and its observed metadata. It is not proof of C# behavior, dependencies, class semantics, runtime execution, or gameplay.
+A Unity `.cs` result proves only that the exported project contains that script path and its observed metadata. It is not proof of C# behavior, dependencies, class semantics, runtime execution, or gameplay. A `bindings` result has the same boundary: it identifies a serialized script reference, not verified behavior.
 
-Behavior, dependency, and class-semantic requests MUST be routed to the [Source analyzer](../sub-skills/source-analyzer.md), which resolves the configured authoritative source tree through [Blasphemous Source Code Navigation](../source-code-navigation/MAIN.md). If that authoritative source cannot support the request, the agent MUST report the source gap as `blocked` and MUST NOT fall back to the Unity `.cs` file. When a task spans script identity and behavior, report the two evidence sets separately.
+Behavior, dependency, and class-semantics requests MUST be routed to the [Source analyzer](../sub-skills/source-analyzer.md), which resolves the configured authoritative source tree through [Blasphemous Source Code Navigation](../source-code-navigation/MAIN.md). If that authoritative source cannot support the request, the agent MUST report the source gap as `blocked` and MUST NOT fall back to the Unity `.cs` file. When a task spans script identity and behavior, report the two evidence sets separately.
 
 ## Next action
 

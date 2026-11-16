@@ -16,7 +16,7 @@ The `project` query identifies an exported Unity project before narrower asset n
 
 The version-1 envelope reports:
 
-- `project.root`: the resolved project root.
+- `project.root`: the project-relative marker `.`. The caller supplies the actual root; public output does not repeat its absolute location.
 - `project.unity_version`: the value from `ProjectSettings/ProjectVersion.txt`, or `null`.
 - `project.unity_major_compatible`: whether the detected major version matches the Unity `2017.4.40f1` baseline, or `null` when unknown.
 - `project.included_roots`: physical `Assets` and optional `Packages` roots that were scanned.

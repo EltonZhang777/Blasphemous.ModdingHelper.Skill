@@ -481,6 +481,51 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _redact_public_payload(
+    payload: Dict[str, object],
+    project: Path,
+) -> Dict[str, object]:
+    candidates = set()
+    try:
+        raw = Path(project).expanduser()
+    except (OSError, RuntimeError):
+        raw = Path(project)
+    if raw.is_absolute():
+        candidates.add(os.fspath(raw))
+    try:
+        resolved = raw.resolve(strict=False)
+    except (OSError, RuntimeError):
+        resolved = None
+    if resolved is not None and resolved.is_absolute():
+        candidates.add(os.fspath(resolved))
+        candidates.add(resolved.as_posix())
+    patterns = [
+        re.compile(
+            re.escape(candidate) + r"(?![\w-])",
+            re.IGNORECASE if os.name == "nt" else 0,
+        )
+        for candidate in sorted(candidates, key=len, reverse=True)
+    ]
+
+    def scrub(value: object) -> object:
+        if isinstance(value, dict):
+            return {key: scrub(item) for key, item in value.items()}
+        if isinstance(value, list):
+            return [scrub(item) for item in value]
+        if not isinstance(value, str):
+            return value
+        text = value
+        for pattern in patterns:
+            text = pattern.sub(".", text)
+        return text
+
+    public = scrub(payload)
+    project_block = public.get("project")
+    if isinstance(project_block, dict):
+        project_block["root"] = "."
+    return public
+
+
 def main(argv: Optional[Sequence[str]] = None) -> int:
     parser = build_parser()
     args, unknown = parser.parse_known_args(argv)
@@ -568,6 +613,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         return_code = exit_code(payload)
     else:  # pragma: no cover - argparse rejects unknown commands.
         raise AssertionError(args.command)
+    payload = _redact_public_payload(payload, Path(args.project))
     print(json.dumps(payload, sort_keys=True, separators=(",", ":")))
     return return_code
 

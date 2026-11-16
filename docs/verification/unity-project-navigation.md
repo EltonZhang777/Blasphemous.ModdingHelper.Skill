@@ -28,7 +28,7 @@ PowerShell:
 & $PYTHON3 tests\run_unity_real_project_acceptance.py --project '<UNITY_PROJECT_ROOT>'
 ```
 
-The fixed manifest is `tests/fixtures/unity-real-project-smoke.json`. It locks the Unity version, real-tree counts, one complete five-layer scene set, one standalone scene, one flattened Prefab, one script asset, one GUID lookup, one serialized-reference chain, the component-binding census aggregate, and the representative files used for content hashing.
+The operator-local manifest is `tests/fixtures/unity-real-project-smoke.json`; it is ignored and MUST NOT be committed. It locks the Unity version, real-tree counts, fixed sample identities, the component-binding census aggregate, and the representative files used for content hashing. The committed `tests/fixtures/unity-real-project-smoke.example.json` documents the required shape with placeholders and aggregate counts only.
 
 The runner exits with:
 
@@ -36,7 +36,7 @@ The runner exits with:
 - `2` with `status: "blocked"` when the export is missing, unreadable, lacks `Assets`, or lacks `ProjectSettings/ProjectVersion.txt`.
 - `1` with `status: "failed"` when the export is readable but baseline counts, fixed identities, query evidence, or read-only evidence drift.
 
-The JSON report names `evidence_mode: "real_project"` and records the exact scanner commands, statuses, completion evidence, blocked reason when applicable, and next action. Synthetic evidence is named separately and is never substituted for a blocked real run.
+The JSON report names `evidence_mode: "real_project"` and records the exact scanner commands, statuses, completion evidence, blocked reason when applicable, and next action. When a project is supplied, public project-root fields use `.` and omit the absolute export location; a run without a supplied project reports `null`. Synthetic evidence is named separately and is never substituted for a blocked real run.
 
 ## Full binding census
 
@@ -79,14 +79,7 @@ The local report can contain real project-relative sample paths so the operator 
 | C# / DLL / unresolved / null / malformed targets | 68,660 / 2,356 / 4,130 / 1 / 0 |
 | Distinct / non-typical `m_Script.fileID` values | 50 / 6,484 rows |
 
-The fixed smoke resolves:
-
-- Complete scene set `D01BZ01S01` with 1,599 objects and 9,037 references.
-- Standalone scene `Assets/#Design/Scenes/Platform/Preload_Windows.unity` with 5 objects and 21 references.
-- Flattened Prefab `Assets/Resources/inventory/questitem/QI78.prefab` with GUID `01ed6fc6d86656c449f2e9902e9bbb8a`.
-- Script asset `Assets/Plugins/Assembly-CSharp-firstpass/BaseCRTEffect.cs` with no C# parsing.
-- GUID lookup from `01ed6fc6d86656c449f2e9902e9bbb8a` to the QI78 Prefab.
-- Outgoing serialized-reference chain from QI78 object `114940650439655525` through `Assets/Sprite/qi78.asset` to the texture reference in `Assets/Texture2D/items-icons-spritesheet.png`.
+The operator-local manifest selects one complete five-layer scene set, one standalone scene, one flattened Prefab, one script asset, one GUID lookup, one outgoing serialized-reference chain, and the representative files used for content hashing. Those identities remain local and are not part of this record.
 
 ## Read-only evidence
 
