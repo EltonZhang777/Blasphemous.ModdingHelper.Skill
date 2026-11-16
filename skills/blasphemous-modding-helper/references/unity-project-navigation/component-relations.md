@@ -45,9 +45,11 @@ Nodes and edges are sorted deterministically by depth, project-relative path, ob
 ## Limits and incomplete evidence
 
 - `status: "ok"` with `truncated: true` means the edge limit was reached. `complete` is false and `incomplete_reasons` contains `limit`.
-- `status: "timeout"` means the query stopped at the timeout. Any returned traversal evidence is partial, `complete` is false, and `incomplete_reasons` contains `timeout`.
+- `--timeout-seconds` is one absolute deadline for source discovery, external GUID resolution, file parsing, and final completeness evaluation. `status: "timeout"` means the query stopped at that deadline. Any returned traversal evidence is partial, `complete` is false, and `incomplete_reasons` contains `timeout`.
 - An incoming query requires a usable root GUID for external incoming references. A missing or ambiguous GUID leaves external incoming scope unavailable and makes the traversal incomplete.
-- An unreadable or malformed non-target serialized file is skipped with a bounded warning and makes incoming coverage incomplete. A malformed direct target returns structured non-success.
+- A skipped directory or source, unreadable metadata, or parse failure that can hide an incoming reference adds `source_evidence_incomplete` and keeps the traversal incomplete. A malformed direct target returns structured non-success.
+- An unreadable GUID `.meta` file is reported with stable `metadata_unusable` evidence; an unresolved lookup is not reported as a bare missing GUID.
+- Incoming candidate filtering identifies likely GUID-referencing sources before full YAML parsing, keeping unrelated serialized files outside full parsing.
 - Binary assets are not parsed. Their content, dimensions, meshes, audio, and other opaque data are not evidence.
 
 ## Evidence limits

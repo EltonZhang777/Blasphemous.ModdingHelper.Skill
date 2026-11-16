@@ -39,7 +39,7 @@ Each result reports:
 - `guid`: the lowercase sibling `.meta` GUID, or `null`.
 - `metadata`: the expected sibling `.meta` path, metadata status, and parsed `fileFormatVersion` when present.
 
-`metadata.status` is `present`, `missing`, `unusable`, or `duplicate`. A missing or malformed `.meta` does not prevent an exact path lookup from returning the observed file; the result instead carries `metadata_missing` or `metadata_unusable`. Duplicate GUIDs carry `duplicate_guid` and remain ambiguous for a GUID query.
+`metadata.status` is `present`, `missing`, `unusable`, or `duplicate`. A missing or malformed `.meta` does not prevent an exact path lookup from returning the observed file; the result instead carries `metadata_missing` or `metadata_unusable`. A GUID lookup that encounters unreadable metadata reports `metadata_unusable` warning evidence instead of claiming a bare absence. Duplicate GUIDs carry `duplicate_guid` and remain ambiguous for a GUID query.
 
 ## Evidence limits
 

@@ -28,7 +28,7 @@ PowerShell:
 & $PYTHON3 tests\run_unity_real_project_acceptance.py --project '<UNITY_PROJECT_ROOT>'
 ```
 
-The fixed manifest is `tests/fixtures/unity-real-project-smoke.json`. It locks the Unity version, real-tree counts, one complete five-layer scene set, one standalone scene, one flattened Prefab, one script asset, one GUID lookup, one serialized-reference chain, and the representative files used for content hashing.
+The fixed manifest is `tests/fixtures/unity-real-project-smoke.json`. It locks the Unity version, real-tree counts, one complete five-layer scene set, one standalone scene, one flattened Prefab, one script asset, one GUID lookup, one outgoing serialized-reference chain, one incoming local-reference edge, and the representative files used for content hashing.
 
 The runner exits with:
 
@@ -62,6 +62,7 @@ The fixed smoke resolves:
 - Script asset `Assets/Plugins/Assembly-CSharp-firstpass/BaseCRTEffect.cs` with no C# parsing.
 - GUID lookup from `01ed6fc6d86656c449f2e9902e9bbb8a` to the QI78 Prefab.
 - Outgoing serialized-reference chain from QI78 object `114940650439655525` through `Assets/Sprite/qi78.asset` to the texture reference in `Assets/Texture2D/items-icons-spritesheet.png`.
+- Incoming local `m_Component.component` edge from QI78 object `1810135827502625` to object `114940650439655525`.
 
 ## Read-only evidence
 
@@ -69,13 +70,15 @@ The runner snapshots the complete project path inventory before and after all qu
 
 ## Current record
 
-Observed on 2026-11-16 on native Windows with the supplied export:
+Observed on 2026-11-17 on native Windows with the supplied export:
 
 - Assets inventory: 94,153 files.
 - Unity version: `2017.4.40f1`.
 - Complete scene sets: 393; standalone scenes: 5.
 - Real-project extra-file count after the smoke: 0.
 - Representative file content changes after the smoke: 0.
+- Outgoing reference query: `ok`, complete, 7 nodes and 9 edges; no timeout or limit.
+- Incoming reference query: `ok`, complete, 2 nodes and 1 local edge; no timeout or limit.
 
 The real-project report is separate from the synthetic suite and does not claim C# behavior, runtime state, or gameplay.
 

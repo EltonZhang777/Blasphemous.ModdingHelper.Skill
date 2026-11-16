@@ -6,7 +6,7 @@ import os
 import re
 from collections import defaultdict
 from pathlib import Path, PurePosixPath
-from typing import Dict, List, Optional, Sequence, Tuple
+from typing import Callable, Dict, List, Optional, Sequence, Tuple
 
 from .unity_project import (
     EXCLUDED_DIRECTORY_NAMES,
@@ -197,13 +197,19 @@ def _result_key(result: Dict[str, object]) -> Tuple[str, str, str, str]:
 
 
 def _metadata_targets_for_guids(
-    files: Sequence[Path], guids: Sequence[str]
+    root: Path,
+    files: Sequence[Path],
+    guids: Sequence[str],
+    stopped: Optional[Callable[[], bool]] = None,
+    unusable: Optional[List[str]] = None,
 ) -> Dict[str, List[Path]]:
     wanted = {guid.lower() for guid in guids}
     targets: Dict[str, List[Path]] = defaultdict(list)
     if not wanted:
         return targets
     for meta_path in files:
+        if stopped is not None and stopped():
+            break
         if meta_path.suffix.lower() != ".meta" or _is_link_like(meta_path):
             continue
         target = meta_path.with_suffix("")
@@ -214,9 +220,13 @@ def _metadata_targets_for_guids(
         try:
             text = meta_path.read_text(encoding="utf-8")
         except (OSError, UnicodeError):
+            if unusable is not None:
+                unusable.append(_relative(meta_path, root))
             continue
         guid_match = META_GUID.search(text)
         if guid_match is None:
+            if unusable is not None:
+                unusable.append(_relative(meta_path, root))
             continue
         guid = guid_match.group(1).lower()
         if guid not in wanted:
@@ -226,6 +236,8 @@ def _metadata_targets_for_guids(
             try:
                 int(version_match.group(1))
             except ValueError:
+                if unusable is not None:
+                    unusable.append(_relative(meta_path, root))
                 continue
         targets[guid].append(target)
     return targets
@@ -357,7 +369,12 @@ def _normalize_path(root: Path, included_roots: Sequence[Path], value: str) -> P
     return target
 
 
-def asset_query(project: Path, selector: str, value: str) -> Dict[str, object]:
+def asset_query(
+    project: Path,
+    selector: str,
+    value: str,
+    stopped: Optional[Callable[[], bool]] = None,
+) -> Dict[str, object]:
     """Return the version-1 asset lookup envelope."""
 
     root = Path(project)
@@ -374,12 +391,16 @@ def asset_query(project: Path, selector: str, value: str) -> Dict[str, object]:
         "error": None,
     }
     warnings: List[Dict[str, object]] = []
+    timed_out = False
     try:
         root, included_roots = _validated_project(root)
         project_info, version_warnings = _project_info(root, included_roots)
         payload["project"] = project_info
         payload["status"] = "ok"
         warnings.extend(version_warnings)
+        if stopped is not None and stopped():
+            timed_out = True
+            raise NavigationError("timeout", "Asset lookup timed out.")
 
         if selector not in {"path", "guid", "name"}:
             raise NavigationError("invalid_query", f"Unknown asset selector: {selector}")
@@ -398,15 +419,23 @@ def asset_query(project: Path, selector: str, value: str) -> Dict[str, object]:
                 payload["results"] = results
                 warnings.extend(result_warnings)
                 if isinstance(result.get("guid"), str):
-                    files, scan_warnings = _walk_files(root, included_roots)
+                    files, scan_warnings = _walk_files(root, included_roots, stopped)
                     warnings.extend(scan_warnings)
                     _mark_duplicate_guids(
                         results,
                         warnings,
-                        _metadata_targets_for_guids(files, [str(result["guid"])]),
+                        _metadata_targets_for_guids(
+                            root,
+                            files,
+                            [str(result["guid"])],
+                            stopped,
+                        ),
                     )
             else:
                 payload["status"] = "not_found"
+            if stopped is not None and stopped():
+                timed_out = True
+                raise NavigationError("timeout", "Asset lookup timed out.")
         else:
             if selector == "guid":
                 if GUID_PATTERN.fullmatch(value) is None:
@@ -423,14 +452,20 @@ def asset_query(project: Path, selector: str, value: str) -> Dict[str, object]:
                     )
                 payload["query"] = {"selector": selector, "value": value}
 
-            files, scan_warnings = _walk_files(root, included_roots)
+            files, scan_warnings = _walk_files(root, included_roots, stopped)
             warnings.extend(scan_warnings)
             targets_by_guid: Dict[str, List[Path]] = {}
+            if stopped is not None and stopped():
+                timed_out = True
+                raise NavigationError("timeout", "Asset lookup timed out.")
             if selector == "name":
                 folded = value.casefold()
                 matches = set()
                 included = set(included_roots)
                 for path in files:
+                    if stopped is not None and stopped():
+                        timed_out = True
+                        raise NavigationError("timeout", "Asset lookup timed out.")
                     if path.suffix.lower() == ".meta":
                         target = path.with_suffix("")
                         if (
@@ -456,8 +491,24 @@ def asset_query(project: Path, selector: str, value: str) -> Dict[str, object]:
                         parent = parent.parent
             else:
                 query_guid = value.lower()
-                targets_by_guid = _metadata_targets_for_guids(files, [query_guid])
+                unusable_metadata_paths: List[str] = []
+                targets_by_guid = _metadata_targets_for_guids(
+                    root,
+                    files,
+                    [query_guid],
+                    stopped,
+                    unusable_metadata_paths,
+                )
                 matches = targets_by_guid.get(query_guid, [])
+                if not matches:
+                    for relative in sorted(set(unusable_metadata_paths)):
+                        warnings.append(
+                            _warning(
+                                "metadata_unusable",
+                                "Metadata could not be used while resolving the GUID.",
+                                relative,
+                            )
+                        )
 
             results: List[Dict[str, object]] = []
             ordered_matches = sorted(
@@ -475,7 +526,12 @@ def asset_query(project: Path, selector: str, value: str) -> Dict[str, object]:
                     for result in results
                     if isinstance(result.get("guid"), str)
                 ]
-                targets_by_guid = _metadata_targets_for_guids(files, result_guids)
+                targets_by_guid = _metadata_targets_for_guids(
+                    root,
+                    files,
+                    result_guids,
+                    stopped,
+                )
             _mark_duplicate_guids(results, warnings, targets_by_guid)
             payload["results"] = results
             if not results:
@@ -484,9 +540,14 @@ def asset_query(project: Path, selector: str, value: str) -> Dict[str, object]:
                 payload["status"] = "ambiguous"
             else:
                 payload["status"] = "ok"
+            if stopped is not None and stopped():
+                timed_out = True
+                raise NavigationError("timeout", "Asset lookup timed out.")
     except NavigationError as error:
         payload["error"] = {"code": error.code, "message": str(error)}
-        if payload["status"] != "invalid_project":
+        if timed_out:
+            payload["status"] = "timeout"
+        elif payload["status"] != "invalid_project":
             payload["status"] = "invalid_query"
     except OSError as error:
         payload["status"] = "invalid_project"

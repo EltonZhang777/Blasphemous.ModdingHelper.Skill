@@ -77,7 +77,9 @@ class UnityRealProjectAcceptanceTests(unittest.TestCase):
                 for item in report["read_only"]["representative_files"]
             )
         )
-        self.assertIn("references", [item["query"] for item in report["commands"]])
+        command_names = [item["query"] for item in report["commands"]]
+        self.assertIn("references", command_names)
+        self.assertIn("incoming_references", command_names)
 
     def test_manifest_locks_the_real_smoke_identities(self):
         manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
@@ -96,6 +98,9 @@ class UnityRealProjectAcceptanceTests(unittest.TestCase):
             "binary_asset_not_inspected",
             [edge["target_reason"] for edge in manifest["references"]["edges"]],
         )
+        self.assertEqual(manifest["incoming_references"]["direction"], "incoming")
+        self.assertTrue(manifest["incoming_references"]["complete"])
+        self.assertEqual(manifest["incoming_references"]["edge_count"], 1)
 
     def test_six_navigation_topics_are_english_and_reachable(self):
         index = (NAVIGATION / "MAIN.md").read_text(encoding="utf-8")

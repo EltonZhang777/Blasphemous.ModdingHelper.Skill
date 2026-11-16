@@ -9,7 +9,7 @@ import re
 import stat
 from collections import Counter, defaultdict
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional, Sequence, Set, Tuple
+from typing import Callable, Dict, Iterable, List, Optional, Sequence, Set, Tuple
 
 
 SCHEMA_VERSION = 1
@@ -183,10 +183,19 @@ def validate_project_root(project: Path) -> Path:
     return _validated_project(project)[0]
 
 
-def _walk_files(root: Path, included_roots: Sequence[Path]):
+def _walk_files(
+    root: Path,
+    included_roots: Sequence[Path],
+    stopped: Optional[Callable[[], bool]] = None,
+    suffixes: Optional[Sequence[str]] = None,
+):
     warnings: List[Dict[str, object]] = []
     files: List[Path] = []
+    suffixes = frozenset(value.lower() for value in suffixes) if suffixes else None
     for included_root in included_roots:
+        if stopped is not None and stopped():
+            break
+
         def on_error(error: OSError) -> None:
             relative = None
             if error.filename:
@@ -208,9 +217,13 @@ def _walk_files(root: Path, included_roots: Sequence[Path]):
             onerror=on_error,
             followlinks=False,
         ):
+            if stopped is not None and stopped():
+                break
             base = Path(directory)
             kept_names = []
             for name in sorted(names):
+                if stopped is not None and stopped():
+                    break
                 child = base / name
                 if name.casefold() in EXCLUDED_DIRECTORY_NAMES:
                     continue
@@ -234,25 +247,31 @@ def _walk_files(root: Path, included_roots: Sequence[Path]):
                     continue
                 kept_names.append(name)
             names[:] = kept_names
+            if stopped is not None and stopped():
+                break
             for name in sorted(filenames):
+                if stopped is not None and stopped():
+                    break
                 child = base / name
+                if suffixes is not None and child.suffix.lower() not in suffixes:
+                    continue
+                if not _within(child, root):
+                    warnings.append(
+                        _warning(
+                            "symlink_outside_root",
+                            "File symlink resolves outside the Unity project and was not read.",
+                            _relative(child, root),
+                        )
+                    )
+                    continue
                 if _is_link_like(child):
-                    if not _within(child, root):
-                        warnings.append(
-                            _warning(
-                                "symlink_outside_root",
-                                "File symlink resolves outside the Unity project and was not read.",
-                                _relative(child, root),
-                            )
+                    warnings.append(
+                        _warning(
+                            "symlink_not_followed",
+                            "File link was not read.",
+                            _relative(child, root),
                         )
-                    else:
-                        warnings.append(
-                            _warning(
-                                "symlink_not_followed",
-                                "File link was not read.",
-                                _relative(child, root),
-                            )
-                        )
+                    )
                     continue
                 files.append(child)
     return files, warnings

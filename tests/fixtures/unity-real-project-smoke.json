@@ -104,6 +104,28 @@
       }
     ]
   },
+  "incoming_references": {
+    "path": "Assets/Resources/inventory/questitem/QI78.prefab",
+    "object_file_id": 114940650439655525,
+    "direction": "incoming",
+    "depth": 1,
+    "limit": 30,
+    "timeout_seconds": 120,
+    "status": "ok",
+    "complete": true,
+    "node_count": 2,
+    "edge_count": 1,
+    "edges": [
+      {
+        "field": "m_Component.component",
+        "scope": "local",
+        "target_path": "Assets/Resources/inventory/questitem/QI78.prefab",
+        "target_file_id": 114940650439655525,
+        "target_status": "ok",
+        "target_reason": null
+      }
+    ]
+  },
   "representative_files": [
     "Assets/#Design/#CVSTODIA/D01 - Feudal District/D01BZ01 - Mea Culpa/D01BZ01S01 - Arena/D01BZ01S01_MAIN.unity",
     "Assets/#Design/#CVSTODIA/D01 - Feudal District/D01BZ01 - Mea Culpa/D01BZ01S01 - Arena/D01BZ01S01_LOGIC.unity",

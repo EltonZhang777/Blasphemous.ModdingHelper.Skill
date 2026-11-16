@@ -325,8 +325,9 @@ def _verify_guid_lookup(
 def _verify_references(
     payload: Dict[str, object],
     manifest: Dict[str, object],
+    manifest_key: str = "references",
 ) -> None:
-    expected = manifest["references"]
+    expected = manifest[manifest_key]
     _require(payload.get("status") == expected["status"], "Reference status drifted.")
     _require(payload.get("complete") is expected["complete"], "Reference completeness drifted.")
     _require(payload.get("truncated") is False, "Reference query is truncated.")
@@ -587,39 +588,45 @@ def run(
         )
         _verify_guid_lookup(guid_payload, manifest)
 
-        reference_expected = manifest["references"]
-        reference_args = [
-            "references",
-            "--project",
-            str(project_root),
-            "--path",
-            str(reference_expected["path"]),
-            "--object-file-id",
-            str(reference_expected["object_file_id"]),
-            "--direction",
-            str(reference_expected["direction"]),
-            "--depth",
-            str(reference_expected["depth"]),
-            "--limit",
-            str(reference_expected["limit"]),
-            "--timeout-seconds",
-            str(reference_expected["timeout_seconds"]),
-        ]
-        reference_payload, elapsed = _run_scanner(
-            python_executable,
-            project_root,
-            reference_args,
-        )
-        commands.append(
-            _query_record(
+        reference_payloads: Dict[str, Dict[str, object]] = {}
+        for query_name, manifest_key in (
+            ("references", "references"),
+            ("incoming_references", "incoming_references"),
+        ):
+            reference_expected = manifest[manifest_key]
+            reference_args = [
                 "references",
-                reference_args,
+                "--project",
+                str(project_root),
+                "--path",
+                str(reference_expected["path"]),
+                "--object-file-id",
+                str(reference_expected["object_file_id"]),
+                "--direction",
+                str(reference_expected["direction"]),
+                "--depth",
+                str(reference_expected["depth"]),
+                "--limit",
+                str(reference_expected["limit"]),
+                "--timeout-seconds",
+                str(reference_expected["timeout_seconds"]),
+            ]
+            reference_payload, elapsed = _run_scanner(
+                python_executable,
                 project_root,
-                reference_payload,
-                elapsed,
+                reference_args,
             )
-        )
-        _verify_references(reference_payload, manifest)
+            commands.append(
+                _query_record(
+                    query_name,
+                    reference_args,
+                    project_root,
+                    reference_payload,
+                    elapsed,
+                )
+            )
+            _verify_references(reference_payload, manifest, manifest_key)
+            reference_payloads[query_name] = reference_payload
 
         after_paths, after_assets, after_files, after_dirs = _snapshot_paths(
             project_root
@@ -684,7 +691,10 @@ def run(
             "prefab": prefab_payload["results"][0],
             "script": script_payload["results"][0],
             "guid_lookup": guid_payload["results"][0],
-            "references": reference_payload["results"][0],
+            "references": reference_payloads["references"]["results"][0],
+            "incoming_references": reference_payloads[
+                "incoming_references"
+            ]["results"][0],
         }
         report["read_only"] = {
             "path_inventory_entries_before": len(before_paths),

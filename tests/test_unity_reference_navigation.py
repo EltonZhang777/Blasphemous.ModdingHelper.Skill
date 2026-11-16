@@ -1,22 +1,19 @@
 import hashlib
-import itertools
 import json
+import os
 import re
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
-from unittest import mock
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 SKILL_ROOT = REPOSITORY_ROOT / "skills" / "blasphemous-modding-helper"
 SCRIPT_ROOT = SKILL_ROOT / "scripts"
 SCANNER = SCRIPT_ROOT / "unity_project_navigation.py"
-sys.path.insert(0, str(SCRIPT_ROOT))
-
-from blasphemous_modding_helper import unity_references  # noqa: E402
 
 
 A_GUID = "a" * 32
@@ -93,6 +90,30 @@ GameObject:
 BROKEN_PREFAB = """%YAML 1.1
 %TAG !u! tag:unity3d.com,2011:
 --- !u!1 &1
+# guid: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+"""
+
+TARGET_PREFAB = """%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!1 &1
+GameObject:
+  m_Name: Target
+"""
+
+INCOMING_CALLER_PREFAB = """%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!1 &2
+GameObject:
+  m_Name: Caller
+  target: {fileID: 1, guid: 11111111111111111111111111111111, type: 2}
+"""
+
+UNUSABLE_METADATA_PREFAB = """%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!1 &2
+GameObject:
+  m_Name: UnusableMetadataCaller
+  target: {fileID: 1, guid: 22222222222222222222222222222222, type: 2}
 """
 
 SCRIPT_REFERENCE_PREFAB = """%YAML 1.1
@@ -444,30 +465,162 @@ class UnityReferenceNavigationTests(unittest.TestCase):
                 self.assertEqual(payload["error"]["code"], code)
                 self.assertFalse(payload["complete"])
 
-    def test_timeout_is_deterministic_and_marks_partial_evidence_incomplete(self):
-        with mock.patch.object(
-            unity_references,
-            "_monotonic",
-            side_effect=itertools.count(),
-        ):
-            payload = unity_references.references_query(
-                self.root,
-                "path",
-                "Assets/Prefabs/A.prefab",
-                "3",
-                "outgoing",
-                "4",
-                "30",
-                "2",
+    def test_timeout_during_external_guid_lookup_returns_timeout(self):
+        self.write("Assets/NoMeta/Timeout.prefab", A_PREFAB)
+        for index in range(4000):
+            self.write(
+                f"Assets/Metadata/{index // 100:02d}/{index:04d}.asset.meta",
+                f"fileFormatVersion: 2\nguid: {index:032x}\n",
             )
 
+        result = self.run_scanner(
+            "references",
+            "--project",
+            str(self.root),
+            "--path",
+            "Assets/NoMeta/Timeout.prefab",
+            "--object-file-id",
+            "3",
+            "--timeout-seconds",
+            "0.2",
+        )
+        payload = json.loads(result.stdout)
+
+        self.assertEqual(result.returncode, 3, result.stdout + result.stderr)
         self.assertEqual(payload["status"], "timeout")
         self.assertFalse(payload["complete"])
         self.assertEqual(payload["error"]["code"], "timeout")
-        self.assertIn("timeout", payload["results"][0]["incomplete_reasons"])
+        self.assertIn("timeout", payload["incomplete_reasons"])
+        self.assertEqual(payload["root"]["path"], "Assets/NoMeta/Timeout.prefab")
+        self.assertTrue(payload["results"])
         self.assertEqual(payload["results"][0]["status"], "timeout")
-        self.assertGreater(payload["results"][0]["node_count"], 0)
+        self.assertIn(
+            "timeout",
+            payload["results"][0]["incomplete_reasons"],
+        )
         self.assertIn("timeout", [warning["code"] for warning in payload["warnings"]])
+
+    def test_large_incoming_query_filters_non_candidates_before_parse(self):
+        self.add_asset(
+            "Assets/Targets/Target.prefab",
+            TARGET_PREFAB,
+            "1" * 32,
+        )
+        self.add_asset(
+            "Assets/Sources/Caller.prefab",
+            INCOMING_CALLER_PREFAB,
+            "3" * 32,
+        )
+        for index in range(800):
+            self.write(
+                f"Assets/Noise/{index // 80:02d}/Noise{index:04d}.prefab",
+                "not a Unity serialized document\n",
+            )
+
+        started = time.monotonic()
+        _, payload = self.query(
+            "--path",
+            "Assets/Targets/Target.prefab",
+            "--object-file-id",
+            "1",
+            "--direction",
+            "incoming",
+        )
+        elapsed = time.monotonic() - started
+
+        self.assertTrue(payload["complete"])
+        self.assertEqual(payload["incomplete_reasons"], [])
+        self.assertEqual(payload["results"][0]["edge_count"], 1)
+        self.assertEqual(
+            payload["results"][0]["edges"][0]["source"]["path"],
+            "Assets/Sources/Caller.prefab",
+        )
+        self.assertNotIn(
+            "malformed_document",
+            [warning["code"] for warning in payload["warnings"]],
+        )
+        self.assertLess(elapsed, 10.0)
+
+    def test_incoming_skipped_source_marks_evidence_incomplete(self):
+        outside = Path(self.temp_dir.name) / "Outside"
+        outside.mkdir()
+        skipped = self.root / "Assets" / "Skipped"
+        try:
+            os.symlink(outside, skipped, target_is_directory=True)
+        except (OSError, NotImplementedError) as error:
+            self.skipTest(f"directory symlink unavailable: {error}")
+
+        _, payload = self.query(
+            "--path",
+            "Assets/Prefabs/A.prefab",
+            "--object-file-id",
+            "1",
+            "--direction",
+            "incoming",
+        )
+
+        self.assertFalse(payload["complete"])
+        self.assertIn(
+            "source_evidence_incomplete",
+            payload["results"][0]["incomplete_reasons"],
+        )
+        self.assertIn(
+            "source_evidence_incomplete",
+            payload["incomplete_reasons"],
+        )
+
+    def test_unreadable_metadata_is_reported_as_unusable_evidence(self):
+        self.write("Assets/Bad/Bad.prefab", TARGET_PREFAB)
+        self.write(
+            "Assets/UnusableMetadataCaller.prefab",
+            UNUSABLE_METADATA_PREFAB,
+        )
+        self.write(
+            "Assets/UnusableMetadataCaller.prefab.meta",
+            "fileFormatVersion: 2\nguid: 44444444444444444444444444444444\n",
+        )
+        (self.root / "Assets" / "Bad" / "Bad.prefab.meta").write_bytes(
+            b"fileFormatVersion: 2\nguid: 22222222222222222222222222222222\n\xff"
+        )
+
+        result, payload = self.query(
+            "--path",
+            "Assets/UnusableMetadataCaller.prefab",
+            "--object-file-id",
+            "2",
+        )
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertFalse(payload["complete"])
+        self.assertIn(
+            "source_evidence_incomplete",
+            payload["results"][0]["incomplete_reasons"],
+        )
+        edge = payload["results"][0]["edges"][0]
+        self.assertEqual(edge["target"]["status"], "unresolved")
+        self.assertEqual(edge["target"]["reason"], "metadata_unusable")
+        warnings = payload["warnings"]
+        self.assertIn(
+            ("metadata_unusable", "Assets/Bad/Bad.prefab.meta"),
+            [(warning["code"], warning.get("path")) for warning in warnings],
+        )
+
+        asset_result = self.run_scanner(
+            "asset",
+            "--project",
+            str(self.root),
+            "--guid",
+            "22222222222222222222222222222222",
+        )
+        asset_payload = json.loads(asset_result.stdout)
+        self.assertEqual(asset_result.returncode, 2, asset_result.stdout)
+        self.assertIn(
+            ("metadata_unusable", "Assets/Bad/Bad.prefab.meta"),
+            [
+                (warning["code"], warning.get("path"))
+                for warning in asset_payload["warnings"]
+            ],
+        )
 
     def test_missing_and_malformed_targets_are_explicit(self):
         self.add_asset("Assets/Broken/Broken.prefab", BROKEN_PREFAB, "f" * 32)
@@ -648,6 +801,8 @@ class UnityReferenceNavigationTests(unittest.TestCase):
             "unresolved",
             "truncated",
             "timeout",
+            "source_evidence_incomplete",
+            "metadata_unusable",
             "Source analyzer",
             "Completion criteria",
             "Next action",

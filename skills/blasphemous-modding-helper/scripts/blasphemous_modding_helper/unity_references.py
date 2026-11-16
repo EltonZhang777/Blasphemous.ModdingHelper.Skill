@@ -3,21 +3,27 @@
 from __future__ import annotations
 
 import math
+import re
 import time
 from collections import defaultdict, deque
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import Deque, Dict, Iterable, List, Optional, Sequence, Set, Tuple
+from typing import Callable, Deque, Dict, Iterable, List, Optional, Sequence, Set, Tuple
 
 from .unity_assets import (
     BINARY_SUFFIXES,
     GUID_PATTERN,
+    META_GUID,
+    META_VERSION,
     _project_info,
     _read_metadata,
+    _result,
     asset_query,
 )
 from .unity_project import (
     SCHEMA_VERSION,
     NavigationError,
+    _is_link_like,
     _relative,
     _sorted_warnings,
     _validated_project,
@@ -34,6 +40,8 @@ MAX_LIMIT = 100
 DEFAULT_TIMEOUT_SECONDS = 60.0
 MAX_TIMEOUT_SECONDS = 120.0
 MAX_WARNINGS = 50
+READ_WORKERS = 8
+READ_CHUNK_SIZE = 256
 MIN_UNITY_ID = -(2**63)
 MAX_UNITY_ID = 2**63 - 1
 
@@ -72,6 +80,7 @@ SERIALIZED_SUFFIXES = frozenset(
     }
 )
 DIRECTIONS = ("outgoing", "incoming")
+GUID_REFERENCE = re.compile(rb"guid\s*:\s*([0-9A-Fa-f]{32})")
 
 
 class ReferenceError(Exception):
@@ -132,6 +141,60 @@ class _Deadline:
 
     def expired(self) -> bool:
         return _monotonic() >= self.deadline
+
+
+def _parallel_each(
+    paths: Sequence[Path],
+    deadline: _Deadline,
+    worker: Callable[[Path], object],
+    consume: Callable[[Path, object], None],
+) -> bool:
+    if not paths:
+        return False
+    with ThreadPoolExecutor(max_workers=min(READ_WORKERS, len(paths))) as pool:
+        for start in range(0, len(paths), READ_CHUNK_SIZE):
+            if deadline.expired():
+                return True
+            chunk = paths[start : start + READ_CHUNK_SIZE]
+            futures = [pool.submit(worker, path) for path in chunk]
+            for path, future in zip(chunk, futures):
+                if deadline.expired():
+                    for pending in futures:
+                        pending.cancel()
+                    return True
+                consume(path, future.result())
+    return False
+
+
+def _read_metadata_source(path: Path) -> Tuple[str, Optional[str]]:
+    try:
+        text = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as error:
+        return "unreadable", str(error)
+    guid_match = META_GUID.search(text)
+    if guid_match is None:
+        return "invalid_guid", None
+    version_match = META_VERSION.search(text)
+    if version_match is not None:
+        try:
+            int(version_match.group(1))
+        except ValueError:
+            return "invalid_version", None
+    return "ok", guid_match.group(1).lower()
+
+
+def _read_guid_sources(path: Path) -> Tuple[str, object]:
+    try:
+        content = path.read_bytes()
+    except OSError as error:
+        return "unreadable", str(error)
+    return (
+        "ok",
+        {
+            match.group(1).decode("ascii").lower()
+            for match in GUID_REFERENCE.finditer(content)
+        },
+    )
 
 
 def _new_payload(project: Path, query: Dict[str, object]) -> Dict[str, object]:
@@ -369,15 +432,24 @@ class _ReferenceContext:
     def __init__(
         self,
         root: Path,
+        included_roots: Sequence[Path],
         warnings: _WarningLog,
         deadline: _Deadline,
     ) -> None:
         self.root = root
+        self.included_roots = included_roots
         self.warnings = warnings
         self.deadline = deadline
         self.parsed: Dict[str, Tuple[Optional[Dict[str, object]], Optional[SerializedError]]] = {}
         self.guids: Dict[str, Optional[str]] = {}
         self.external: Dict[str, Dict[str, object]] = {}
+        self.metadata_paths: Optional[Dict[str, List[str]]] = None
+        self.metadata_timed_out = False
+        self.metadata_incomplete = False
+        self.incoming_sources: Optional[Dict[str, List[Path]]] = None
+        self.incoming_timed_out = False
+        self.incoming_incomplete = False
+        self.source_incomplete = False
 
     def parse(
         self,
@@ -390,6 +462,7 @@ class _ReferenceContext:
             evidence, parse_warnings = parse_serialized_file(path, self.root)
         except SerializedError as error:
             self.parsed[relative] = (None, error)
+            self.source_incomplete = True
             return None, error
         self.parsed[relative] = (evidence, None)
         self.warnings.add_many(parse_warnings)
@@ -398,14 +471,118 @@ class _ReferenceContext:
     def asset_guid(self, path: Path) -> Optional[str]:
         relative = _relative(path, self.root)
         if relative not in self.guids:
-            guid, _, _ = _read_metadata(self.root, path)
+            guid, metadata, warnings = _read_metadata(self.root, path)
+            self.warnings.add_many(warnings)
+            if metadata["status"] == "unusable":
+                self.source_incomplete = True
             self.guids[relative] = guid
         return self.guids[relative]
 
+    def _external_metadata(self) -> Dict[str, List[str]]:
+        if self.metadata_paths is not None:
+            return self.metadata_paths
+        files, scan_warnings = _walk_files(
+            self.root,
+            self.included_roots,
+            self.deadline.expired,
+            (".meta",),
+        )
+        self.warnings.add_many(scan_warnings)
+        if scan_warnings:
+            self.source_incomplete = True
+            self.metadata_incomplete = True
+        index: Dict[str, List[str]] = defaultdict(list)
+
+        def consume_metadata(meta_path: Path, raw_result: object) -> None:
+            status, value = raw_result
+            relative = _relative(meta_path, self.root)
+            if status == "unreadable":
+                self.warnings.code(
+                    "metadata_unusable",
+                    f"Metadata could not be read: {value}",
+                    relative,
+                )
+                self.metadata_incomplete = True
+                return
+            if status == "invalid_guid":
+                self.warnings.code(
+                    "metadata_unusable",
+                    "Metadata has no valid GUID.",
+                    relative,
+                )
+                self.metadata_incomplete = True
+                return
+            if status == "invalid_version":
+                self.warnings.code(
+                    "metadata_unusable",
+                    "Metadata has an unsupported fileFormatVersion.",
+                    relative,
+                )
+                self.metadata_incomplete = True
+                return
+            target = meta_path.with_suffix("")
+            if target.suffix.lower() == ".meta":
+                return
+            index[str(value)].append(_relative(target, self.root))
+
+        if _parallel_each(
+            files,
+            self.deadline,
+            _read_metadata_source,
+            consume_metadata,
+        ):
+            self.metadata_timed_out = True
+        self.metadata_paths = index
+        if self.deadline.expired():
+            self.metadata_timed_out = True
+        if self.metadata_incomplete:
+            self.source_incomplete = True
+        return index
+
+    def _incoming_source_candidates(self) -> Dict[str, List[Path]]:
+        if self.incoming_sources is not None:
+            return self.incoming_sources
+        files, scan_warnings = _walk_files(
+            self.root,
+            self.included_roots,
+            self.deadline.expired,
+            tuple(SERIALIZED_SUFFIXES),
+        )
+        self.warnings.add_many(scan_warnings)
+        if scan_warnings:
+            self.incoming_incomplete = True
+            self.source_incomplete = True
+        index: Dict[str, List[Path]] = defaultdict(list)
+
+        def consume_source(path: Path, raw_result: object) -> None:
+            status, value = raw_result
+            relative = _relative(path, self.root)
+            if status == "unreadable":
+                self.warnings.code(
+                    "scan_unreadable",
+                    f"Serialized source could not be read while filtering incoming candidates: {value}",
+                    relative,
+                )
+                self.incoming_incomplete = True
+                self.source_incomplete = True
+                return
+            for guid in value:
+                index[str(guid)].append(path)
+
+        if _parallel_each(
+            files,
+            self.deadline,
+            _read_guid_sources,
+            consume_source,
+        ):
+            self.incoming_timed_out = True
+        self.incoming_sources = index
+        if self.deadline.expired():
+            self.incoming_timed_out = True
+        return index
+
     def resolve_external(self, guid: str) -> Dict[str, object]:
         normalized = guid.lower()
-        if normalized in self.external:
-            return self.external[normalized]
         if GUID_PATTERN.fullmatch(normalized) is None:
             result: Dict[str, object] = {
                 "status": "unresolved",
@@ -416,10 +593,31 @@ class _ReferenceContext:
             return result
         if self.deadline.expired():
             return {"status": "timeout", "guid": normalized, "reason": "timeout"}
-        payload = asset_query(self.root, "guid", normalized)
-        self.warnings.add_many(payload["warnings"])
-        if payload["status"] == "ok":
-            asset = payload["results"][0]
+        if normalized in self.external:
+            return self.external[normalized]
+        index = self._external_metadata()
+        if self.metadata_timed_out or self.deadline.expired():
+            return {"status": "timeout", "guid": normalized, "reason": "timeout"}
+        paths: List[str] = []
+        for candidate in index.get(normalized, []):
+            target = self.root / candidate
+            if _is_link_like(target):
+                self.warnings.code(
+                    "metadata_unusable",
+                    "The metadata target is a link and was not followed.",
+                    _relative(target.with_name(target.name + ".meta"), self.root),
+                )
+                self.metadata_incomplete = True
+                self.source_incomplete = True
+                continue
+            if target.is_file() or target.is_dir():
+                paths.append(candidate)
+        paths.sort()
+        if len(paths) == 1:
+            asset, asset_warnings = _result(self.root, self.root / paths[0])
+            self.warnings.add_many(asset_warnings)
+            if self.deadline.expired():
+                return {"status": "timeout", "guid": normalized, "reason": "timeout"}
             result = {
                 "status": "ok",
                 "guid": normalized,
@@ -427,32 +625,28 @@ class _ReferenceContext:
                 "type": asset["type"],
                 "metadata": asset["metadata"],
             }
-        elif payload["status"] == "ambiguous":
+        elif len(paths) > 1:
             result = {
                 "status": "ambiguous",
                 "guid": normalized,
                 "reason": "ambiguous_guid",
-                "candidate_paths": sorted(
-                    str(item["path"]) for item in payload["results"]
-                ),
+                "candidate_paths": paths,
             }
-        elif payload["status"] == "not_found":
+        elif self.metadata_incomplete:
+            result = {
+                "status": "unresolved",
+                "guid": normalized,
+                "reason": "metadata_unusable",
+            }
+        else:
             result = {
                 "status": "unresolved",
                 "guid": normalized,
                 "reason": "guid_not_found",
             }
-        else:
-            code = (
-                str(payload["error"]["code"])
-                if isinstance(payload.get("error"), dict)
-                else "asset_lookup_failed"
-            )
-            result = {
-                "status": "unresolved",
-                "guid": normalized,
-                "reason": code,
-            }
+        if self.metadata_incomplete:
+            result["source_incomplete"] = True
+            self.source_incomplete = True
         self.external[normalized] = result
         return result
 
@@ -772,12 +966,17 @@ def _traverse_outgoing(
             "Reference traversal stopped at the configured timeout.",
             root_path,
         )
+    if context.source_incomplete and "source_evidence_incomplete" not in reasons:
+        reasons.append("source_evidence_incomplete")
+    if deadline.expired() and "timeout" not in reasons:
+        timed_out = True
+        reasons.append("timeout")
     nodes.sort(key=_node_sort_key)
     edges.sort(key=_edge_sort_key)
     return {
         "direction": "outgoing",
         "status": "timeout" if timed_out else "ok",
-        "complete": not truncated and not timed_out,
+        "complete": not truncated and not reasons,
         "incomplete_reasons": reasons,
         "node_count": len(nodes),
         "edge_count": len(edges),
@@ -786,32 +985,86 @@ def _traverse_outgoing(
     }
 
 
-def _build_incoming_index(
+def _incoming_matches(
     context: _ReferenceContext,
-    included_roots: Sequence[Path],
-    root_path: str,
-) -> Tuple[Dict[Tuple[str, str, int], List[Dict[str, object]]], bool, bool]:
-    files, scan_warnings = _walk_files(context.root, included_roots)
-    context.warnings.add_many(scan_warnings)
-    candidates = [
-        path
-        for path in files
-        if _relative(path, context.root) == root_path
-        or path.suffix.lower() in SERIALIZED_SUFFIXES
-    ]
-    candidates.sort(
+    target_path: str,
+    target_file_id: int,
+    target_guid: Optional[str],
+    reasons: List[str],
+) -> Tuple[List[Dict[str, object]], bool]:
+    matches: List[Dict[str, object]] = []
+    evidence, error = context.parse(context.root / target_path)
+    if error is not None:
+        context.warnings.add(
+            _warning(
+                error.warning_code or error.code,
+                str(error),
+                target_path,
+            )
+        )
+        context.source_incomplete = True
+    else:
+        for item in (evidence or {}).get("objects", []):
+            for reference in item["references"]:
+                if (
+                    reference["scope"] != "local"
+                    or int(reference["file_id"]) != target_file_id
+                ):
+                    continue
+                matches.append(
+                    {
+                        "source_path": target_path,
+                        "source_guid": context.asset_guid(context.root / target_path),
+                        "source_file_id": int(item["file_id"]),
+                        "source_object": item,
+                        "field": reference["field"],
+                        "line": reference["line"],
+                        "scope": "local",
+                        "guid": None,
+                        "file_id": int(reference["file_id"]),
+                        "type": reference.get("type"),
+                    }
+                )
+
+    if not isinstance(target_guid, str):
+        return matches, False
+    resolved = context.resolve_external(target_guid)
+    if resolved["status"] == "timeout":
+        return matches, True
+    if (
+        resolved["status"] != "ok"
+        or str(resolved.get("path")) != target_path
+    ):
+        reason = (
+            "ambiguous_guid"
+            if resolved["status"] == "ambiguous"
+            else "external_guid_unresolved"
+        )
+        if reason not in reasons:
+            reasons.append(reason)
+            context.warnings.code(
+                "incoming_external_scope_unavailable",
+                f"External incoming references for GUID {target_guid} are unavailable: {reason}.",
+                target_path,
+            )
+        return matches, False
+
+    sources = context._incoming_source_candidates()
+    if context.incoming_timed_out:
+        return matches, True
+    if context.incoming_incomplete:
+        context.source_incomplete = True
+    for source_path in sorted(
+        sources.get(target_guid, []),
         key=lambda path: (
             _relative(path, context.root).casefold(),
             _relative(path, context.root),
-        )
-    )
-    index: Dict[Tuple[str, str, int], List[Dict[str, object]]] = defaultdict(list)
-    scan_incomplete = False
-    for path in candidates:
+        ),
+    ):
         if context.deadline.expired():
-            return index, True, scan_incomplete
-        relative = _relative(path, context.root)
-        evidence, error = context.parse(path)
+            return matches, True
+        relative = _relative(source_path, context.root)
+        evidence, error = context.parse(source_path)
         if error is not None:
             context.warnings.add(
                 _warning(
@@ -820,22 +1073,19 @@ def _build_incoming_index(
                     relative,
                 )
             )
-            scan_incomplete = True
+            context.source_incomplete = True
             continue
-        source_guid = context.asset_guid(path)
+        source_guid = context.asset_guid(source_path)
         for item in (evidence or {}).get("objects", []):
             for reference in item["references"]:
-                scope = reference["scope"]
-                if scope == "local":
-                    key = ("local", relative, int(reference["file_id"]))
-                elif scope == "external":
-                    guid = str(reference.get("guid") or "").lower()
-                    if GUID_PATTERN.fullmatch(guid) is None:
-                        continue
-                    key = ("external", guid, int(reference["file_id"]))
-                else:
+                guid = str(reference.get("guid") or "").lower()
+                if (
+                    reference["scope"] != "external"
+                    or guid != target_guid
+                    or int(reference["file_id"]) != target_file_id
+                ):
                     continue
-                index[key].append(
+                matches.append(
                     {
                         "source_path": relative,
                         "source_guid": source_guid,
@@ -843,17 +1093,13 @@ def _build_incoming_index(
                         "source_object": item,
                         "field": reference["field"],
                         "line": reference["line"],
-                        "scope": scope,
-                        "guid": (
-                            str(reference.get("guid") or "").lower()
-                            if scope == "external"
-                            else None
-                        ),
+                        "scope": "external",
+                        "guid": guid,
                         "file_id": int(reference["file_id"]),
                         "type": reference.get("type"),
                     }
                 )
-    return index, False, scan_incomplete
+    return matches, False
 
 
 def _incoming_edge_sort_key(item: Dict[str, object]) -> Tuple[object, ...]:
@@ -869,7 +1115,6 @@ def _incoming_edge_sort_key(item: Dict[str, object]) -> Tuple[object, ...]:
 
 def _traverse_incoming(
     context: _ReferenceContext,
-    included_roots: Sequence[Path],
     root_path: str,
     root_guid: Optional[str],
     roots: Sequence[Dict[str, object]],
@@ -903,111 +1148,79 @@ def _traverse_incoming(
             root_path,
         )
 
-    index, index_timed_out, scan_incomplete = _build_incoming_index(
-        context,
-        included_roots,
-        root_path,
-    )
-    if index_timed_out:
-        timed_out = True
-        reasons.append("timeout")
-    if scan_incomplete:
-        reasons.append("source_evidence_incomplete")
-
     edges: List[Dict[str, object]] = []
-    if not timed_out:
-        while queue:
+    while queue:
+        if deadline.expired():
+            timed_out = True
+            reasons.append("timeout")
+            break
+        current_depth, target = queue.popleft()
+        if current_depth >= depth:
+            continue
+        target_guid = target.get("guid")
+        if not isinstance(target_guid, str):
+            if "external_guid_unavailable" not in reasons:
+                reasons.append("external_guid_unavailable")
+                context.warnings.code(
+                    "incoming_external_scope_unavailable",
+                    "An object has no usable asset GUID; external incoming references cannot be observed.",
+                    str(target["path"]),
+                )
+        matches, target_timed_out = _incoming_matches(
+            context,
+            str(target["path"]),
+            int(target["file_id"]),
+            target_guid if isinstance(target_guid, str) else None,
+            reasons,
+        )
+        if target_timed_out:
+            timed_out = True
+            reasons.append("timeout")
+            break
+
+        matches.sort(key=_incoming_edge_sort_key)
+        for item in matches:
+            if len(edges) >= limit:
+                edge_truncated = True
+                break
             if deadline.expired():
                 timed_out = True
                 reasons.append("timeout")
                 break
-            current_depth, target = queue.popleft()
-            if current_depth >= depth:
-                continue
-            target_guid = target.get("guid")
-            local_key = ("local", str(target["path"]), int(target["file_id"]))
-            matches = list(index.get(local_key, []))
-            if isinstance(target_guid, str):
-                resolved = context.resolve_external(target_guid)
-                if resolved["status"] == "timeout":
-                    timed_out = True
-                    reasons.append("timeout")
-                    break
-                if (
-                    resolved["status"] == "ok"
-                    and str(resolved.get("path")) == str(target["path"])
-                ):
-                    matches.extend(
-                        index.get(
-                            ("external", target_guid, int(target["file_id"])),
-                            [],
-                        )
-                    )
-                else:
-                    reason = (
-                        "ambiguous_guid"
-                        if resolved["status"] == "ambiguous"
-                        else "external_guid_unresolved"
-                    )
-                    if reason not in reasons:
-                        reasons.append(reason)
-                        context.warnings.code(
-                            "incoming_external_scope_unavailable",
-                            f"External incoming references for GUID {target_guid} are unavailable: {reason}.",
-                            str(target["path"]),
-                        )
-            else:
-                if "external_guid_unavailable" not in reasons:
-                    reasons.append("external_guid_unavailable")
-                    context.warnings.code(
-                        "incoming_external_scope_unavailable",
-                        "An object has no usable asset GUID; external incoming references cannot be observed.",
-                        str(target["path"]),
-                    )
-
-            matches.sort(key=_incoming_edge_sort_key)
-            for item in matches:
-                if len(edges) >= limit:
-                    edge_truncated = True
-                    break
-                if deadline.expired():
-                    timed_out = True
-                    reasons.append("timeout")
-                    break
-                source = _node(
-                    str(item["source_path"]),
-                    item.get("source_guid"),
-                    int(item["source_file_id"]),
+            source = _node(
+                str(item["source_path"]),
+                item.get("source_guid"),
+                int(item["source_file_id"]),
+                current_depth + 1,
+                serialized_object=item["source_object"],
+            )
+            reference = {
+                "scope": item["scope"],
+                "field": item["field"],
+                "line": item["line"],
+                "guid": item["guid"],
+                "file_id": item["file_id"],
+                "type": item["type"],
+            }
+            edges.append(
+                _make_edge(
                     current_depth + 1,
-                    serialized_object=item["source_object"],
+                    reference,
+                    source,
+                    target,
                 )
-                reference = {
-                    "scope": item["scope"],
-                    "field": item["field"],
-                    "line": item["line"],
-                    "guid": item["guid"],
-                    "file_id": item["file_id"],
-                    "type": item["type"],
-                }
-                edges.append(
-                    _make_edge(
-                        current_depth + 1,
-                        reference,
-                        source,
-                        target,
-                    )
-                )
-                identity = _node_identity(source)
-                if identity not in seen_nodes:
-                    seen_nodes.add(identity)
-                    nodes.append(source)
-                if current_depth + 1 < depth:
-                    key = (str(source["path"]), int(source["file_id"]))
-                    if key not in visited:
-                        visited.add(key)
-                        queue.append((current_depth + 1, source))
-            if edge_truncated or timed_out:
-                break
+            )
+            identity = _node_identity(source)
+            if identity not in seen_nodes:
+                seen_nodes.add(identity)
+                nodes.append(source)
+            if current_depth + 1 < depth:
+                key = (str(source["path"]), int(source["file_id"]))
+                if key not in visited:
+                    visited.add(key)
+                    queue.append((current_depth + 1, source))
+        if edge_truncated or timed_out:
+            break
 
     truncated = root_truncated or edge_truncated
     if truncated:
@@ -1027,6 +1240,11 @@ def _traverse_incoming(
             "Incoming reference traversal stopped at the configured timeout.",
             root_path,
         )
+    if context.source_incomplete and "source_evidence_incomplete" not in reasons:
+        reasons.append("source_evidence_incomplete")
+    if deadline.expired() and "timeout" not in reasons:
+        timed_out = True
+        reasons.append("timeout")
     nodes.sort(key=_node_sort_key)
     edges.sort(key=_edge_sort_key)
     return {
@@ -1112,19 +1330,39 @@ def references_query(
             "max_timeout_seconds": MAX_TIMEOUT_SECONDS,
             "external_identity": "unique_sibling_meta_guid",
         }
+        deadline = _Deadline(timeout_value)
         root, included_roots = _validated_project(Path(project))
         project_info, version_warnings = _project_info(root, included_roots)
         warnings.add_many(version_warnings)
         payload["project"] = project_info
         payload["status"] = "ok"
-        deadline = _Deadline(timeout_value)
 
-        asset_payload = asset_query(root, selector, value)
+        asset_payload = asset_query(root, selector, value, deadline.expired)
         warnings.add_many(asset_payload["warnings"])
         if asset_payload["status"] != "ok":
             payload["status"] = str(asset_payload["status"])
             payload["error"] = asset_payload["error"]
             payload["asset_candidates"] = asset_payload["results"]
+            if payload["status"] == "timeout" or deadline.expired():
+                payload["status"] = "timeout"
+                payload["complete"] = False
+                payload["incomplete_reasons"] = ["timeout"]
+                warnings.code("timeout", "Reference traversal timed out.", None)
+                return payload
+            metadata_unusable = any(
+                warning.get("code") == "metadata_unusable"
+                for warning in asset_payload["warnings"]
+            )
+            if payload["status"] == "not_found" and metadata_unusable:
+                payload["status"] = "source_evidence_incomplete"
+                payload["complete"] = False
+                payload["incomplete_reasons"] = ["source_evidence_incomplete"]
+                warnings.code(
+                    "source_evidence_incomplete",
+                    "The asset selector could not be resolved because metadata is unusable.",
+                    value,
+                )
+                return payload
             warning_code = (
                 "ambiguous_asset"
                 if payload["status"] == "ambiguous"
@@ -1138,6 +1376,16 @@ def references_query(
                 warning_code,
                 "The asset selector did not resolve to exactly one asset.",
             )
+            return payload
+        if deadline.expired():
+            payload["status"] = "timeout"
+            payload["error"] = {
+                "code": "timeout",
+                "message": "Reference traversal timed out during asset lookup.",
+            }
+            payload["complete"] = False
+            payload["incomplete_reasons"] = ["timeout"]
+            warnings.code("timeout", "Reference traversal timed out during asset lookup.")
             return payload
 
         asset = asset_payload["results"][0]
@@ -1181,7 +1429,9 @@ def references_query(
                 status="unsupported_format",
             )
 
-        context = _ReferenceContext(root, warnings, deadline)
+        context = _ReferenceContext(root, included_roots, warnings, deadline)
+        if asset["metadata"]["status"] == "unusable":
+            context.source_incomplete = True
         evidence, parse_error = context.parse(root / root_path)
         if parse_error is not None:
             payload["status"] = parse_error.status
@@ -1264,7 +1514,6 @@ def references_query(
                 results.append(
                     _traverse_incoming(
                         context,
-                        included_roots,
                         root_path,
                         root_guid,
                         roots,
@@ -1273,13 +1522,26 @@ def references_query(
                         deadline,
                     )
                 )
+        if deadline.expired():
+            for item in results:
+                if "timeout" not in item["incomplete_reasons"]:
+                    item["incomplete_reasons"].append("timeout")
+                item["complete"] = False
+                item["status"] = "timeout"
+            warnings.code(
+                "timeout",
+                "Reference traversal timed out before completeness was established.",
+                root_path,
+            )
         payload["results"] = results
         payload["truncated"] = any(bool(item["incomplete_reasons"]) and "limit" in item["incomplete_reasons"] for item in results)
         reasons: Set[str] = set()
         for item in results:
             reasons.update(str(reason) for reason in item["incomplete_reasons"])
         payload["incomplete_reasons"] = sorted(reasons)
-        payload["complete"] = all(bool(item["complete"]) for item in results)
+        payload["complete"] = bool(results) and all(
+            bool(item["complete"]) for item in results
+        ) and not deadline.expired()
         if any(item["status"] == "timeout" for item in results):
             payload["status"] = "timeout"
             payload["error"] = {
