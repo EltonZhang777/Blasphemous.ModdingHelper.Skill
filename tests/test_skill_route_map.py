@@ -45,6 +45,7 @@ class SkillRouteMapTests(unittest.TestCase):
         expected_routes = (
             "localization-lookup.md",
             "source-analyzer.md",
+            "unity-project-navigation.md",
             "log-analyzer.md",
             "blasphemous-modding-test.md",
             "coding-standards.md",
@@ -60,6 +61,7 @@ class SkillRouteMapTests(unittest.TestCase):
             )
         for phrase in (
             "configuration-free operational exception",
+            "Unity project navigation",
             "Caller-owned xUnit does not wait",
             "Real-profile",
             "both",

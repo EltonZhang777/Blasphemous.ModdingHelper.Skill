@@ -77,6 +77,7 @@ After installation, manually activate the skill:
   - **Mod Test** — Build, deploy, launch, inspect startup evidence, stop, clean, and verify in-game behavior with Player or Computer Use
   - **Save Analysis** — Read-only decode and inspect explicit Blasphemous 1 save files under the host temporary directory
   - **Localization Lookup** — Read-only lookup and translation support for Blasphemous 1 terms and UI text
+  - **Unity Project Navigation** — Read-only topology and scene-set summary for an exported Unity project
 - **Configuration Reference** — First-time setup and configuration documentation
 
 Only the top-level `blasphemous-modding-helper` skill is activated. The Agent automatically selects the applicable workflow reference; users do not need to invoke these references directly.
