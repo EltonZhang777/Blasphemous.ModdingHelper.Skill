@@ -426,8 +426,8 @@ class UnityAssetNavigationTests(unittest.TestCase):
                 )
 
     def test_unrelated_link_target_metadata_does_not_affect_guid_result(self):
-        guid = "5" * 32
-        other_guid = "4" * 32
+        guid = "a" * 32
+        other_guid = "b" * 32
         self.add_asset("Assets/Data/shared.asset", "%YAML 1.1\n", guid)
         actual = self.write("Assets/Data/actual.asset", "%YAML 1.1\n")
         linked = self.root / "Assets/Data/linked.asset"
@@ -446,8 +446,11 @@ class UnityAssetNavigationTests(unittest.TestCase):
             ["Assets/Data/shared.asset"],
         )
         self.assertNotIn(
-            "metadata_unusable",
-            [warning["code"] for warning in payload["warnings"]],
+            ("metadata_unusable", "Assets/Data/linked.asset.meta"),
+            [
+                (warning["code"], warning.get("path"))
+                for warning in payload["warnings"]
+            ],
         )
 
     def test_unusable_orphan_metadata_prevents_a_unique_guid_result(self):
@@ -893,7 +896,7 @@ class UnityAssetNavigationTests(unittest.TestCase):
             "--project",
             str(self.root),
             "--path",
-            str(link / "hero.asset"),
+            str(self.root.resolve() / "Assets" / "DataLink" / "hero.asset"),
         )
         payload = json.loads(result.stdout)
 
