@@ -39,6 +39,7 @@ def prefab_query(project: Path, selector: str, value: str) -> Dict[str, object]:
     payload["limits"] = dict(FLATTENED_LIMITS)
     warnings: List[Dict[str, object]] = list(payload["warnings"])
     results = payload["results"]
+    source_ambiguous = payload["status"] == "ambiguous"
 
     if payload["status"] not in {"ok", "ambiguous"}:
         return payload
@@ -54,6 +55,21 @@ def prefab_query(project: Path, selector: str, value: str) -> Dict[str, object]:
         }
         payload["warnings"] = _sorted_warnings(warnings)
         return payload
+    if not prefabs and selector == "guid" and source_ambiguous:
+        payload["status"] = "ambiguous"
+        payload["results"] = [
+            _result_base(result, "ambiguous") for result in results
+        ]
+        payload["error"] = None
+        warnings.append(
+            _warning(
+                "ambiguous_prefab",
+                "The GUID does not resolve to one Prefab asset; "
+                "readable non-Prefab candidates are retained.",
+            )
+        )
+        payload["warnings"] = _sorted_warnings(warnings)
+        return payload
     if not prefabs:
         payload["status"] = "not_found"
         payload["results"] = []
@@ -67,7 +83,7 @@ def prefab_query(project: Path, selector: str, value: str) -> Dict[str, object]:
         payload["warnings"] = _sorted_warnings(warnings)
         return payload
 
-    if selector == "guid" and payload["status"] == "ambiguous" and prefabs and non_prefabs:
+    if selector == "guid" and source_ambiguous and prefabs and non_prefabs:
         payload["status"] = "ambiguous"
         payload["results"] = [
             _result_base(result, "ambiguous") for result in results
@@ -76,14 +92,15 @@ def prefab_query(project: Path, selector: str, value: str) -> Dict[str, object]:
         warnings.append(
             _warning(
                 "ambiguous_prefab",
-                "The GUID identifies both Prefab and non-Prefab assets; no Prefab was selected.",
+                "The GUID identifies both Prefab and non-Prefab assets; "
+                "no Prefab was selected.",
             )
         )
         payload["warnings"] = _sorted_warnings(warnings)
         return payload
 
     prefabs.sort(key=lambda result: str(result["path"]).casefold())
-    if len(prefabs) > 1:
+    if len(prefabs) > 1 or (selector == "guid" and source_ambiguous):
         payload["status"] = "ambiguous"
         payload["results"] = [
             _result_base(result, "ambiguous") for result in prefabs
@@ -92,7 +109,11 @@ def prefab_query(project: Path, selector: str, value: str) -> Dict[str, object]:
         warnings.append(
             _warning(
                 "ambiguous_prefab",
-                f"The selector identifies {len(prefabs)} Prefab assets.",
+                (
+                    f"The selector identifies {len(prefabs)} Prefab assets."
+                    if len(prefabs) > 1
+                    else "Unreadable metadata prevents proving a unique Prefab GUID."
+                ),
             )
         )
         payload["warnings"] = _sorted_warnings(warnings)

@@ -227,16 +227,16 @@ def _walk_files(
                 child = base / name
                 if name.casefold() in EXCLUDED_DIRECTORY_NAMES:
                     continue
-                if not _within(child, root):
-                    warnings.append(
-                        _warning(
-                            "symlink_outside_root",
-                            "Directory resolves outside the Unity project and was not traversed.",
-                            _relative(child, root),
-                        )
-                    )
-                    continue
                 if _is_link_like(child):
+                    if not _within(child, root):
+                        warnings.append(
+                            _warning(
+                                "symlink_outside_root",
+                                "Directory resolves outside the Unity project and was not traversed.",
+                                _relative(child, root),
+                            )
+                        )
+                        continue
                     warnings.append(
                         _warning(
                             "symlink_not_followed",
@@ -255,16 +255,16 @@ def _walk_files(
                 child = base / name
                 if suffixes is not None and child.suffix.lower() not in suffixes:
                     continue
-                if not _within(child, root):
-                    warnings.append(
-                        _warning(
-                            "symlink_outside_root",
-                            "File symlink resolves outside the Unity project and was not read.",
-                            _relative(child, root),
-                        )
-                    )
-                    continue
                 if _is_link_like(child):
+                    if not _within(child, root):
+                        warnings.append(
+                            _warning(
+                                "symlink_outside_root",
+                                "File symlink resolves outside the Unity project and was not read.",
+                                _relative(child, root),
+                            )
+                        )
+                        continue
                     warnings.append(
                         _warning(
                             "symlink_not_followed",
@@ -478,7 +478,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         payload = scene_query(Path(args.project), args.path, args.name, unknown)
         return_code = exit_code(payload)
     elif args.command == "references":
-        from .unity_references import references_query
+        from .unity_references import references_cli_query
 
         if args.path is not None:
             selector, value = "path", args.path
@@ -486,7 +486,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             selector, value = "guid", args.guid
         else:
             selector, value = "name", args.name
-        payload = references_query(
+        payload = references_cli_query(
             Path(args.project),
             selector,
             value,

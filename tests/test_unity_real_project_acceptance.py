@@ -99,6 +99,8 @@ EXPECTED_MANIFEST = {
             {
                 "field": "picture",
                 "scope": "external",
+                "source_path": "Assets/Resources/inventory/questitem/QI78.prefab",
+                "source_file_id": 114940650439655525,
                 "target_path": "Assets/Sprite/qi78.asset",
                 "target_file_id": 21300000,
                 "target_status": "ok",
@@ -107,6 +109,8 @@ EXPECTED_MANIFEST = {
             {
                 "field": "texture",
                 "scope": "external",
+                "source_path": "Assets/Sprite/qi78.asset",
+                "source_file_id": 21300000,
                 "target_path": "Assets/Texture2D/items-icons-spritesheet.png",
                 "target_file_id": 2800000,
                 "target_status": "unsupported",
@@ -115,6 +119,8 @@ EXPECTED_MANIFEST = {
             {
                 "field": "m_Script",
                 "scope": "external",
+                "source_path": "Assets/Resources/inventory/questitem/QI78.prefab",
+                "source_file_id": 114940650439655525,
                 "target_path": "Assets/Scripts/Assembly-CSharp/Framework/Inventory/QuestItem.cs",
                 "target_file_id": 11500000,
                 "target_status": "unsupported",
@@ -137,6 +143,8 @@ EXPECTED_MANIFEST = {
             {
                 "field": "m_Component.component",
                 "scope": "local",
+                "source_path": "Assets/Resources/inventory/questitem/QI78.prefab",
+                "source_file_id": 1810135827502625,
                 "target_path": "Assets/Resources/inventory/questitem/QI78.prefab",
                 "target_file_id": 114940650439655525,
                 "target_status": "ok",
@@ -289,6 +297,10 @@ def successful_scanner_payloads(manifest):
             {
                 "field": edge["field"],
                 "scope": edge["scope"],
+                "source": {
+                    "path": edge["source_path"],
+                    "file_id": edge["source_file_id"],
+                },
                 "target": {
                     "path": edge["target_path"],
                     "file_id": edge["target_file_id"],
@@ -331,6 +343,40 @@ def successful_scanner_payloads(manifest):
 
 
 class UnityRealProjectAcceptanceTests(unittest.TestCase):
+    def run_with_payloads(self, payloads):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "Assets").mkdir()
+            project_settings = root / "ProjectSettings"
+            project_settings.mkdir()
+            (project_settings / "ProjectVersion.txt").write_text(
+                "m_EditorVersion: 2017.4.40f1\n",
+                encoding="utf-8",
+            )
+
+            def successful_scanner(python_executable, project_root, arguments, record):
+                record["status"] = "ok"
+                record["elapsed_seconds"] = 0.01
+                return payloads.pop(0), 0.01
+
+            with mock.patch.object(
+                runner,
+                "_snapshot_paths",
+                return_value=(set(), 94153, 94154, 0),
+            ), mock.patch.object(
+                runner,
+                "_hashes",
+                return_value={
+                    path: "0" * 64
+                    for path in EXPECTED_MANIFEST["representative_files"]
+                },
+            ), mock.patch.object(
+                runner,
+                "_run_scanner",
+                side_effect=successful_scanner,
+            ):
+                return runner.run(sys.executable, str(root))
+
     def test_missing_real_project_is_blocked_not_substituted(self):
         result = run_runner()
 
@@ -343,6 +389,22 @@ class UnityRealProjectAcceptanceTests(unittest.TestCase):
         self.assertTrue(report["blocked_reason"])
         self.assertIn("--project", report["next_action"])
         self.assertEqual(report["commands"], [])
+
+    def test_unresolvable_real_project_path_is_blocked(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "Assets").mkdir()
+            with mock.patch.object(
+                Path,
+                "resolve",
+                side_effect=OSError("link cycle"),
+            ):
+                code, report = runner.run(sys.executable, str(root))
+
+        self.assertEqual(code, 2)
+        self.assertEqual(report["status"], "blocked")
+        self.assertIn("could not be resolved", report["blocked_reason"])
+        self.assertIn("--project", report["next_action"])
 
     def test_real_project_smoke_when_configured(self):
         project = os.environ.get(PROJECT_ENV)
@@ -513,6 +575,45 @@ class UnityRealProjectAcceptanceTests(unittest.TestCase):
                 for item in report["commands"]
             )
         )
+
+    def test_reference_source_drift_fails_the_public_runner(self):
+        payloads = successful_scanner_payloads(EXPECTED_MANIFEST)
+        payloads[6]["results"][0]["edges"][0]["source"]["path"] = (
+            "Assets/Wrong.prefab"
+        )
+
+        code, report = self.run_with_payloads(payloads)
+
+        self.assertEqual(code, 1)
+        self.assertEqual(report["status"], "failed")
+        self.assertIn("Expected reference edge is missing", report["error"])
+
+    def test_reference_source_file_id_drift_fails_the_public_runner(self):
+        payloads = successful_scanner_payloads(EXPECTED_MANIFEST)
+        payloads[6]["results"][0]["edges"][0]["source"]["file_id"] = 0
+
+        code, report = self.run_with_payloads(payloads)
+
+        self.assertEqual(code, 1)
+        self.assertEqual(report["status"], "failed")
+        self.assertIn("Expected reference edge is missing", report["error"])
+
+    def test_completion_assembly_failure_never_reports_ok(self):
+        payloads = successful_scanner_payloads(EXPECTED_MANIFEST)
+
+        with mock.patch.object(
+            runner,
+            "_completion_evidence",
+            side_effect=RuntimeError("completion assembly failed"),
+        ):
+            code, report = self.run_with_payloads(payloads)
+
+        self.assertEqual(code, 1)
+        self.assertEqual(report["status"], "failed")
+        self.assertEqual(report["completion_evidence"], {})
+        self.assertIsNone(report["read_only"])
+        self.assertEqual(report["error"], "completion assembly failed")
+        self.assertIn("do not substitute the synthetic suite", report["next_action"])
 
     def test_six_navigation_topics_are_english_and_reachable(self):
         index = (NAVIGATION / "MAIN.md").read_text(encoding="utf-8")

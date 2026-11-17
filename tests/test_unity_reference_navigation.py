@@ -5,6 +5,7 @@ import re
 import subprocess
 import sys
 import tempfile
+import textwrap
 import time
 import unittest
 from pathlib import Path
@@ -162,16 +163,36 @@ class UnityReferenceNavigationTests(unittest.TestCase):
         self.write(relative + ".meta", f"fileFormatVersion: 2\nguid: {guid}\n")
         return path
 
-    def run_scanner(self, *arguments):
+    def run_scanner(self, *arguments, env=None):
+        environment = os.environ.copy()
+        if env is not None:
+            environment.update(env)
         return subprocess.run(
             [sys.executable, str(SCANNER), *arguments],
             cwd=REPOSITORY_ROOT,
+            env=environment,
             capture_output=True,
             text=True,
             encoding="utf-8",
             errors="replace",
             check=False,
         )
+
+    def sitecustomize(self, source):
+        directory = Path(self.temp_dir.name) / "sitecustomize"
+        directory.mkdir(exist_ok=True)
+        (directory / "sitecustomize.py").write_text(
+            textwrap.dedent(source),
+            encoding="utf-8",
+        )
+        current = os.environ.get("PYTHONPATH")
+        return {
+            "PYTHONPATH": (
+                str(directory)
+                if not current
+                else str(directory) + os.pathsep + current
+            )
+        }
 
     def query(self, *arguments, expected=0):
         result = self.run_scanner(
@@ -466,39 +487,514 @@ class UnityReferenceNavigationTests(unittest.TestCase):
                 self.assertFalse(payload["complete"])
 
     def test_timeout_during_external_guid_lookup_returns_timeout(self):
-        self.write("Assets/NoMeta/Timeout.prefab", A_PREFAB)
-        for index in range(4000):
+        env = self.sitecustomize(
+            """
+            import pathlib
+            import time
+
+            original = pathlib.Path.open
+
+            def open_path(path, *args, **kwargs):
+                if path.name == "B.prefab.meta":
+                    time.sleep(15)
+                return original(path, *args, **kwargs)
+
+            pathlib.Path.open = open_path
+            """
+        )
+        started = time.monotonic()
+        result = self.run_scanner(
+            "references",
+            "--project",
+            str(self.root),
+            "--path",
+            "Assets/Prefabs/A.prefab",
+            "--object-file-id",
+            "3",
+            "--timeout-seconds",
+            "1",
+            env=env,
+        )
+        elapsed = time.monotonic() - started
+        payload = json.loads(result.stdout)
+
+        self.assertEqual(result.returncode, 3, result.stdout + result.stderr)
+        self.assertLess(elapsed, 8.0)
+        self.assertEqual(payload["status"], "timeout")
+        self.assertFalse(payload["complete"])
+        self.assertEqual(payload["error"]["code"], "timeout")
+        self.assertIn("timeout", payload["incomplete_reasons"])
+        self.assertEqual(payload["root"]["path"], "Assets/Prefabs/A.prefab")
+        self.assertIn("timeout", [warning["code"] for warning in payload["warnings"]])
+
+    def test_public_cli_bounds_a_blocked_asset_lookup(self):
+        env = self.sitecustomize(
+            """
+            import pathlib
+            import time
+
+            original = pathlib.Path.open
+
+            def open_path(path, *args, **kwargs):
+                if path.name == "A.prefab.meta":
+                    time.sleep(15)
+                return original(path, *args, **kwargs)
+
+            pathlib.Path.open = open_path
+            """
+        )
+        started = time.monotonic()
+        result = self.run_scanner(
+            "references",
+            "--project",
+            str(self.root),
+            "--path",
+            str(self.root / "Assets/Prefabs/A.prefab"),
+            "--timeout-seconds",
+            "1",
+            env=env,
+        )
+        elapsed = time.monotonic() - started
+        payload = json.loads(result.stdout)
+
+        self.assertEqual(result.returncode, 3, result.stdout + result.stderr)
+        self.assertLess(elapsed, 8.0)
+        self.assertEqual(payload["status"], "timeout")
+        self.assertFalse(payload["complete"])
+        self.assertIn("timeout", payload["incomplete_reasons"])
+        self.assertEqual(payload["root"]["path"], "Assets/Prefabs/A.prefab")
+
+    def test_public_cli_bounds_a_blocked_directory_scan(self):
+        env = self.sitecustomize(
+            """
+            import os
+            import time
+
+            original = os.scandir
+
+            def scandir(*args, **kwargs):
+                time.sleep(15)
+                return original(*args, **kwargs)
+
+            os.scandir = scandir
+            """
+        )
+        started = time.monotonic()
+        result = self.run_scanner(
+            "references",
+            "--project",
+            str(self.root),
+            "--guid",
+            A_GUID,
+            "--timeout-seconds",
+            "1",
+            env=env,
+        )
+        elapsed = time.monotonic() - started
+        payload = json.loads(result.stdout)
+
+        self.assertEqual(result.returncode, 3, result.stdout + result.stderr)
+        self.assertLess(elapsed, 8.0)
+        self.assertEqual(payload["status"], "timeout")
+        self.assertFalse(payload["complete"])
+        self.assertIn("timeout", payload["incomplete_reasons"])
+
+    def test_public_cli_timeout_includes_project_validation(self):
+        env = self.sitecustomize(
+            """
+            import os
+            import pathlib
+            import time
+
+            blocked = pathlib.Path(os.environ["BLOCKED_PROJECT"])
+            original = pathlib.Path.resolve
+
+            def resolve(path, *args, **kwargs):
+                if path == blocked:
+                    time.sleep(5)
+                return original(path, *args, **kwargs)
+
+            pathlib.Path.resolve = resolve
+            """
+        )
+        env["BLOCKED_PROJECT"] = str(self.root)
+        started = time.monotonic()
+        result = self.run_scanner(
+            "references",
+            "--project",
+            str(self.root),
+            "--path",
+            "Assets/Prefabs/A.prefab",
+            "--timeout-seconds",
+            "0.5",
+            env=env,
+        )
+        elapsed = time.monotonic() - started
+        payload = json.loads(result.stdout)
+
+        self.assertEqual(result.returncode, 3, result.stdout + result.stderr)
+        self.assertLess(elapsed, 4.0)
+        self.assertEqual(payload["status"], "timeout")
+        self.assertFalse(payload["complete"])
+        self.assertIn("timeout", payload["incomplete_reasons"])
+
+    def test_ambiguous_guid_root_records_incomplete_source_evidence(self):
+        self.write("Assets/Bad/Broken.asset", "%YAML 1.1\n")
+        (self.root / "Assets/Bad/Broken.asset.meta").write_bytes(
+            b"\xff\xfe\x00not-utf8"
+        )
+
+        result, payload = self.query("--guid", A_GUID, expected=2)
+
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertEqual(payload["status"], "ambiguous")
+        self.assertFalse(payload["complete"])
+        self.assertIn(
+            "source_evidence_incomplete",
+            payload["incomplete_reasons"],
+        )
+        warning_codes = [warning["code"] for warning in payload["warnings"]]
+        self.assertIn("metadata_unusable", warning_codes)
+        self.assertIn("source_evidence_incomplete", warning_codes)
+        self.assertEqual(
+            [candidate["path"] for candidate in payload["asset_candidates"]],
+            ["Assets/Prefabs/A.prefab"],
+        )
+
+    def test_reference_query_reaches_traversal_with_large_metadata_tree(self):
+        for index in range(800):
+            self.write(
+                f"Assets/Metadata/{index // 100:02d}/{index:04d}.asset",
+                "%YAML 1.1\n",
+            )
             self.write(
                 f"Assets/Metadata/{index // 100:02d}/{index:04d}.asset.meta",
                 f"fileFormatVersion: 2\nguid: {index:032x}\n",
             )
+
+        _, payload = self.query(
+            "--path",
+            "Assets/Prefabs/A.prefab",
+            "--object-file-id",
+            "3",
+            "--timeout-seconds",
+            "10",
+        )
+
+        self.assertTrue(payload["complete"])
+        self.assertEqual(payload["status"], "ok")
+        self.assertEqual(payload["results"][0]["edge_count"], 5)
+
+    def test_external_target_is_ambiguous_when_metadata_is_incomplete(self):
+        self.write("Assets/Prefabs/Unknown.prefab", A_PREFAB)
+        self.write("Assets/Prefabs/Unknown.prefab.meta", "not read")
+        env = self.sitecustomize(
+            """
+            import pathlib
+
+            original = pathlib.Path.read_text
+
+            def read_text(path, *args, **kwargs):
+                if path.name == "Unknown.prefab.meta":
+                    raise PermissionError("metadata denied")
+                return original(path, *args, **kwargs)
+
+            pathlib.Path.read_text = read_text
+            """
+        )
 
         result = self.run_scanner(
             "references",
             "--project",
             str(self.root),
             "--path",
-            "Assets/NoMeta/Timeout.prefab",
+            "Assets/Prefabs/A.prefab",
             "--object-file-id",
             "3",
             "--timeout-seconds",
-            "0.2",
+            "10",
+            env=env,
         )
         payload = json.loads(result.stdout)
 
-        self.assertEqual(result.returncode, 3, result.stdout + result.stderr)
-        self.assertEqual(payload["status"], "timeout")
-        self.assertFalse(payload["complete"])
-        self.assertEqual(payload["error"]["code"], "timeout")
-        self.assertIn("timeout", payload["incomplete_reasons"])
-        self.assertEqual(payload["root"]["path"], "Assets/NoMeta/Timeout.prefab")
-        self.assertTrue(payload["results"])
-        self.assertEqual(payload["results"][0]["status"], "timeout")
-        self.assertIn(
-            "timeout",
-            payload["results"][0]["incomplete_reasons"],
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        edges = payload["results"][0]["edges"]
+        target = next(
+            edge["target"]
+            for edge in edges
+            if edge["target"].get("guid") == B_GUID
         )
-        self.assertIn("timeout", [warning["code"] for warning in payload["warnings"]])
+        self.assertEqual(target["status"], "ambiguous")
+        self.assertEqual(target["reason"], "metadata_unusable")
+        self.assertEqual(
+            target["candidate_paths"],
+            ["Assets/Prefabs/B.prefab"],
+        )
+
+    def test_external_target_with_unusable_version_is_not_ok(self):
+        self.write(
+            "Assets/Prefabs/B.prefab.meta",
+            "fileFormatVersion: 1234567890\n"
+            f"guid: {B_GUID}\n",
+        )
+
+        _, payload = self.query(
+            "--path",
+            "Assets/Prefabs/A.prefab",
+            "--object-file-id",
+            "3",
+            "--timeout-seconds",
+            "10",
+        )
+
+        edges = payload["results"][0]["edges"]
+        target = next(
+            edge["target"]
+            for edge in edges
+            if edge["target"].get("guid") == B_GUID
+        )
+        self.assertNotEqual(target["status"], "ok")
+        self.assertEqual(target["reason"], "metadata_unusable")
+        self.assertFalse(payload["complete"])
+
+    def test_external_target_with_duplicate_guid_entries_is_not_ok(self):
+        self.write(
+            "Assets/Prefabs/B.prefab.meta",
+            f"\ufeffguid:{B_GUID}\n"
+            f"guid : {'e' * 32} # duplicate\n",
+        )
+
+        _, payload = self.query(
+            "--path",
+            "Assets/Prefabs/A.prefab",
+            "--object-file-id",
+            "3",
+            "--timeout-seconds",
+            "10",
+        )
+
+        target = next(
+            edge["target"]
+            for edge in payload["results"][0]["edges"]
+            if edge["target"].get("guid") == B_GUID
+        )
+        self.assertNotEqual(target["status"], "ok")
+        self.assertEqual(target["reason"], "metadata_unusable")
+        self.assertFalse(payload["complete"])
+
+    def test_external_target_with_readable_orphan_metadata_is_not_ok(self):
+        self.write(
+            "Assets/Orphans/B.prefab.meta",
+            f"fileFormatVersion: 2\nguid: {B_GUID}\n",
+        )
+
+        _, payload = self.query(
+            "--path",
+            "Assets/Prefabs/A.prefab",
+            "--object-file-id",
+            "3",
+            "--timeout-seconds",
+            "10",
+        )
+
+        target = next(
+            edge["target"]
+            for edge in payload["results"][0]["edges"]
+            if edge["target"].get("guid") == B_GUID
+        )
+        self.assertEqual(target["status"], "ambiguous")
+        self.assertEqual(target["reason"], "metadata_unusable")
+        self.assertFalse(payload["complete"])
+        self.assertIn(
+            ("metadata_unusable", "Assets/Orphans/B.prefab.meta"),
+            [
+                (warning["code"], warning.get("path"))
+                for warning in payload["warnings"]
+            ],
+        )
+
+    def test_unrelated_orphan_unsupported_version_does_not_poison_external_guid(self):
+        self.write(
+            "Assets/Orphans/F.prefab.meta",
+            "fileFormatVersion: 1234567890\n"
+            f"guid: {'6' * 32}\n",
+        )
+
+        _, payload = self.query(
+            "--path",
+            "Assets/Prefabs/A.prefab",
+            "--object-file-id",
+            "3",
+            "--timeout-seconds",
+            "10",
+        )
+
+        target = next(
+            edge["target"]
+            for edge in payload["results"][0]["edges"]
+            if edge["target"].get("guid") == B_GUID
+        )
+        self.assertEqual(target["status"], "ok")
+        self.assertTrue(payload["complete"])
+        self.assertNotIn(
+            "metadata_unusable",
+            [warning["code"] for warning in payload["warnings"]],
+        )
+
+    def test_unrelated_duplicate_guid_metadata_does_not_poison_external_guids(self):
+        self.write(
+            "Assets/Other/D.prefab.meta",
+            "fileFormatVersion: 2\n"
+            f"guid: {'4' * 32}\n"
+            f"guid: {'5' * 32}\n",
+        )
+
+        _, payload = self.query(
+            "--path",
+            "Assets/Prefabs/A.prefab",
+            "--object-file-id",
+            "3",
+            "--timeout-seconds",
+            "10",
+        )
+
+        targets = {
+            edge["target"]["guid"]: edge["target"]
+            for edge in payload["results"][0]["edges"]
+        }
+        self.assertEqual(targets[B_GUID]["status"], "ok")
+        self.assertEqual(targets[UNRESOLVED_GUID]["status"], "unresolved")
+        self.assertEqual(
+            targets[UNRESOLVED_GUID]["reason"],
+            "guid_not_found",
+        )
+        self.assertNotIn(
+            "metadata_unusable",
+            [warning["code"] for warning in payload["warnings"]],
+        )
+
+    def test_orphan_guid_without_a_selectable_path_is_ambiguous(self):
+        self.add_asset(
+            "Assets/Prefabs/OrphanFirst.prefab",
+            """%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!1 &1
+GameObject:
+  orphanFirst: {fileID: 1, guid: 66666666666666666666666666666666, type: 2}
+  resolvedAfter: {fileID: 10, guid: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb, type: 2}
+""",
+            "9" * 32,
+        )
+        self.write(
+            "Assets/Orphans/F.prefab.meta",
+            "fileFormatVersion: 2\n"
+            f"guid: {'6' * 32}\n",
+        )
+
+        _, payload = self.query(
+            "--path",
+            "Assets/Prefabs/OrphanFirst.prefab",
+            "--object-file-id",
+            "1",
+            "--timeout-seconds",
+            "10",
+        )
+
+        targets = {
+            edge["target"]["guid"]: edge["target"]
+            for edge in payload["results"][0]["edges"]
+        }
+        orphan_target = targets["6" * 32]
+        resolved_target = targets[B_GUID]
+        self.assertEqual(orphan_target["status"], "ambiguous")
+        self.assertEqual(orphan_target["reason"], "metadata_unusable")
+        self.assertEqual(resolved_target["status"], "ok")
+        self.assertFalse(payload["complete"])
+
+    def test_linked_guid_does_not_poison_a_later_external_guid(self):
+        self.add_asset(
+            "Assets/Prefabs/LinkedFirst.prefab",
+            """%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!1 &1
+GameObject:
+  linkedFirst: {fileID: 1, guid: 77777777777777777777777777777777, type: 2}
+  resolvedAfter: {fileID: 10, guid: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb, type: 2}
+""",
+            "8" * 32,
+        )
+        actual = self.write("Assets/Links/actual.prefab", TARGET_PREFAB)
+        linked = self.root / "Assets/Links/linked.prefab"
+        try:
+            os.symlink(actual, linked)
+        except (OSError, NotImplementedError) as error:
+            self.skipTest(f"file symlink unavailable: {error}")
+        self.write(
+            "Assets/Links/linked.prefab.meta",
+            "fileFormatVersion: 2\n"
+            f"guid: {'7' * 32}\n",
+        )
+
+        _, payload = self.query(
+            "--path",
+            "Assets/Prefabs/LinkedFirst.prefab",
+            "--object-file-id",
+            "1",
+            "--timeout-seconds",
+            "10",
+        )
+
+        targets = {
+            edge["target"]["guid"]: edge["target"]
+            for edge in payload["results"][0]["edges"]
+        }
+        linked_target = targets["7" * 32]
+        resolved_target = next(
+            edge["target"]
+            for edge in payload["results"][0]["edges"]
+            if edge["target"].get("guid") == B_GUID
+        )
+        self.assertEqual(linked_target["status"], "ambiguous")
+        self.assertEqual(linked_target["reason"], "metadata_unusable")
+        self.assertEqual(resolved_target["status"], "ok")
+        self.assertFalse(payload["complete"])
+        self.assertIn(
+            ("metadata_unusable", "Assets/Links/linked.prefab.meta"),
+            [
+                (warning["code"], warning.get("path"))
+                for warning in payload["warnings"]
+            ],
+        )
+
+    def test_tiny_timeout_does_not_hide_invalid_arguments(self):
+        cases = (
+            (
+                ("--path", "Assets/Prefabs/A.prefab", "--direction", "sideways"),
+                "invalid_direction",
+            ),
+            (("--guid", "not-a-guid"), "invalid_guid"),
+            (("--name", "A/B"), "invalid_name"),
+            (("--path", "Assets/../escape.prefab"), "path_traversal"),
+        )
+        for arguments, error_code in cases:
+            with self.subTest(error_code=error_code):
+                result = self.run_scanner(
+                    "references",
+                    "--project",
+                    str(self.root),
+                    *arguments,
+                    "--timeout-seconds",
+                    "0.001",
+                )
+                payload = json.loads(result.stdout)
+
+                self.assertEqual(
+                    result.returncode,
+                    3,
+                    result.stdout + result.stderr,
+                )
+                self.assertEqual(payload["status"], "invalid_query")
+                self.assertEqual(payload["error"]["code"], error_code)
 
     def test_large_incoming_query_filters_non_candidates_before_parse(self):
         self.add_asset(

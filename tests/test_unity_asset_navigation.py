@@ -5,6 +5,8 @@ import re
 import subprocess
 import sys
 import tempfile
+import textwrap
+import time
 import unittest
 from pathlib import Path
 
@@ -63,16 +65,36 @@ class UnityAssetNavigationTests(unittest.TestCase):
         self.write_meta(relative + ".meta", guid)
         return path
 
-    def run_scanner(self, *arguments):
+    def run_scanner(self, *arguments, env=None):
+        environment = os.environ.copy()
+        if env is not None:
+            environment.update(env)
         return subprocess.run(
             [sys.executable, str(SCANNER), *arguments],
             cwd=REPOSITORY_ROOT,
+            env=environment,
             capture_output=True,
             text=True,
             encoding="utf-8",
             errors="replace",
             check=False,
         )
+
+    def sitecustomize(self, source):
+        directory = Path(self.temp_dir.name) / "sitecustomize"
+        directory.mkdir(exist_ok=True)
+        (directory / "sitecustomize.py").write_text(
+            textwrap.dedent(source),
+            encoding="utf-8",
+        )
+        current = os.environ.get("PYTHONPATH")
+        return {
+            "PYTHONPATH": (
+                str(directory)
+                if not current
+                else str(directory) + os.pathsep + current
+            )
+        }
 
     def query(self, selector, value, expected_returncode):
         result = self.run_scanner(
@@ -222,7 +244,7 @@ class UnityAssetNavigationTests(unittest.TestCase):
         )
         self.assertEqual(
             [warning["code"] for warning in payload["warnings"]],
-            ["duplicate_guid", "duplicate_guid"],
+            ["duplicate_guid", "duplicate_guid", "metadata_unusable"],
         )
 
     def test_exact_path_and_name_mark_duplicates_outside_the_result_set(self):
@@ -314,14 +336,433 @@ class UnityAssetNavigationTests(unittest.TestCase):
         result, payload = self.query("path", "Assets/Data/huge.asset", 0)
 
         self.assertEqual(result.returncode, 0)
-        self.assertIsNone(payload["results"][0]["guid"])
+        self.assertEqual(payload["results"][0]["guid"], "b" * 32)
         self.assertEqual(payload["results"][0]["metadata"]["status"], "unusable")
         self.assertIn(
             "metadata_unusable",
             [warning["code"] for warning in payload["warnings"]],
         )
         _, guid_payload = self.query("guid", "b" * 32, 2)
-        self.assertEqual(guid_payload["status"], "not_found")
+        self.assertEqual(guid_payload["status"], "ambiguous")
+        self.assertEqual(
+            [item["path"] for item in guid_payload["results"]],
+            ["Assets/Data/huge.asset"],
+        )
+
+    def test_mixed_unusable_metadata_prevents_a_unique_guid_result(self):
+        guid = "f" * 32
+        self.add_asset("Assets/Data/shared.asset", "%YAML 1.1\n", guid)
+        self.write("Assets/Bad/unreadable.asset", "%YAML 1.1\n")
+        self.write(
+            "Assets/Bad/unreadable.asset.meta",
+            b"\xff\xfe\x00not-utf8",
+        )
+
+        _, guid_payload = self.query("guid", guid, 2)
+
+        self.assertEqual(guid_payload["status"], "ambiguous")
+        self.assertEqual(
+            [item["path"] for item in guid_payload["results"]],
+            ["Assets/Data/shared.asset"],
+        )
+        self.assertIn(
+            ("metadata_unusable", "Assets/Bad/unreadable.asset.meta"),
+            [
+                (warning["code"], warning.get("path"))
+                for warning in guid_payload["warnings"]
+            ],
+        )
+        for selector, value in (
+            ("path", "Assets/Data/shared.asset"),
+            ("name", "shared"),
+        ):
+            with self.subTest(selector=selector):
+                _, payload = self.query(selector, value, 0)
+                self.assertEqual(
+                    [item["path"] for item in payload["results"]],
+                    ["Assets/Data/shared.asset"],
+                )
+                self.assertIn(
+                    "metadata_unusable",
+                    [warning["code"] for warning in payload["warnings"]],
+                )
+
+    def test_link_target_metadata_prevents_a_unique_guid_result(self):
+        guid = "9" * 32
+        self.add_asset("Assets/Data/shared.asset", "%YAML 1.1\n", guid)
+        actual = self.write("Assets/Data/actual.asset", "%YAML 1.1\n")
+        linked = self.root / "Assets/Data/linked.asset"
+        try:
+            os.symlink(actual, linked)
+        except (OSError, NotImplementedError) as error:
+            self.skipTest(f"file symlink unavailable: {error}")
+        self.write_meta("Assets/Data/linked.asset.meta", guid)
+
+        _, guid_payload = self.query("guid", guid, 2)
+
+        self.assertEqual(guid_payload["status"], "ambiguous")
+        self.assertEqual(
+            [item["path"] for item in guid_payload["results"]],
+            ["Assets/Data/shared.asset"],
+        )
+        self.assertIn(
+            ("metadata_unusable", "Assets/Data/linked.asset.meta"),
+            [
+                (warning["code"], warning.get("path"))
+                for warning in guid_payload["warnings"]
+            ],
+        )
+        for selector, value in (
+            ("path", "Assets/Data/shared.asset"),
+            ("name", "shared"),
+        ):
+            with self.subTest(selector=selector):
+                _, payload = self.query(selector, value, 0)
+
+                self.assertEqual(payload["status"], "ok")
+                self.assertIn(
+                    "metadata_unusable",
+                    [warning["code"] for warning in payload["warnings"]],
+                )
+
+    def test_unrelated_link_target_metadata_does_not_affect_guid_result(self):
+        guid = "5" * 32
+        other_guid = "4" * 32
+        self.add_asset("Assets/Data/shared.asset", "%YAML 1.1\n", guid)
+        actual = self.write("Assets/Data/actual.asset", "%YAML 1.1\n")
+        linked = self.root / "Assets/Data/linked.asset"
+        try:
+            os.symlink(actual, linked)
+        except (OSError, NotImplementedError) as error:
+            self.skipTest(f"file symlink unavailable: {error}")
+        self.write_meta("Assets/Data/linked.asset.meta", other_guid)
+
+        result, payload = self.query("guid", guid, 0)
+
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(payload["status"], "ok")
+        self.assertEqual(
+            [item["path"] for item in payload["results"]],
+            ["Assets/Data/shared.asset"],
+        )
+        self.assertNotIn(
+            "metadata_unusable",
+            [warning["code"] for warning in payload["warnings"]],
+        )
+
+    def test_unusable_orphan_metadata_prevents_a_unique_guid_result(self):
+        guid = "f" * 32
+        self.add_asset("Assets/Data/shared.asset", "%YAML 1.1\n", guid)
+        orphan = self.root / "Assets/Bad/orphan.asset.meta"
+        orphan.parent.mkdir(parents=True)
+        orphan.write_bytes(b"\xff\xfe\x00not-utf8")
+
+        _, payload = self.query("guid", guid, 2)
+
+        self.assertEqual(payload["status"], "ambiguous")
+        self.assertEqual(
+            [item["path"] for item in payload["results"]],
+            ["Assets/Data/shared.asset"],
+        )
+        self.assertIn(
+            ("metadata_unusable", "Assets/Bad/orphan.asset.meta"),
+            [
+                (warning["code"], warning.get("path"))
+                for warning in payload["warnings"]
+            ],
+        )
+
+    def test_readable_orphan_metadata_prevents_a_unique_guid_result(self):
+        guid = "7" * 32
+        self.add_asset("Assets/Data/shared.asset", "%YAML 1.1\n", guid)
+        self.write_meta("Assets/Bad/orphan.asset.meta", guid)
+
+        _, guid_payload = self.query("guid", guid, 2)
+
+        self.assertEqual(guid_payload["status"], "ambiguous")
+        self.assertEqual(
+            [item["path"] for item in guid_payload["results"]],
+            ["Assets/Data/shared.asset"],
+        )
+        self.assertIn(
+            ("metadata_unusable", "Assets/Bad/orphan.asset.meta"),
+            [
+                (warning["code"], warning.get("path"))
+                for warning in guid_payload["warnings"]
+            ],
+        )
+        for selector, value in (
+            ("path", "Assets/Data/shared.asset"),
+            ("name", "shared"),
+        ):
+            with self.subTest(selector=selector):
+                _, payload = self.query(selector, value, 0)
+
+                self.assertEqual(payload["status"], "ok")
+                self.assertIn(
+                    "metadata_unusable",
+                    [warning["code"] for warning in payload["warnings"]],
+                )
+
+    def test_orphan_metadata_with_unsupported_version_is_not_a_candidate(self):
+        guid = "6" * 32
+        self.add_asset("Assets/Data/shared.asset", "%YAML 1.1\n", guid)
+        self.write(
+            "Assets/Bad/missing.asset.meta",
+            f"fileFormatVersion: 1234567890\nguid: {guid}\n",
+        )
+
+        _, payload = self.query("guid", guid, 2)
+
+        self.assertEqual(payload["status"], "ambiguous")
+        self.assertEqual(
+            [item["path"] for item in payload["results"]],
+            ["Assets/Data/shared.asset"],
+        )
+        self.assertNotIn(
+            "duplicate_guid",
+            [warning["code"] for warning in payload["warnings"]],
+        )
+        self.assertIn(
+            ("metadata_unusable", "Assets/Bad/missing.asset.meta"),
+            [
+                (warning["code"], warning.get("path"))
+                for warning in payload["warnings"]
+            ],
+        )
+
+    def test_invalid_guid_metadata_prevents_a_unique_guid_result(self):
+        guid = "d" * 32
+        self.add_asset("Assets/Data/shared.asset", "%YAML 1.1\n", guid)
+        self.write("Assets/Bad/suspect.asset", "%YAML 1.1\n")
+        self.write(
+            "Assets/Bad/suspect.asset.meta",
+            f"fileFormatVersion: 2\nguid: {guid} # unparsed\n",
+        )
+
+        _, payload = self.query("guid", guid, 2)
+
+        self.assertEqual(payload["status"], "ambiguous")
+        self.assertEqual(
+            [item["path"] for item in payload["results"]],
+            ["Assets/Data/shared.asset"],
+        )
+        self.assertIn(
+            ("metadata_unusable", "Assets/Bad/suspect.asset.meta"),
+            [
+                (warning["code"], warning.get("path"))
+                for warning in payload["warnings"]
+            ],
+        )
+
+    def test_duplicate_guid_entries_do_not_select_the_first_identity(self):
+        first_guid = "a" * 32
+        second_guid = "b" * 32
+        self.write("Assets/Data/conflict.asset", "%YAML 1.1\n")
+        self.write(
+            "Assets/Data/conflict.asset.meta",
+            "fileFormatVersion: 2\n"
+            f"guid:{first_guid}\n"
+            f"guid : {second_guid} # duplicate\n",
+        )
+
+        for guid in (first_guid, second_guid):
+            with self.subTest(guid=guid):
+                _, payload = self.query("guid", guid, 2)
+
+                self.assertEqual(payload["status"], "ambiguous")
+                self.assertEqual(payload["results"], [])
+                self.assertIn(
+                    ("metadata_unusable", "Assets/Data/conflict.asset.meta"),
+                    [
+                        (warning["code"], warning.get("path"))
+                        for warning in payload["warnings"]
+                    ],
+                )
+
+        _, path_payload = self.query("path", "Assets/Data/conflict.asset", 0)
+        self.assertIsNone(path_payload["results"][0]["guid"])
+        self.assertEqual(
+            path_payload["results"][0]["metadata"]["status"],
+            "unusable",
+        )
+
+    def test_compact_guid_metadata_is_accepted(self):
+        guid = "c" * 32
+        self.write("Assets/Data/compact.asset", "%YAML 1.1\n")
+        self.write(
+            "Assets/Data/compact.asset.meta",
+            f"fileFormatVersion: 2\nguid:{guid}\n",
+        )
+
+        _, payload = self.query("path", "Assets/Data/compact.asset", 0)
+
+        self.assertEqual(payload["status"], "ok")
+        self.assertEqual(payload["results"][0]["guid"], guid)
+
+    def test_bom_duplicate_guid_entries_do_not_select_the_first_identity(self):
+        first_guid = "a" * 32
+        second_guid = "b" * 32
+        self.write("Assets/Data/bom-conflict.asset", "%YAML 1.1\n")
+        self.write(
+            "Assets/Data/bom-conflict.asset.meta",
+            f"\ufeffguid: {first_guid}\n"
+            f"guid: {second_guid}\n",
+        )
+
+        for guid in (first_guid, second_guid):
+            with self.subTest(guid=guid):
+                _, payload = self.query("guid", guid, 2)
+
+                self.assertEqual(payload["status"], "ambiguous")
+                self.assertEqual(payload["results"], [])
+
+        _, path_payload = self.query("path", "Assets/Data/bom-conflict.asset", 0)
+        self.assertIsNone(path_payload["results"][0]["guid"])
+        self.assertEqual(
+            path_payload["results"][0]["metadata"]["status"],
+            "unusable",
+        )
+
+    def test_metadata_warnings_are_bounded(self):
+        guid = "e" * 32
+        self.add_asset("Assets/Data/shared.asset", "%YAML 1.1\n", guid)
+        for index in range(49):
+            self.add_asset(
+                f"Assets/Data/shared-{index:02d}.asset",
+                "%YAML 1.1\n",
+                guid,
+            )
+        for index in range(80):
+            self.write(f"Assets/Bad/{index:03d}.asset", "%YAML 1.1\n")
+            (self.root / f"Assets/Bad/{index:03d}.asset.meta").write_bytes(
+                b"\xff\xfe\x00not-utf8"
+            )
+
+        _, payload = self.query("guid", guid, 2)
+
+        self.assertLessEqual(len(payload["warnings"]), 51)
+        self.assertIn(
+            "metadata_unusable",
+            [warning["code"] for warning in payload["warnings"]],
+        )
+        self.assertIn(
+            "warnings_truncated",
+            [warning["code"] for warning in payload["warnings"]],
+        )
+
+    def test_guid_query_treats_unreadable_scan_area_as_incomplete(self):
+        guid = "c" * 32
+        self.add_asset("Assets/Data/shared.asset", "%YAML 1.1\n", guid)
+        self.write("Assets/Locked/hidden.asset", "%YAML 1.1\n")
+        self.write_meta("Assets/Locked/hidden.asset.meta", guid)
+        env = self.sitecustomize(
+            """
+            import os
+            from pathlib import Path
+
+            original = os.scandir
+
+            def scandir(path):
+                if Path(path).name == "Locked":
+                    raise PermissionError("scan denied")
+                return original(path)
+
+            os.scandir = scandir
+            """
+        )
+
+        result = self.run_scanner(
+            "asset",
+            "--project",
+            str(self.root),
+            "--guid",
+            guid,
+            env=env,
+        )
+        payload = json.loads(result.stdout)
+
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertEqual(payload["status"], "ambiguous")
+        self.assertIn(
+            "scan_unreadable",
+            [warning["code"] for warning in payload["warnings"]],
+        )
+        self.assertIn(
+            "metadata_unusable",
+            [warning["code"] for warning in payload["warnings"]],
+        )
+        for selector, value in (
+            ("path", "Assets/Data/shared.asset"),
+            ("name", "shared"),
+        ):
+            with self.subTest(selector=selector):
+                result = self.run_scanner(
+                    "asset",
+                    "--project",
+                    str(self.root),
+                    f"--{selector}",
+                    value,
+                    env=env,
+                )
+                exact_payload = json.loads(result.stdout)
+
+                self.assertEqual(
+                    result.returncode,
+                    0,
+                    result.stdout + result.stderr,
+                )
+                self.assertEqual(exact_payload["status"], "ok")
+                self.assertIn(
+                    "metadata_unusable",
+                    [warning["code"] for warning in exact_payload["warnings"]],
+                )
+
+    def test_large_metadata_duplicate_check_is_bounded_concurrent(self):
+        guid = "a" * 32
+        self.add_asset("Assets/Large/Target.asset", "%YAML 1.1\n", guid)
+        for index in range(800):
+            self.write(
+                f"Assets/Large/Metadata/{index:04d}.asset",
+                "%YAML 1.1\n",
+            )
+            self.write(
+                f"Assets/Large/Metadata/{index:04d}.asset.meta",
+                f"fileFormatVersion: 2\nguid: {index:032x}\n",
+            )
+        env = self.sitecustomize(
+            """
+            import pathlib
+            import time
+
+            original = pathlib.Path.open
+
+            def open_path(path, *args, **kwargs):
+                if path.suffix == ".meta":
+                    time.sleep(0.02)
+                return original(path, *args, **kwargs)
+
+            pathlib.Path.open = open_path
+            """
+        )
+        for selector, value in (
+            ("path", "Assets/Large/Target.asset"),
+            ("name", "Target"),
+        ):
+            with self.subTest(selector=selector):
+                started = time.monotonic()
+                result = self.run_scanner(
+                    "asset",
+                    "--project",
+                    str(self.root),
+                    f"--{selector}",
+                    value,
+                    env=env,
+                )
+                elapsed = time.monotonic() - started
+
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertLess(elapsed, 8.0)
 
     def test_excluded_name_applies_only_to_directories(self):
         self.write("Assets/Data/Library", "%YAML 1.1\n")

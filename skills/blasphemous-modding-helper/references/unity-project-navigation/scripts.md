@@ -38,7 +38,7 @@ The query MUST NOT add class names, members, dependencies, call sites, decompile
 ## Failures and warnings
 
 - `ok` means the selector resolved one script asset. Exit code `0`.
-- `ambiguous` means more than one script identity matches, or a GUID also identifies a non-script asset. Exit code `2`. Every candidate is returned; the agent MUST NOT select one silently.
+- `ambiguous` means more than one script identity matches, a GUID also identifies a non-script asset, or unreadable metadata prevents proving a unique GUID. Exit code `2`. Every readable candidate is returned; the agent MUST NOT select one silently.
 - `not_found` means a valid selector has no matching script asset. Exit code `2`.
 - `invalid_query` means a selector is malformed, names a non-script path, traverses outside the included roots, or contains a link that is not followed. Exit code `3`.
 - `invalid_project` means the configured root or required `Assets` structure is unusable. Exit code `3`.

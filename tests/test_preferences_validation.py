@@ -494,6 +494,102 @@ class PreferencesValidationTests(unittest.TestCase):
                 self.assertNotIn("/previous", text)
                 self.assertEqual(text.count("unity_project_path"), 1)
 
+    def test_validation_replaces_mapping_and_sequence_metadata_values(self):
+        self.write_config(
+            "last_checked_version: {bad: value}\n"
+            "last_checked_time: [bad]\n"
+            "check_period_days: 7\n"
+        )
+
+        result = self.run_validation()
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertNotIn("Traceback", result.stdout + result.stderr)
+        values = parse_preferences(self.config)
+        self.assertIsInstance(values["last_checked_version"], str)
+        self.assertIsInstance(values["last_checked_time"], str)
+        self.assertEqual(values["check_period_days"], 7)
+        text = self.config.read_text(encoding="utf-8")
+        self.assertNotIn("{bad:", text)
+        self.assertNotIn("[bad]", text)
+
+    def test_validation_replaces_block_mapping_and_sequence_metadata_values(self):
+        self.write_config(
+            "last_checked_version:\n"
+            "    bad: value # nested value note\n"
+            "last_checked_time:\n"
+            "    - bad # nested sequence note\n"
+            "check_period_days: 7\n"
+        )
+
+        result = self.run_validation()
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        values = parse_preferences(self.config)
+        self.assertIsInstance(values["last_checked_version"], str)
+        self.assertIsInstance(values["last_checked_time"], str)
+        self.assertEqual(values["check_period_days"], 7)
+        text = self.config.read_text(encoding="utf-8")
+        self.assertNotIn("bad: value", text)
+        self.assertNotIn("- bad", text)
+        self.assertNotIn("nested value note", text)
+        self.assertNotIn("nested sequence note", text)
+
+    def test_targeted_unity_path_update_preserves_crlf_bytes(self):
+        unity = self.root / "Unity CRLF"
+        (unity / "Assets").mkdir(parents=True)
+        original = (
+            "# keep header\r\n"
+            "modding_profile_path: profile # keep note\r\n"
+            "check_period_days: 7\r\n"
+        ).encode("utf-8")
+        self.config.parent.mkdir(parents=True, exist_ok=True)
+        self.config.write_bytes(original)
+
+        result = self.run_set_unity_path(unity)
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        updated = self.config.read_bytes()
+        self.assertIn(b"\r\n", updated)
+        self.assertNotIn(b"\n", updated.replace(b"\r\n", b""))
+        untouched = b"".join(
+            line
+            for line in updated.splitlines(keepends=True)
+            if b"unity_project_path:" not in line
+        )
+        self.assertEqual(untouched, original)
+        self.assertEqual(
+            parse_preferences(self.config)["unity_project_path"],
+            str(unity.resolve()),
+        )
+
+    def test_targeted_unity_path_update_preserves_lf_bytes(self):
+        unity = self.root / "Unity LF"
+        (unity / "Assets").mkdir(parents=True)
+        original = (
+            "# keep header\n"
+            "modding_profile_path: profile # keep note\n"
+            "check_period_days: 7\n"
+        ).encode("utf-8")
+        self.config.parent.mkdir(parents=True, exist_ok=True)
+        self.config.write_bytes(original)
+
+        result = self.run_set_unity_path(unity)
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        updated = self.config.read_bytes()
+        self.assertNotIn(b"\r", updated)
+        untouched = b"".join(
+            line
+            for line in updated.splitlines(keepends=True)
+            if b"unity_project_path:" not in line
+        )
+        self.assertEqual(untouched, original)
+        self.assertEqual(
+            parse_preferences(self.config)["unity_project_path"],
+            str(unity.resolve()),
+        )
+
     def test_targeted_unity_path_invalid_yaml_requires_setup_without_writing(self):
         unity = self.root / "Unity Invalid Config"
         (unity / "Assets").mkdir(parents=True)

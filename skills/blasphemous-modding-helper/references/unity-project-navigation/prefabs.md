@@ -30,7 +30,7 @@ The flattened evidence is authoritative only for objects that exist in the `.pre
 
 ## Failures and warnings
 
-- `not_found` and `ambiguous` use exit code `2`.
+- `not_found` and `ambiguous` use exit code `2`. `ambiguous` also covers GUID queries where unreadable metadata prevents proving a unique identity.
 - `invalid_query`, `invalid_project`, and `unsupported_format` use exit code `3`.
 - `prefab_not_found`, `ambiguous_prefab`, `not_prefab`, metadata warnings, and serialized-parse warnings identify actionable conditions with stable codes.
 

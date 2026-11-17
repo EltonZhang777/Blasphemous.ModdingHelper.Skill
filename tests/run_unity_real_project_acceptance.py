@@ -363,6 +363,8 @@ def _verify_references(
         (
             edge["field"],
             edge["scope"],
+            edge["source"]["path"],
+            edge["source"]["file_id"],
             edge["target"]["path"],
             edge["target"]["file_id"],
             edge["target"]["status"],
@@ -374,15 +376,80 @@ def _verify_references(
         identity = (
             edge["field"],
             edge["scope"],
+            edge["source_path"],
+            edge["source_file_id"],
             edge["target_path"],
             edge["target_file_id"],
             edge["target_status"],
             edge["target_reason"],
         )
-        _require(identity in actual_edges, f"Expected reference edge is missing: {identity}")
+        _require(
+            identity in actual_edges,
+            f"Expected reference edge is missing: {identity}",
+        )
     warning_codes = [warning["code"] for warning in payload.get("warnings", [])]
     _require("timeout" not in warning_codes, "Reference query timed out.")
     _require("result_limit" not in warning_codes, "Reference query hit its result limit.")
+
+
+def _completion_evidence(
+    project_payload: Dict[str, object],
+    scene_payload: Dict[str, object],
+    standalone_payload: Dict[str, object],
+    prefab_payload: Dict[str, object],
+    script_payload: Dict[str, object],
+    guid_payload: Dict[str, object],
+    reference_payloads: Dict[str, Dict[str, object]],
+    before_assets: int,
+) -> Dict[str, object]:
+    scene_result = scene_payload["results"][0]
+    standalone_result = standalone_payload["results"][0]
+    return {
+        "unity_version": project_payload["project"]["unity_version"],
+        "baseline": {
+            "assets_total_files": before_assets,
+            "scanner_total_files": project_payload["results"][0]["file_counts"]["total"],
+            "unity_files": project_payload["results"][0]["file_counts"]["unity"],
+            "prefab_files": project_payload["results"][0]["file_counts"]["prefab"],
+            "asset_files": project_payload["results"][0]["file_counts"]["asset"],
+            "cs_files": project_payload["results"][0]["file_counts"]["cs"],
+            "meta_files": project_payload["results"][0]["file_counts"]["meta"],
+            "complete_scene_sets": project_payload["results"][0]["scene_counts"]["complete_sets"],
+            "standalone_scenes": project_payload["results"][0]["scene_counts"]["standalone"],
+        },
+        "scene_set": {
+            key: scene_result[key]
+            for key in (
+                "logical_name",
+                "directory",
+                "kind",
+                "present_layers",
+                "missing_layers",
+                "members",
+                "object_count",
+                "reference_count",
+            )
+        },
+        "standalone_scene": {
+            key: standalone_result[key]
+            for key in (
+                "logical_name",
+                "directory",
+                "kind",
+                "members",
+                "requested_path",
+                "object_count",
+                "reference_count",
+            )
+        },
+        "prefab": prefab_payload["results"][0],
+        "script": script_payload["results"][0],
+        "guid_lookup": guid_payload["results"][0],
+        "references": reference_payloads["references"]["results"][0],
+        "incoming_references": reference_payloads[
+            "incoming_references"
+        ]["results"][0],
+    }
 
 
 def _blocked_report(project: Optional[str], reason: str) -> Dict[str, object]:
@@ -423,7 +490,13 @@ def run(
             str(project_root),
             "The supplied real Unity project root is not a readable directory.",
         )
-    project_root = project_root.resolve()
+    try:
+        project_root = project_root.resolve()
+    except (OSError, RuntimeError) as error:
+        return 2, _blocked_report(
+            str(project_root),
+            f"The supplied real Unity project root could not be resolved: {error}",
+        )
     if not (project_root / "Assets").is_dir():
         return 2, _blocked_report(
             str(project_root),
@@ -664,57 +737,17 @@ def run(
             "Real-project file or directory counts changed during the smoke.",
         )
 
-        report["status"] = "ok"
-        report["commands"] = commands
-        scene_result = scene_payload["results"][0]
-        standalone_result = standalone_payload["results"][0]
-        report["completion_evidence"] = {
-            "unity_version": project_payload["project"]["unity_version"],
-            "baseline": {
-                "assets_total_files": before_assets,
-                "scanner_total_files": project_payload["results"][0]["file_counts"]["total"],
-                "unity_files": project_payload["results"][0]["file_counts"]["unity"],
-                "prefab_files": project_payload["results"][0]["file_counts"]["prefab"],
-                "asset_files": project_payload["results"][0]["file_counts"]["asset"],
-                "cs_files": project_payload["results"][0]["file_counts"]["cs"],
-                "meta_files": project_payload["results"][0]["file_counts"]["meta"],
-                "complete_scene_sets": project_payload["results"][0]["scene_counts"]["complete_sets"],
-                "standalone_scenes": project_payload["results"][0]["scene_counts"]["standalone"],
-            },
-            "scene_set": {
-                key: scene_result[key]
-                for key in (
-                    "logical_name",
-                    "directory",
-                    "kind",
-                    "present_layers",
-                    "missing_layers",
-                    "members",
-                    "object_count",
-                    "reference_count",
-                )
-            },
-            "standalone_scene": {
-                key: standalone_result[key]
-                for key in (
-                    "logical_name",
-                    "directory",
-                    "kind",
-                    "members",
-                    "requested_path",
-                    "object_count",
-                    "reference_count",
-                )
-            },
-            "prefab": prefab_payload["results"][0],
-            "script": script_payload["results"][0],
-            "guid_lookup": guid_payload["results"][0],
-            "references": reference_payloads["references"]["results"][0],
-            "incoming_references": reference_payloads[
-                "incoming_references"
-            ]["results"][0],
-        }
-        report["read_only"] = {
+        completion_evidence = _completion_evidence(
+            project_payload,
+            scene_payload,
+            standalone_payload,
+            prefab_payload,
+            script_payload,
+            guid_payload,
+            reference_payloads,
+            before_assets,
+        )
+        read_only = {
             "path_inventory_entries_before": len(before_paths),
             "path_inventory_entries_after": len(after_paths),
             "file_count_before": before_files,
@@ -732,12 +765,16 @@ def run(
                 for relative in representative_files
             ],
         }
+        report["commands"] = commands
+        report["completion_evidence"] = completion_evidence
+        report["read_only"] = read_only
         report["next_action"] = (
             "Record this real-project report separately from synthetic results, "
             "then close the acceptance ticket."
         )
+        report["status"] = "ok"
         return 0, report
-    except (SmokeFailure, KeyError, IndexError, OSError, TypeError) as error:
+    except Exception as error:
         report["error"] = str(error)
         report["next_action"] = (
             "Fix the real-project evidence or manifest drift and rerun; do not "

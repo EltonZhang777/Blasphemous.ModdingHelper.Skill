@@ -198,6 +198,48 @@ class UnityScriptNavigationTests(unittest.TestCase):
             [warning["code"] for warning in payload["warnings"]],
         )
 
+    def test_unreadable_unrelated_metadata_prevents_unique_script_guid(self):
+        self.write("Assets/Other/Broken.asset", "%YAML 1.1\n")
+        broken = self.root / "Assets/Other/Broken.asset.meta"
+        broken.write_bytes(b"\xff\xfe\x00not-utf8")
+
+        _, payload = self.query("guid", HERO_GUID, 2)
+
+        self.assertEqual(payload["status"], "ambiguous")
+        self.assertEqual(
+            [result["path"] for result in payload["results"]],
+            ["Assets/Scripts/Hero.cs"],
+        )
+        self.assertEqual(payload["results"][0]["status"], "ambiguous")
+        self.assertIn(
+            "ambiguous_script",
+            [warning["code"] for warning in payload["warnings"]],
+        )
+
+    def test_ambiguous_non_script_guid_keeps_readable_candidates(self):
+        guid = "9" * 32
+        self.add_asset("Assets/Data/Only.asset", "%YAML 1.1\n", guid)
+        self.write("Assets/Other/Broken.asset", "%YAML 1.1\n")
+        broken = self.root / "Assets/Other/Broken.asset.meta"
+        broken.write_bytes(b"\xff\xfe\x00not-utf8")
+
+        _, payload = self.query("guid", guid, 2)
+
+        self.assertEqual(payload["status"], "ambiguous")
+        self.assertEqual(
+            [
+                (result["path"], result["type"], result["status"])
+                for result in payload["results"]
+            ],
+            [
+                (
+                    "Assets/Data/Only.asset",
+                    "asset",
+                    "ambiguous",
+                )
+            ],
+        )
+
     def test_non_script_and_missing_targets_are_structured(self):
         cases = (
             ("path", "Assets/Data/Hero.asset", 3, "invalid_query", "not_cs_script"),

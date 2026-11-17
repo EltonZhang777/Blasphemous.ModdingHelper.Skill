@@ -28,7 +28,7 @@ PowerShell:
 & $PYTHON3 tests\run_unity_real_project_acceptance.py --project '<UNITY_PROJECT_ROOT>'
 ```
 
-The fixed manifest is `tests/fixtures/unity-real-project-smoke.json`. It locks the Unity version, real-tree counts, one complete five-layer scene set, one standalone scene, one flattened Prefab, one script asset, one GUID lookup, one outgoing serialized-reference chain, one incoming local-reference edge, and the representative files used for content hashing.
+The fixed manifest is `tests/fixtures/unity-real-project-smoke.json`. It locks the Unity version, real-tree counts, one complete five-layer scene set, one standalone scene, one flattened Prefab, one script asset, one GUID lookup, one outgoing serialized-reference chain, one incoming local-reference edge, both source and target identities for every fixed edge, and the representative files used for content hashing.
 
 The runner exits with:
 

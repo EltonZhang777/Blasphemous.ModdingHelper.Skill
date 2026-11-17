@@ -257,17 +257,21 @@ def _alias_value_span(text: str, key_node) -> Optional[Tuple[int, int]]:
 def _replace_config_value(text: str, node, replacement: str) -> str:
     raw = text[node.start_mark.index:node.end_mark.index]
     anchor = _scalar_anchor_prefix(raw)
-    if node.style not in ("|", ">"):
-        return anchor + replacement
-    first_line = raw.splitlines(keepends=True)[0]
-    comment = _inline_comment(first_line).rstrip("\r\n")
     line_ending = (
         "\r\n"
-        if first_line.endswith("\r\n")
+        if raw.endswith("\r\n")
         else "\n"
-        if first_line.endswith("\n")
+        if raw.endswith("\n")
         else ""
     )
+    if getattr(node, "style", None) not in ("|", ">"):
+        return anchor + replacement + line_ending
+    first_line = raw.splitlines(keepends=True)[0]
+    comment = _inline_comment(first_line).rstrip("\r\n")
+    if first_line.endswith("\r\n"):
+        line_ending = "\r\n"
+    elif first_line.endswith("\n"):
+        line_ending = "\n"
     return anchor + replacement + comment + line_ending
 
 
@@ -424,7 +428,8 @@ def parse_preferences(
 def _read_config(path: Path) -> Tuple[Path, str, Dict[str, object]]:
     preferences_path = Path(path).expanduser().resolve(strict=False)
     try:
-        text = preferences_path.read_text(encoding="utf-8")
+        with preferences_path.open("r", encoding="utf-8", newline="") as handle:
+            text = handle.read()
     except (OSError, UnicodeError) as error:
         raise PreferenceError(f"Could not read config.yml at {preferences_path}: {error}") from error
 

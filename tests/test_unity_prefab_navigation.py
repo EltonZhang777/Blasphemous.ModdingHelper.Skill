@@ -221,6 +221,49 @@ class UnityPrefabNavigationTests(unittest.TestCase):
         self.assertIn("ambiguous_prefab", warning_codes)
         self.assertEqual(warning_codes.count("duplicate_guid"), 2)
 
+    def test_unreadable_unrelated_metadata_prevents_unique_prefab_guid(self):
+        self.write("Assets/Other/Broken.asset", "%YAML 1.1\n")
+        broken = self.root / "Assets/Other/Broken.asset.meta"
+        broken.write_bytes(b"\xff\xfe\x00not-utf8")
+
+        _, payload = self.query("guid", HERO_GUID, 2)
+
+        self.assertEqual(payload["status"], "ambiguous")
+        self.assertEqual(
+            [result["path"] for result in payload["results"]],
+            ["Assets/Prefabs/Hero.prefab"],
+        )
+        self.assertEqual(payload["results"][0]["status"], "ambiguous")
+        self.assertEqual(payload["results"][0]["object_count"], 0)
+        self.assertIn(
+            "ambiguous_prefab",
+            [warning["code"] for warning in payload["warnings"]],
+        )
+
+    def test_ambiguous_non_prefab_guid_keeps_readable_candidates(self):
+        guid = "9" * 32
+        self.add_asset("Assets/Data/Only.asset", "%YAML 1.1\n", guid)
+        self.write("Assets/Other/Broken.asset", "%YAML 1.1\n")
+        broken = self.root / "Assets/Other/Broken.asset.meta"
+        broken.write_bytes(b"\xff\xfe\x00not-utf8")
+
+        _, payload = self.query("guid", guid, 2)
+
+        self.assertEqual(payload["status"], "ambiguous")
+        self.assertEqual(
+            [
+                (result["path"], result["type"], result["status"])
+                for result in payload["results"]
+            ],
+            [
+                (
+                    "Assets/Data/Only.asset",
+                    "asset",
+                    "ambiguous",
+                )
+            ],
+        )
+
     def test_path_and_name_surface_duplicate_guid_without_filtering_the_prefab(self):
         duplicate = "7" * 32
         self.add_asset("Assets/Prefabs/Exact.prefab", HERO_PREFAB, duplicate)

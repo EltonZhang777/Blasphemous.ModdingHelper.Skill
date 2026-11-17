@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import re
 from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path, PurePosixPath
 from typing import Callable, Dict, List, Optional, Sequence, Tuple
 
@@ -25,8 +26,13 @@ from .unity_project import (
 
 
 GUID_PATTERN = re.compile(r"^[0-9A-Fa-f]{32}$")
-META_GUID = re.compile(r"^guid:\s*([0-9A-Fa-f]{32})\s*$", re.MULTILINE)
+META_GUID = re.compile(r"^guid[ \t]*:\s*([0-9A-Fa-f]{32})\s*$", re.MULTILINE)
+META_GUID_KEY = re.compile(r"^guid[ \t]*:.*$", re.MULTILINE)
 META_VERSION = re.compile(r"^fileFormatVersion:\s*(\d+)\s*$", re.MULTILINE)
+META_ANY_GUID = re.compile(r"(?<![0-9A-Fa-f])([0-9A-Fa-f]{32})(?![0-9A-Fa-f])")
+MAX_METADATA_VERSION_DIGITS = 9
+METADATA_READ_WORKERS = 32
+MAX_WARNINGS = 50
 ABSOLUTE_PATH = re.compile(r"^(?:[A-Za-z]:|[/\\])")
 BINARY_SUFFIXES = frozenset(
     {
@@ -83,7 +89,9 @@ def _project_info(
 
 
 def _read_metadata(
-    root: Path, path: Path
+    root: Path,
+    path: Path,
+    stopped: Optional[Callable[[], bool]] = None,
 ) -> Tuple[Optional[str], Dict[str, object], List[Dict[str, object]]]:
     meta_path = path.with_name(path.name + ".meta")
     meta_relative = _relative(meta_path, root)
@@ -92,6 +100,11 @@ def _read_metadata(
         "status": "missing",
         "file_format_version": None,
     }
+    if stopped is not None and stopped():
+        metadata["status"] = "unusable"
+        return None, metadata, [
+            _warning("timeout", "Metadata read timed out.", meta_relative)
+        ]
     if _is_link_like(meta_path):
         metadata["status"] = "unusable"
         code = (
@@ -129,7 +142,7 @@ def _read_metadata(
             )
         ]
     try:
-        text = meta_path.read_text(encoding="utf-8")
+        text = meta_path.read_text(encoding="utf-8-sig")
     except (OSError, UnicodeError) as error:
         metadata["status"] = "unusable"
         return None, metadata, [
@@ -139,41 +152,66 @@ def _read_metadata(
                 meta_relative,
             )
         ]
+    if len(META_GUID_KEY.findall(text)) != 1:
+        metadata["status"] = "unusable"
+        return None, metadata, [
+            _warning(
+                "metadata_unusable",
+                "The sibling .meta file must have exactly one valid GUID.",
+                meta_relative,
+            )
+        ]
     guid_match = META_GUID.search(text)
     if guid_match is None:
         metadata["status"] = "unusable"
         return None, metadata, [
             _warning(
                 "metadata_unusable",
-                "The sibling .meta file has no valid GUID.",
+                "The sibling .meta file must have exactly one valid GUID.",
                 meta_relative,
             )
         ]
-    version_match = META_VERSION.search(text)
+    guid = guid_match.group(1).lower()
     metadata["status"] = "present"
-    try:
-        metadata["file_format_version"] = (
-            int(version_match.group(1)) if version_match is not None else None
-        )
-    except ValueError:
+    version_match = META_VERSION.search(text)
+    raw_version = version_match.group(1) if version_match is not None else None
+    if (
+        raw_version is not None
+        and len(raw_version) > MAX_METADATA_VERSION_DIGITS
+    ):
         metadata["status"] = "unusable"
-        return None, metadata, [
+        return guid, metadata, [
             _warning(
                 "metadata_unusable",
                 "The sibling .meta file has an unsupported fileFormatVersion.",
                 meta_relative,
             )
         ]
-    return guid_match.group(1).lower(), metadata, []
+    try:
+        metadata["file_format_version"] = (
+            int(raw_version) if raw_version is not None else None
+        )
+    except ValueError:
+        metadata["status"] = "unusable"
+        return guid, metadata, [
+            _warning(
+                "metadata_unusable",
+                "The sibling .meta file has an unsupported fileFormatVersion.",
+                meta_relative,
+            )
+        ]
+    return guid, metadata, []
 
 
 def _result(
-    root: Path, path: Path
+    root: Path,
+    path: Path,
+    stopped: Optional[Callable[[], bool]] = None,
 ) -> Tuple[Dict[str, object], List[Dict[str, object]]]:
     is_directory = path.is_dir()
     suffix = path.suffix.lower()
     binary = not is_directory and suffix in BINARY_SUFFIXES
-    guid, metadata, warnings = _read_metadata(root, path)
+    guid, metadata, warnings = _read_metadata(root, path, stopped)
     result: Dict[str, object] = {
         "path": _relative(path, root),
         "type": "folder" if is_directory else (suffix[1:] or "file"),
@@ -196,51 +234,138 @@ def _result_key(result: Dict[str, object]) -> Tuple[str, str, str, str]:
     return (path.casefold(), path, str(result["type"]), str(result.get("guid") or ""))
 
 
+def _read_metadata_entry(
+    meta_path: Path,
+    stopped: Optional[Callable[[], bool]] = None,
+) -> Tuple[str, Optional[Path], Optional[str], Tuple[str, ...]]:
+    if meta_path.suffix.lower() != ".meta" or _is_link_like(meta_path):
+        return "skip", None, None, ()
+    target = meta_path.with_suffix("")
+    if target.suffix.lower() == ".meta":
+        return "skip", None, None, ()
+    if stopped is not None and stopped():
+        return "timeout", None, None, ()
+    try:
+        text = meta_path.read_text(encoding="utf-8-sig")
+    except (OSError, UnicodeError):
+        return "unreadable", target, None, ()
+    if stopped is not None and stopped():
+        return "timeout", None, None, ()
+    if len(META_GUID_KEY.findall(text)) != 1:
+        candidates = tuple(
+            dict.fromkeys(
+                match.lower()
+                for match in META_ANY_GUID.findall(text)
+            )
+        )
+        return "invalid_guid", target, None, candidates
+    guid_match = META_GUID.search(text)
+    if guid_match is None:
+        candidates = tuple(
+            dict.fromkeys(
+                match.lower()
+                for match in META_ANY_GUID.findall(text)
+            )
+        )
+        return "invalid_guid", target, None, candidates
+    guid = guid_match.group(1).lower()
+    if _is_link_like(target):
+        return "linked_target", target, guid, (guid,)
+    if not target.exists():
+        return "orphan", target, guid, (guid,)
+    version_match = META_VERSION.search(text)
+    if version_match is not None:
+        raw_version = version_match.group(1)
+        if len(raw_version) > MAX_METADATA_VERSION_DIGITS:
+            return "invalid_version", target, guid, (guid,)
+        try:
+            int(raw_version)
+        except ValueError:
+            return "invalid_version", target, guid, (guid,)
+    return "ok", target, guid, (guid,)
+
+
+def _metadata_entries(
+    files: Sequence[Path],
+    stopped: Optional[Callable[[], bool]] = None,
+) -> Optional[List[Tuple[str, Optional[Path], Optional[str], Tuple[str, ...]]]]:
+    if not files:
+        return []
+    entries: List[Tuple[str, Optional[Path], Optional[str], Tuple[str, ...]]] = []
+    with ThreadPoolExecutor(
+        max_workers=min(METADATA_READ_WORKERS, len(files))
+    ) as executor:
+        for start in range(0, len(files), METADATA_READ_WORKERS):
+            chunk = files[start:start + METADATA_READ_WORKERS]
+            entries.extend(
+                executor.map(
+                    lambda path: _read_metadata_entry(path, stopped),
+                    chunk,
+                )
+            )
+            if stopped is not None and stopped():
+                return None
+    return entries
+
+
 def _metadata_targets_for_guids(
     root: Path,
     files: Sequence[Path],
     guids: Sequence[str],
     stopped: Optional[Callable[[], bool]] = None,
-    unusable: Optional[List[str]] = None,
-) -> Dict[str, List[Path]]:
+    warnings: Optional[List[Dict[str, object]]] = None,
+) -> Tuple[Dict[str, List[Path]], bool]:
     wanted = {guid.lower() for guid in guids}
     targets: Dict[str, List[Path]] = defaultdict(list)
     if not wanted:
-        return targets
-    for meta_path in files:
-        if stopped is not None and stopped():
-            break
-        if meta_path.suffix.lower() != ".meta" or _is_link_like(meta_path):
+        return targets, False
+    entries = _metadata_entries(files, stopped)
+    if entries is None:
+        raise NavigationError("timeout", "Asset lookup timed out.")
+    incomplete = False
+    for meta_path, (status, target, guid, candidates) in zip(files, entries):
+        if status == "skip":
             continue
-        target = meta_path.with_suffix("")
-        if target.suffix.lower() == ".meta" or not target.exists():
+        if status == "timeout":
+            raise NavigationError("timeout", "Asset lookup timed out.")
+        if status in {"orphan", "linked_target"}:
+            if wanted.intersection(candidates):
+                incomplete = True
+                if warnings is not None:
+                    warnings.append(
+                        _warning(
+                            "metadata_unusable",
+                            (
+                                "Metadata target is missing, so asset identity is unconfirmed."
+                                if status == "orphan"
+                                else "Metadata target is a link, so asset identity is unconfirmed."
+                            ),
+                            _relative(meta_path, root),
+                        )
+                    )
             continue
-        if _is_link_like(target):
+        if status in {
+            "unreadable",
+            "invalid_guid",
+            "invalid_version",
+        }:
+            if status == "unreadable" or wanted.intersection(candidates):
+                incomplete = True
+            if warnings is not None:
+                warnings.append(
+                    _warning(
+                        "metadata_unusable",
+                        "Metadata could not be used while checking asset identity.",
+                        _relative(meta_path, root),
+                    )
+                )
+        if status not in {"ok", "invalid_version"} or guid not in wanted:
             continue
-        try:
-            text = meta_path.read_text(encoding="utf-8")
-        except (OSError, UnicodeError):
-            if unusable is not None:
-                unusable.append(_relative(meta_path, root))
-            continue
-        guid_match = META_GUID.search(text)
-        if guid_match is None:
-            if unusable is not None:
-                unusable.append(_relative(meta_path, root))
-            continue
-        guid = guid_match.group(1).lower()
-        if guid not in wanted:
-            continue
-        version_match = META_VERSION.search(text)
-        if version_match is not None:
-            try:
-                int(version_match.group(1))
-            except ValueError:
-                if unusable is not None:
-                    unusable.append(_relative(meta_path, root))
-                continue
+        assert target is not None
+        if status == "invalid_version":
+            incomplete = True
         targets[guid].append(target)
-    return targets
+    return targets, incomplete
 
 
 def _mark_duplicate_guids(
@@ -374,6 +499,8 @@ def asset_query(
     selector: str,
     value: str,
     stopped: Optional[Callable[[], bool]] = None,
+    *,
+    duplicate_guid_check: bool = True,
 ) -> Dict[str, object]:
     """Return the version-1 asset lookup envelope."""
 
@@ -414,22 +541,38 @@ def asset_query(
                 "value": _relative(target, root),
             }
             if target.is_file() or target.is_dir():
-                result, result_warnings = _result(root, target)
+                result, result_warnings = _result(root, target, stopped)
                 results = [result]
                 payload["results"] = results
                 warnings.extend(result_warnings)
-                if isinstance(result.get("guid"), str):
-                    files, scan_warnings = _walk_files(root, included_roots, stopped)
+                if duplicate_guid_check and isinstance(result.get("guid"), str):
+                    files, scan_warnings = _walk_files(
+                        root,
+                        included_roots,
+                        stopped,
+                        (".meta",),
+                    )
                     warnings.extend(scan_warnings)
+                    targets_by_guid, metadata_incomplete = _metadata_targets_for_guids(
+                        root,
+                        files,
+                        [str(result["guid"])],
+                        stopped,
+                        warnings,
+                    )
+                    metadata_incomplete = metadata_incomplete or bool(scan_warnings)
+                    if metadata_incomplete:
+                        warnings.append(
+                            _warning(
+                                "metadata_unusable",
+                                "Unreadable metadata prevents proving GUID uniqueness.",
+                                result["metadata"]["path"],
+                            )
+                        )
                     _mark_duplicate_guids(
                         results,
                         warnings,
-                        _metadata_targets_for_guids(
-                            root,
-                            files,
-                            [str(result["guid"])],
-                            stopped,
-                        ),
+                        targets_by_guid,
                     )
             else:
                 payload["status"] = "not_found"
@@ -452,9 +595,22 @@ def asset_query(
                     )
                 payload["query"] = {"selector": selector, "value": value}
 
-            files, scan_warnings = _walk_files(root, included_roots, stopped)
+            files, scan_warnings = _walk_files(
+                root,
+                included_roots,
+                stopped,
+                (".meta",) if selector == "guid" else None,
+            )
             warnings.extend(scan_warnings)
             targets_by_guid: Dict[str, List[Path]] = {}
+            metadata_incomplete = bool(scan_warnings)
+            if selector == "guid" and metadata_incomplete:
+                warnings.append(
+                    _warning(
+                        "metadata_unusable",
+                        "Unreadable scan areas prevent proving metadata uniqueness.",
+                    )
+                )
             if stopped is not None and stopped():
                 timed_out = True
                 raise NavigationError("timeout", "Asset lookup timed out.")
@@ -491,24 +647,15 @@ def asset_query(
                         parent = parent.parent
             else:
                 query_guid = value.lower()
-                unusable_metadata_paths: List[str] = []
-                targets_by_guid = _metadata_targets_for_guids(
+                targets_by_guid, warnings_incomplete = _metadata_targets_for_guids(
                     root,
                     files,
                     [query_guid],
                     stopped,
-                    unusable_metadata_paths,
+                    warnings,
                 )
+                metadata_incomplete = metadata_incomplete or warnings_incomplete
                 matches = targets_by_guid.get(query_guid, [])
-                if not matches:
-                    for relative in sorted(set(unusable_metadata_paths)):
-                        warnings.append(
-                            _warning(
-                                "metadata_unusable",
-                                "Metadata could not be used while resolving the GUID.",
-                                relative,
-                            )
-                        )
 
             results: List[Dict[str, object]] = []
             ordered_matches = sorted(
@@ -516,21 +663,36 @@ def asset_query(
                 key=lambda item: (str(item).casefold(), str(item)),
             )
             for target in ordered_matches:
-                result, result_warnings = _result(root, target)
+                result, result_warnings = _result(root, target, stopped)
                 results.append(result)
                 warnings.extend(result_warnings)
             results.sort(key=_result_key)
-            if selector == "name":
+            if selector == "name" and duplicate_guid_check:
                 result_guids = [
                     str(result["guid"])
                     for result in results
                     if isinstance(result.get("guid"), str)
                 ]
-                targets_by_guid = _metadata_targets_for_guids(
+                targets_by_guid, name_incomplete = _metadata_targets_for_guids(
                     root,
-                    files,
+                    [
+                        path
+                        for path in files
+                        if path.suffix.lower() == ".meta"
+                    ],
                     result_guids,
                     stopped,
+                    warnings,
+                )
+                metadata_incomplete = (
+                    metadata_incomplete or name_incomplete
+                )
+            if selector == "name" and metadata_incomplete:
+                warnings.append(
+                    _warning(
+                        "metadata_unusable",
+                        "Unreadable metadata prevents proving GUID uniqueness.",
+                    )
                 )
             _mark_duplicate_guids(results, warnings, targets_by_guid)
             payload["results"] = results
@@ -540,19 +702,52 @@ def asset_query(
                 payload["status"] = "ambiguous"
             else:
                 payload["status"] = "ok"
+            if selector == "guid" and metadata_incomplete:
+                payload["status"] = "ambiguous"
             if stopped is not None and stopped():
                 timed_out = True
                 raise NavigationError("timeout", "Asset lookup timed out.")
     except NavigationError as error:
         payload["error"] = {"code": error.code, "message": str(error)}
-        if timed_out:
+        if timed_out or error.code == "timeout":
             payload["status"] = "timeout"
         elif payload["status"] != "invalid_project":
             payload["status"] = "invalid_query"
     except OSError as error:
         payload["status"] = "invalid_project"
         payload["error"] = {"code": "invalid_project", "message": str(error)}
-    payload["warnings"] = _sorted_warnings(warnings)
+    unique_warnings = {
+        (
+            str(item.get("code", "")),
+            str(item.get("path", "")),
+            str(item.get("message", "")),
+        ): item
+        for item in warnings
+    }
+    ordered_warnings = _sorted_warnings(unique_warnings.values())
+    if len(ordered_warnings) > MAX_WARNINGS:
+        omitted = len(ordered_warnings) - MAX_WARNINGS
+        kept_warnings = ordered_warnings[:MAX_WARNINGS]
+        metadata_warning = next(
+            (
+                warning
+                for warning in ordered_warnings
+                if warning.get("code") == "metadata_unusable"
+            ),
+            None,
+        )
+        if metadata_warning is not None and metadata_warning not in kept_warnings:
+            kept_warnings[-1] = metadata_warning
+        ordered_warnings = _sorted_warnings(
+            [
+                *kept_warnings,
+                _warning(
+                    "warnings_truncated",
+                    f"{omitted} warnings were omitted.",
+                ),
+            ]
+        )
+    payload["warnings"] = ordered_warnings
     return payload
 
 

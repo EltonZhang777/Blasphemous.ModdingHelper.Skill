@@ -3,17 +3,24 @@
 from __future__ import annotations
 
 import math
+import multiprocessing
+import os
 import re
 import time
 from collections import defaultdict, deque
 from concurrent.futures import ThreadPoolExecutor
-from pathlib import Path
+from pathlib import Path, PurePosixPath
+from queue import Empty as QueueEmpty
 from typing import Callable, Deque, Dict, Iterable, List, Optional, Sequence, Set, Tuple
 
 from .unity_assets import (
+    ABSOLUTE_PATH,
     BINARY_SUFFIXES,
     GUID_PATTERN,
+    MAX_METADATA_VERSION_DIGITS,
+    META_ANY_GUID,
     META_GUID,
+    META_GUID_KEY,
     META_VERSION,
     _project_info,
     _read_metadata,
@@ -107,6 +114,15 @@ class _WarningLog:
         if key in self.seen:
             return
         if len(self.items) >= MAX_WARNINGS:
+            if (
+                warning.get("code") == "metadata_unusable"
+                and not any(
+                    item.get("code") == "metadata_unusable"
+                    for item in self.items
+                )
+            ):
+                self.items[-1] = dict(warning)
+                self.seen.add(key)
             self.suppressed = True
             return
         self.seen.add(key)
@@ -166,21 +182,40 @@ def _parallel_each(
     return False
 
 
-def _read_metadata_source(path: Path) -> Tuple[str, Optional[str]]:
+def _read_metadata_source(path: Path) -> Tuple[str, object]:
     try:
-        text = path.read_text(encoding="utf-8")
+        text = path.read_text(encoding="utf-8-sig")
     except (OSError, UnicodeError) as error:
         return "unreadable", str(error)
+    if len(META_GUID_KEY.findall(text)) != 1:
+        return "invalid_guid", tuple(
+            dict.fromkeys(
+                match.lower()
+                for match in META_ANY_GUID.findall(text)
+            )
+        )
     guid_match = META_GUID.search(text)
     if guid_match is None:
-        return "invalid_guid", None
+        return "invalid_guid", tuple(
+            dict.fromkeys(
+                match.lower()
+                for match in META_ANY_GUID.findall(text)
+            )
+        )
+    guid = guid_match.group(1).lower()
+    target = path.with_suffix("")
+    if target.suffix.lower() == ".meta" or _is_link_like(target) or not target.exists():
+        return "ok", guid
     version_match = META_VERSION.search(text)
     if version_match is not None:
+        raw_version = version_match.group(1)
+        if len(raw_version) > MAX_METADATA_VERSION_DIGITS:
+            return "invalid_version", guid
         try:
-            int(version_match.group(1))
+            int(raw_version)
         except ValueError:
-            return "invalid_version", None
-    return "ok", guid_match.group(1).lower()
+            return "invalid_version", guid
+    return "ok", guid
 
 
 def _read_guid_sources(path: Path) -> Tuple[str, object]:
@@ -214,6 +249,262 @@ def _new_payload(project: Path, query: Dict[str, object]) -> Dict[str, object]:
         "warnings": [],
         "error": None,
     }
+
+
+def _reference_timeout_payload(
+    project: Path,
+    selector: str,
+    value: str,
+    object_file_id: Optional[str],
+    direction: Optional[str],
+    depth: Optional[str],
+    limit: Optional[str],
+    timeout_seconds: Optional[str],
+    root_hint: Optional[Dict[str, object]],
+) -> Dict[str, object]:
+    payload = _new_payload(
+        project,
+        {
+            "selector": selector,
+            "value": value,
+            "object_file_id": object_file_id,
+            "direction": direction,
+            "depth": depth,
+            "limit": limit,
+            "timeout_seconds": timeout_seconds,
+        },
+    )
+    try:
+        direction_value = _parse_direction(direction)
+        depth_value = _parse_bounded_int(
+            depth,
+            "depth",
+            DEFAULT_DEPTH,
+            1,
+            MAX_DEPTH,
+        )
+        limit_value = _parse_bounded_int(
+            limit,
+            "limit",
+            DEFAULT_LIMIT,
+            1,
+            MAX_LIMIT,
+        )
+        timeout_value = _parse_timeout(timeout_seconds)
+        payload["query"] = {
+            "selector": selector,
+            "value": value,
+            "object_file_id": _parse_object_file_id(object_file_id),
+            "direction": direction_value,
+            "depth": depth_value,
+            "limit": limit_value,
+            "timeout_seconds": timeout_value,
+        }
+        payload["limits"] = {
+            "evidence_kind": "serialized_references",
+            "direction": direction_value,
+            "depth": depth_value,
+            "max_depth": MAX_DEPTH,
+            "limit": limit_value,
+            "max_limit": MAX_LIMIT,
+            "timeout_seconds": timeout_value,
+            "max_timeout_seconds": MAX_TIMEOUT_SECONDS,
+            "external_identity": "unique_sibling_meta_guid",
+        }
+    except ReferenceError:
+        pass
+    if root_hint is None and selector == "path":
+        path_hint = _path_root_hint(project, value)
+        if path_hint is not None:
+            root_hint = {"path": path_hint}
+    payload["root"] = root_hint
+    payload["status"] = "timeout"
+    payload["complete"] = False
+    payload["incomplete_reasons"] = ["timeout"]
+    payload["warnings"] = [
+        _warning("timeout", "Reference traversal timed out.", None)
+    ]
+    payload["error"] = {
+        "code": "timeout",
+        "message": "Reference traversal timed out; returned evidence is incomplete.",
+    }
+    return payload
+
+
+def _path_root_hint(project: Path, value: str) -> Optional[str]:
+    if not value or "\x00" in value:
+        return None
+    portable = value.replace("\\", "/")
+    if portable.startswith("/") or re.match(r"^[A-Za-z]:", portable):
+        root = os.path.abspath(os.path.expanduser(str(project)))
+        candidate = os.path.abspath(os.path.expanduser(value))
+        try:
+            relative = os.path.relpath(candidate, root)
+        except ValueError:
+            return None
+        if relative == os.pardir or relative.startswith(os.pardir + os.sep):
+            return None
+        return Path(relative).as_posix() if relative not in ("", ".") else None
+    relative = PurePosixPath(portable)
+    if ".." in relative.parts:
+        return None
+    return relative.as_posix()
+
+
+def _validate_path_syntax(project: Path, value: str) -> None:
+    if not value or "\x00" in value:
+        raise ReferenceError(
+            "invalid_query",
+            "The path selector is empty or invalid.",
+        )
+    portable = value.replace("\\", "/")
+    if any(part == ".." for part in portable.split("/")):
+        raise ReferenceError(
+            "path_traversal",
+            "Parent-directory traversal is not allowed.",
+        )
+    if ABSOLUTE_PATH.match(value):
+        root = os.path.abspath(os.path.expanduser(str(project)))
+        candidate = os.path.abspath(os.path.expanduser(value))
+        try:
+            relative = os.path.relpath(candidate, root)
+        except ValueError as error:
+            raise ReferenceError(
+                "invalid_query",
+                f"The absolute path selector could not be resolved: {error}",
+            ) from error
+        if relative == os.pardir or relative.startswith(os.pardir + os.sep):
+            raise ReferenceError(
+                "path_outside_root",
+                "The absolute path selector is outside the Unity project.",
+            )
+        parts = PurePosixPath(relative.replace("\\", "/")).parts
+    else:
+        parts = tuple(
+            part
+            for part in PurePosixPath(portable).parts
+            if part not in ("", ".")
+        )
+    if not parts:
+        raise ReferenceError(
+            "invalid_query",
+            "The path selector does not name an asset.",
+        )
+    if len(parts) < 2:
+        raise ReferenceError(
+            "invalid_query",
+            "The path selector must name an asset below an included root.",
+        )
+    if parts[0].casefold() not in {"assets", "packages"}:
+        raise ReferenceError(
+            "path_outside_included_roots",
+            "The path selector is outside Assets and Packages.",
+        )
+    if os.name == "nt" and any(":" in part for part in parts):
+        raise ReferenceError(
+            "invalid_query",
+            "The path selector contains an invalid Windows path segment.",
+        )
+    if PurePosixPath(parts[-1]).suffix.lower() == ".meta":
+        raise ReferenceError(
+            "metadata_not_asset",
+            "A .meta file is metadata evidence, not an asset selector.",
+        )
+
+
+def _reference_worker_error_payload(
+    project: Path,
+    selector: str,
+    value: str,
+    object_file_id: Optional[str],
+    direction: Optional[str],
+    depth: Optional[str],
+    limit: Optional[str],
+    timeout_seconds: Optional[str],
+    message: str,
+) -> Dict[str, object]:
+    payload = _reference_timeout_payload(
+        project,
+        selector,
+        value,
+        object_file_id,
+        direction,
+        depth,
+        limit,
+        timeout_seconds,
+        None,
+    )
+    payload["status"] = "invalid_project"
+    payload["incomplete_reasons"] = []
+    payload["error"] = {"code": "reference_worker_failed", "message": message}
+    payload["warnings"] = [
+        _warning("reference_worker_failed", message)
+    ]
+    return payload
+
+
+def _reference_argument_error_payload(
+    project: Path,
+    selector: str,
+    value: str,
+    object_file_id: Optional[str],
+    direction: Optional[str],
+    depth: Optional[str],
+    limit: Optional[str],
+    timeout_seconds: Optional[str],
+    error: Exception,
+) -> Dict[str, object]:
+    payload = _reference_timeout_payload(
+        project,
+        selector,
+        value,
+        object_file_id,
+        direction,
+        depth,
+        limit,
+        timeout_seconds,
+        None,
+    )
+    code = getattr(error, "code", "invalid_query")
+    status = "invalid_project" if code == "invalid_project" else "invalid_query"
+    payload["status"] = status
+    payload["incomplete_reasons"] = []
+    payload["error"] = {"code": code, "message": str(error)}
+    payload["warnings"] = [_warning(code, str(error))]
+    return payload
+
+
+def _reference_worker(
+    messages,
+    project: str,
+    selector: str,
+    value: str,
+    object_file_id: Optional[str],
+    direction: Optional[str],
+    depth: Optional[str],
+    limit: Optional[str],
+    timeout_seconds: Optional[str],
+) -> None:
+    try:
+        payload = references_query(
+            Path(project),
+            selector,
+            value,
+            object_file_id,
+            direction,
+            depth,
+            limit,
+            timeout_seconds,
+            _progress=lambda root: messages.put(("root", root)),
+        )
+        messages.put(("result", payload))
+    except BaseException as error:
+        messages.put(
+            (
+                "error",
+                f"{type(error).__name__}: {error}",
+            )
+        )
 
 
 def _parse_direction(raw: Optional[str]) -> str:
@@ -443,6 +734,7 @@ class _ReferenceContext:
         self.parsed: Dict[str, Tuple[Optional[Dict[str, object]], Optional[SerializedError]]] = {}
         self.guids: Dict[str, Optional[str]] = {}
         self.external: Dict[str, Dict[str, object]] = {}
+        self.invalid_external_guids: Dict[str, List[str]] = defaultdict(list)
         self.metadata_paths: Optional[Dict[str, List[str]]] = None
         self.metadata_timed_out = False
         self.metadata_incomplete = False
@@ -489,6 +781,10 @@ class _ReferenceContext:
         )
         self.warnings.add_many(scan_warnings)
         if scan_warnings:
+            self.warnings.code(
+                "metadata_unusable",
+                "Unreadable scan areas prevent proving metadata uniqueness.",
+            )
             self.source_incomplete = True
             self.metadata_incomplete = True
         index: Dict[str, List[str]] = defaultdict(list)
@@ -505,20 +801,34 @@ class _ReferenceContext:
                 self.metadata_incomplete = True
                 return
             if status == "invalid_guid":
-                self.warnings.code(
-                    "metadata_unusable",
-                    "Metadata has no valid GUID.",
-                    relative,
+                candidates = (
+                    value
+                    if isinstance(value, tuple)
+                    else ()
                 )
-                self.metadata_incomplete = True
+                if candidates:
+                    for candidate in candidates:
+                        self.invalid_external_guids[str(candidate)].append(
+                            relative
+                        )
+                else:
+                    self.warnings.code(
+                        "metadata_unusable",
+                        "Metadata has no valid GUID.",
+                        relative,
+                    )
+                    self.metadata_incomplete = True
                 return
             if status == "invalid_version":
-                self.warnings.code(
-                    "metadata_unusable",
-                    "Metadata has an unsupported fileFormatVersion.",
-                    relative,
-                )
-                self.metadata_incomplete = True
+                if value is None:
+                    self.warnings.code(
+                        "metadata_unusable",
+                        "Metadata has an unsupported fileFormatVersion.",
+                        relative,
+                    )
+                    self.metadata_incomplete = True
+                else:
+                    self.invalid_external_guids[str(value)].append(relative)
                 return
             target = meta_path.with_suffix("")
             if target.suffix.lower() == ".meta":
@@ -599,6 +909,15 @@ class _ReferenceContext:
         if self.metadata_timed_out or self.deadline.expired():
             return {"status": "timeout", "guid": normalized, "reason": "timeout"}
         paths: List[str] = []
+        invalid_paths = self.invalid_external_guids.get(normalized, [])
+        for invalid_path in invalid_paths:
+            self.warnings.code(
+                "metadata_unusable",
+                "Metadata cannot establish one external asset identity.",
+                invalid_path,
+            )
+            self.source_incomplete = True
+        candidate_incomplete = bool(invalid_paths)
         for candidate in index.get(normalized, []):
             target = self.root / candidate
             if _is_link_like(target):
@@ -607,24 +926,41 @@ class _ReferenceContext:
                     "The metadata target is a link and was not followed.",
                     _relative(target.with_name(target.name + ".meta"), self.root),
                 )
-                self.metadata_incomplete = True
                 self.source_incomplete = True
+                candidate_incomplete = True
                 continue
-            if target.is_file() or target.is_dir():
-                paths.append(candidate)
+            if not (target.is_file() or target.is_dir()):
+                self.warnings.code(
+                    "metadata_unusable",
+                    "The metadata target is missing and was not selected.",
+                    _relative(target.with_name(target.name + ".meta"), self.root),
+                )
+                self.source_incomplete = True
+                candidate_incomplete = True
+                continue
+            paths.append(candidate)
         paths.sort()
+        metadata_incomplete = self.metadata_incomplete or candidate_incomplete
         if len(paths) == 1:
-            asset, asset_warnings = _result(self.root, self.root / paths[0])
-            self.warnings.add_many(asset_warnings)
-            if self.deadline.expired():
-                return {"status": "timeout", "guid": normalized, "reason": "timeout"}
-            result = {
-                "status": "ok",
-                "guid": normalized,
-                "path": asset["path"],
-                "type": asset["type"],
-                "metadata": asset["metadata"],
-            }
+            if metadata_incomplete:
+                result = {
+                    "status": "ambiguous",
+                    "guid": normalized,
+                    "reason": "metadata_unusable",
+                    "candidate_paths": paths,
+                }
+            else:
+                asset, asset_warnings = _result(self.root, self.root / paths[0])
+                self.warnings.add_many(asset_warnings)
+                if self.deadline.expired():
+                    return {"status": "timeout", "guid": normalized, "reason": "timeout"}
+                result = {
+                    "status": "ok",
+                    "guid": normalized,
+                    "path": asset["path"],
+                    "type": asset["type"],
+                    "metadata": asset["metadata"],
+                }
         elif len(paths) > 1:
             result = {
                 "status": "ambiguous",
@@ -632,7 +968,13 @@ class _ReferenceContext:
                 "reason": "ambiguous_guid",
                 "candidate_paths": paths,
             }
-        elif self.metadata_incomplete:
+        elif candidate_incomplete:
+            result = {
+                "status": "ambiguous",
+                "guid": normalized,
+                "reason": "metadata_unusable",
+            }
+        elif metadata_incomplete:
             result = {
                 "status": "unresolved",
                 "guid": normalized,
@@ -644,7 +986,7 @@ class _ReferenceContext:
                 "guid": normalized,
                 "reason": "guid_not_found",
             }
-        if self.metadata_incomplete:
+        if metadata_incomplete:
             result["source_incomplete"] = True
             self.source_incomplete = True
         self.external[normalized] = result
@@ -1268,6 +1610,8 @@ def references_query(
     depth: Optional[str] = None,
     limit: Optional[str] = None,
     timeout_seconds: Optional[str] = None,
+    *,
+    _progress: Optional[Callable[[Dict[str, object]], None]] = None,
 ) -> Dict[str, object]:
     """Return the version-1 serialized-reference traversal envelope."""
 
@@ -1337,7 +1681,13 @@ def references_query(
         payload["project"] = project_info
         payload["status"] = "ok"
 
-        asset_payload = asset_query(root, selector, value, deadline.expired)
+        asset_payload = asset_query(
+            root,
+            selector,
+            value,
+            deadline.expired,
+            duplicate_guid_check=False,
+        )
         warnings.add_many(asset_payload["warnings"])
         if asset_payload["status"] != "ok":
             payload["status"] = str(asset_payload["status"])
@@ -1353,8 +1703,7 @@ def references_query(
                 warning.get("code") == "metadata_unusable"
                 for warning in asset_payload["warnings"]
             )
-            if payload["status"] == "not_found" and metadata_unusable:
-                payload["status"] = "source_evidence_incomplete"
+            if metadata_unusable:
                 payload["complete"] = False
                 payload["incomplete_reasons"] = ["source_evidence_incomplete"]
                 warnings.code(
@@ -1362,6 +1711,8 @@ def references_query(
                     "The asset selector could not be resolved because metadata is unusable.",
                     value,
                 )
+            if payload["status"] == "not_found" and metadata_unusable:
+                payload["status"] = "source_evidence_incomplete"
                 return payload
             warning_code = (
                 "ambiguous_asset"
@@ -1400,6 +1751,8 @@ def references_query(
             "metadata": asset["metadata"],
             "object_file_id": object_id,
         }
+        if _progress is not None:
+            _progress(dict(payload["root"]))
         if root_type == "folder":
             raise ReferenceError(
                 "not_serialized_asset",
@@ -1563,3 +1916,210 @@ def references_query(
     finally:
         payload["warnings"] = warnings.finish()
     return payload
+
+
+def references_cli_query(
+    project: Path,
+    selector: str,
+    value: str,
+    object_file_id: Optional[str] = None,
+    direction: Optional[str] = None,
+    depth: Optional[str] = None,
+    limit: Optional[str] = None,
+    timeout_seconds: Optional[str] = None,
+) -> Dict[str, object]:
+    """Run one public reference query behind a parent-enforced deadline."""
+
+    try:
+        timeout_value = _parse_timeout(timeout_seconds)
+    except ReferenceError as error:
+        return _reference_argument_error_payload(
+            project,
+            selector,
+            value,
+            object_file_id,
+            direction,
+            depth,
+            limit,
+            timeout_seconds,
+            error,
+        )
+
+    try:
+        _parse_direction(direction)
+        _parse_bounded_int(
+            depth,
+            "depth",
+            DEFAULT_DEPTH,
+            1,
+            MAX_DEPTH,
+        )
+        _parse_bounded_int(
+            limit,
+            "limit",
+            DEFAULT_LIMIT,
+            1,
+            MAX_LIMIT,
+        )
+        _parse_object_file_id(object_file_id)
+        if selector not in {"path", "guid", "name"}:
+            raise ReferenceError(
+                "invalid_query",
+                f"Unsupported asset selector: {selector}",
+            )
+        if not value or "\x00" in value:
+            raise ReferenceError(
+                "invalid_query",
+                "The asset selector value is empty or invalid.",
+            )
+        if selector == "guid":
+            if GUID_PATTERN.fullmatch(value) is None:
+                raise ReferenceError(
+                    "invalid_guid",
+                    "GUID selectors must be exactly 32 hexadecimal characters.",
+                )
+        elif selector == "name":
+            if "/" in value or "\\" in value:
+                raise ReferenceError(
+                    "invalid_name",
+                    "Name selectors must be one basename or extensionless stem.",
+                )
+        else:
+            _validate_path_syntax(Path(project), value)
+    except (ReferenceError, NavigationError) as error:
+        return _reference_argument_error_payload(
+            project,
+            selector,
+            value,
+            object_file_id,
+            direction,
+            depth,
+            limit,
+            timeout_seconds,
+            error,
+        )
+
+    context = multiprocessing.get_context("spawn")
+    messages = context.Queue()
+    process = context.Process(
+        target=_reference_worker,
+        args=(
+            messages,
+            str(project),
+            selector,
+            value,
+            object_file_id,
+            direction,
+            depth,
+            limit,
+            timeout_seconds,
+        ),
+        daemon=True,
+    )
+    deadline = time.monotonic() + timeout_value
+    try:
+        process.start()
+    except (OSError, RuntimeError) as error:
+        messages.close()
+        return _reference_worker_error_payload(
+            Path(project),
+            selector,
+            value,
+            object_file_id,
+            direction,
+            depth,
+            limit,
+            timeout_seconds,
+            f"Reference worker could not be started: {error}",
+        )
+
+    root_hint: Optional[Dict[str, object]] = None
+    result: Optional[Dict[str, object]] = None
+    worker_error: Optional[str] = None
+    try:
+        while result is None and worker_error is None:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
+            try:
+                kind, value_from_worker = messages.get(
+                    timeout=min(remaining, 0.1)
+                )
+            except QueueEmpty:
+                if not process.is_alive():
+                    break
+                continue
+            if kind == "root":
+                root_hint = value_from_worker
+            elif kind == "result":
+                result = value_from_worker
+            else:
+                worker_error = str(value_from_worker)
+    finally:
+        try:
+            if process.is_alive():
+                process.terminate()
+        except (OSError, ValueError):
+            pass
+        try:
+            process.join(1)
+        except (OSError, ValueError):
+            pass
+        try:
+            if process.is_alive():
+                process.kill()
+        except (OSError, ValueError):
+            pass
+        try:
+            process.join(1)
+        except (OSError, ValueError):
+            pass
+        try:
+            messages.cancel_join_thread()
+            messages.close()
+        except (OSError, ValueError):
+            pass
+        close_process = getattr(process, "close", None)
+        if close_process is not None:
+            try:
+                close_process()
+            except (OSError, ValueError):
+                pass
+
+    if result is not None:
+        return result
+    if worker_error is not None:
+        return _reference_worker_error_payload(
+            Path(project),
+            selector,
+            value,
+            object_file_id,
+            direction,
+            depth,
+            limit,
+            timeout_seconds,
+            f"Reference worker failed: {worker_error}",
+        )
+    if time.monotonic() >= deadline:
+        return _reference_timeout_payload(
+            Path(project),
+            selector,
+            value,
+            object_file_id,
+            direction,
+            depth,
+            limit,
+            timeout_seconds,
+            root_hint,
+        )
+    return _reference_worker_error_payload(
+        Path(project),
+        selector,
+        value,
+        object_file_id,
+        direction,
+        depth,
+        limit,
+        timeout_seconds,
+        "Reference worker exited without returning a result.",
+    )
