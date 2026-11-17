@@ -549,7 +549,7 @@ class UnityReferenceNavigationTests(unittest.TestCase):
             "--project",
             str(self.root),
             "--path",
-            str(self.root / "Assets/Prefabs/A.prefab"),
+            str(self.root.resolve() / "Assets" / "Prefabs" / "A.prefab"),
             "--timeout-seconds",
             "1",
             env=env,

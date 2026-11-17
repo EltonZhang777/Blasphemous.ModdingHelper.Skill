@@ -266,7 +266,10 @@ class UnitySceneNavigationTests(unittest.TestCase):
         self.assertEqual(scene["evidence"][0]["path"], relative)
         self.assertEqual(scene["evidence"][0]["objects"][0]["name"], "DECORoot")
 
-        _, absolute_payload = self.query_ok("--path", str(self.root / relative))
+        _, absolute_payload = self.query_ok(
+            "--path",
+            str(self.root.resolve() / relative),
+        )
         self.assertEqual(
             absolute_payload["results"][0]["evidence"][0]["path"],
             relative,
