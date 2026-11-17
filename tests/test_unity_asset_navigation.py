@@ -426,8 +426,8 @@ class UnityAssetNavigationTests(unittest.TestCase):
                 )
 
     def test_unrelated_link_target_metadata_does_not_affect_guid_result(self):
-        guid = "5" * 32
-        other_guid = "4" * 32
+        guid = "a" * 32
+        other_guid = "b" * 32
         self.add_asset("Assets/Data/shared.asset", "%YAML 1.1\n", guid)
         actual = self.write("Assets/Data/actual.asset", "%YAML 1.1\n")
         linked = self.root / "Assets/Data/linked.asset"
