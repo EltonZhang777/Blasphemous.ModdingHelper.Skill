@@ -547,7 +547,7 @@ class UnityReferenceNavigationTests(unittest.TestCase):
         result = self.run_scanner(
             "references",
             "--project",
-            str(self.root),
+            str(self.root.resolve()),
             "--path",
             str(self.root.resolve() / "Assets" / "Prefabs" / "A.prefab"),
             "--timeout-seconds",
