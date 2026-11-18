@@ -50,6 +50,8 @@ Only these exact names and the documented `_backup` suffix are supported. Arbitr
 - Vanilla: Base64-decoded UTF-8 JSON. The analyzer MUST preserve `$type`, unknown fields, and nested values.
 - ModdingAPI persistence: an ordered identifier/JSON-payload line stream. See [ModdingAPI persistence save format](moddingapi-persistence-save-format.md).
 
+The analyzer does not impose a fixed JSON depth cap. If the host Python runtime's parser or serializer recursion limit is reached, the input is reported with reason `unsupported-depth`; directory mode preserves usable siblings as partial evidence.
+
 ## Run artifacts
 
 Each invocation MUST create a unique run directory under the host temporary area, under `blasphemous-save-analysis/<run-id>`. The command MUST print the normalized absolute run path.

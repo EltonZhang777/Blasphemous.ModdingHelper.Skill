@@ -80,15 +80,28 @@ class SaveAnalysisTests(unittest.TestCase):
             "\n".join(
                 [
                     "import os",
+                    "import json",
                     "import pathlib",
                     "import tempfile",
                     "import uuid",
                     "",
+                    "_original_json_dumps = json.dumps",
                     "_original_mkdtemp = tempfile.mkdtemp",
                     "_original_path_open = pathlib.Path.open",
                     "_original_path_read_bytes = pathlib.Path.read_bytes",
+                    "_fail_chunk_name = os.environ.get('SAVE_ANALYSIS_TEST_FAIL_CHUNK_RECURSION')",
                     "_fail_name = os.environ.get('SAVE_ANALYSIS_TEST_FAIL_WRITE')",
                     "_fail_read_name = os.environ.get('SAVE_ANALYSIS_TEST_FAIL_READ')",
+                    "",
+                    "def _json_dumps(value, *args, **kwargs):",
+                    "    source = value.get('source') if isinstance(value, dict) else None",
+                    "    if (",
+                    "        _fail_chunk_name",
+                    "        and isinstance(source, dict)",
+                    "        and source.get('name') == _fail_chunk_name",
+                    "    ):",
+                    "        raise RecursionError('injected serialization recursion')",
+                    "    return _original_json_dumps(value, *args, **kwargs)",
                     "",
                     "def _open_path(self, *args, **kwargs):",
                     "    mode = args[0] if args else kwargs.get('mode', 'r')",
@@ -107,6 +120,7 @@ class SaveAnalysisTests(unittest.TestCase):
                     "        return fixed",
                     "    return _original_mkdtemp(*args, **kwargs)",
                     "",
+                    "json.dumps = _json_dumps",
                     "pathlib.Path.open = _open_path",
                     "pathlib.Path.read_bytes = _read_bytes",
                     "tempfile.mkdtemp = _mkdtemp",
@@ -720,6 +734,7 @@ class SaveAnalysisTests(unittest.TestCase):
         )
         self.assertEqual(chunk["records"][0]["raw_payload_chars"], 609)
         self.assertTrue(chunk["records"][0]["raw_payload_truncated"])
+        self.assertEqual(chunk["records"][0]["error_reason"], "invalid-json")
         self.assertEqual(chunk["records"][0]["payload_line"], 2)
         self.assertEqual(chunk["records"][1]["line"], 3)
         self.assertEqual(chunk["records"][2]["payload_line"], 5)
@@ -734,6 +749,32 @@ class SaveAnalysisTests(unittest.TestCase):
         self.assertIn("Valid records: 1", summary)
         self.assertIn("Invalid records: 1", summary)
         self.assertIn("Incomplete records: 1", summary)
+
+    def test_moddingapi_excessive_depth_reports_unsupported_depth(self):
+        depth = 1100
+        source = self.root / "deep-modding-records.bin"
+        source.write_bytes(
+            ("demo.mod\n" + ("[" * depth) + "0" + ("]" * depth) + "\n").encode(
+                "utf-8"
+            )
+        )
+
+        result = self.run_cli(str(source))
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        run_root = Path(result.stdout.strip())
+        manifest = json.loads(
+            (run_root / "manifest.json").read_text(encoding="utf-8")
+        )
+        item = manifest["inputs"][0]
+        self.assertEqual(item["format"], "moddingapi-records")
+        self.assertEqual(item["counts"]["invalid_records"], 1)
+        chunk = json.loads(
+            (run_root / item["artifacts"]["chunk"]).read_text(encoding="utf-8")
+        )
+        record = chunk["records"][0]
+        self.assertEqual(record["status"], "invalid")
+        self.assertEqual(record["error_reason"], "unsupported-depth")
 
     def test_moddingapi_blank_lines_do_not_shift_following_records(self):
         source = self.root / "blank-lines.bin"
@@ -983,50 +1024,111 @@ class SaveAnalysisTests(unittest.TestCase):
         self.assertIn("Error: unsupported-format", summary)
         self.assertIn("Full artifact: unavailable", summary)
 
-    def test_deep_json_failure_preserves_valid_directory_sibling(self):
-        for depth in (129, 1100):
-            with self.subTest(depth=depth):
-                source = self.root / f"deep json directory {depth}"
-                source.mkdir()
-                valid = source / "app_settings"
-                valid.write_bytes(self.vanilla_bytes({"value": 1}))
-                deep = source / "savegame_0.save"
-                deep.write_bytes(
-                    base64.b64encode((b"[" * depth) + b"0" + (b"]" * depth))
-                )
+    def test_deep_valid_json_is_preserved(self):
+        expected = 0
+        for _ in range(129):
+            expected = [expected]
+        source = self.root / "deep valid save"
+        source.write_bytes(self.vanilla_bytes(expected))
 
-                result = self.run_cli(str(source))
+        result = self.run_cli(str(source))
 
-                self.assertEqual(result.returncode, 3, result.stderr)
-                self.assertNotIn("Traceback", result.stderr)
-                self.assertIn(
-                    "Warning [save-analysis]: partial evidence", result.stderr
-                )
-                run_root = Path(result.stdout.strip())
-                manifest = json.loads(
-                    (run_root / "manifest.json").read_text(encoding="utf-8")
-                )
-                self.assertEqual(manifest["status"], "partial")
-                by_name = {
-                    item["source"]["name"]: item for item in manifest["inputs"]
-                }
-                self.assertEqual(by_name["app_settings"]["parse_status"], "ok")
-                failed = by_name["savegame_0.save"]
-                self.assertEqual(failed["parse_status"], "failed")
-                self.assertEqual(failed["error"]["reason"], "invalid-json")
-                self.assertEqual(failed["artifact_status"]["full"], "unavailable")
-                self.assertTrue(
-                    (
-                        run_root
-                        / by_name["app_settings"]["artifacts"]["chunk"]
-                    ).is_file()
-                )
-                self.assertTrue(
-                    (
-                        run_root
-                        / by_name["app_settings"]["artifacts"]["full"]
-                    ).is_file()
-                )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        run_root = Path(result.stdout.strip())
+        manifest = json.loads(
+            (run_root / "manifest.json").read_text(encoding="utf-8")
+        )
+        self.assertEqual(manifest["status"], "success")
+        item = manifest["inputs"][0]
+        self.assertEqual(item["parse_status"], "ok")
+        chunk = json.loads(
+            (run_root / item["artifacts"]["chunk"]).read_text(encoding="utf-8")
+        )
+        self.assertEqual(chunk["data"], expected)
+        full = json.loads(
+            (run_root / item["artifacts"]["full"]).read_text(encoding="utf-8")
+        )
+        self.assertEqual(full, expected)
+
+    def test_excessive_json_depth_preserves_valid_directory_sibling(self):
+        depth = 1100
+        source = self.root / "excessive depth directory"
+        source.mkdir()
+        valid = source / "app_settings"
+        valid.write_bytes(self.vanilla_bytes({"value": 1}))
+        deep = source / "savegame_0.save"
+        deep.write_bytes(
+            base64.b64encode((b"[" * depth) + b"0" + (b"]" * depth))
+        )
+
+        result = self.run_cli(str(source))
+
+        self.assertEqual(result.returncode, 3, result.stderr)
+        self.assertNotIn("Traceback", result.stderr)
+        self.assertIn("Warning [save-analysis]: partial evidence", result.stderr)
+        run_root = Path(result.stdout.strip())
+        manifest = json.loads(
+            (run_root / "manifest.json").read_text(encoding="utf-8")
+        )
+        self.assertEqual(manifest["status"], "partial")
+        by_name = {item["source"]["name"]: item for item in manifest["inputs"]}
+        self.assertEqual(by_name["app_settings"]["parse_status"], "ok")
+        failed = by_name["savegame_0.save"]
+        self.assertEqual(failed["parse_status"], "failed")
+        self.assertEqual(failed["error"]["reason"], "unsupported-depth")
+        self.assertEqual(failed["artifact_status"]["full"], "unavailable")
+        self.assertTrue(
+            (run_root / by_name["app_settings"]["artifacts"]["chunk"]).is_file()
+        )
+        self.assertTrue(
+            (run_root / by_name["app_settings"]["artifacts"]["full"]).is_file()
+        )
+
+    def test_chunk_serialization_depth_preserves_full_artifact_and_sibling(self):
+        source = self.root / "serialization depth directory"
+        source.mkdir()
+        valid = source / "app_settings"
+        valid.write_bytes(self.vanilla_bytes({"value": 1}))
+        deep = source / "savegame_0.save"
+        deep.write_bytes(self.vanilla_bytes({"value": 2}))
+        shadow = self.shadow_sitecustomize()
+
+        result = self.run_cli(
+            str(source),
+            extra_env={
+                "PYTHONPATH": str(shadow),
+                "SAVE_ANALYSIS_TEST_FAIL_CHUNK_RECURSION": deep.name,
+            },
+        )
+
+        self.assertEqual(result.returncode, 3, result.stderr)
+        run_root = Path(result.stdout.strip())
+        manifest = json.loads(
+            (run_root / "manifest.json").read_text(encoding="utf-8")
+        )
+        by_name = {item["source"]["name"]: item for item in manifest["inputs"]}
+        self.assertEqual(
+            by_name["app_settings"]["artifact_status"],
+            {"chunk": "complete", "full": "complete"},
+        )
+        failed = by_name["savegame_0.save"]
+        self.assertEqual(failed["parse_status"], "ok")
+        self.assertEqual(
+            failed["artifact_status"],
+            {"chunk": "failed", "full": "complete"},
+        )
+        self.assertEqual(
+            failed["artifact_errors"]["chunk"]["reason"],
+            "unsupported-depth",
+        )
+        self.assertEqual(manifest["usable_artifacts"], [
+            "structured/input-1.json",
+            "full/input-1.json",
+            "full/input-2.json",
+        ])
+        self.assertTrue(
+            (run_root / failed["artifacts"]["full"]).is_file()
+        )
 
     def test_chunk_write_failure_preserves_full_artifact(self):
         source = self.root / "app_settings_modded"

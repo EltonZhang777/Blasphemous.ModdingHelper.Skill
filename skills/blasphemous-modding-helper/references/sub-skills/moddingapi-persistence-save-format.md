@@ -45,7 +45,7 @@ Blank lines are not part of the normal writer output. The analyzer MUST preserve
 | Record state | Evidence |
 | --- | --- |
 | Valid | Parsed standard JSON payload retained as structured data |
-| Invalid | Identifier, payload line, raw payload text, JSON error, and source position retained |
+| Invalid | Identifier, payload line, raw payload text, error reason and message, and source position retained |
 | Blank | Blank line and its source position retained |
 | Incomplete | Trailing identifier without a payload line retained |
 
@@ -73,7 +73,7 @@ Valid JSON payloads MUST use four-space indentation. Invalid payload text and in
 
 This full artifact is potentially invalid JSON and is not a single JSON document. A consumer MUST read the manifest and structured chunk first and MUST NOT parse the full record stream as one JSON value.
 
-The structured chunk MUST expose an ordered `records` sequence with the record status and source positions. Every valid record MUST expose its complete parsed JSON value under `payload`, preserving `$type`, unknown properties, and nested values. Invalid records MUST expose a bounded raw-payload preview, its character count, and whether it was truncated. The full artifact remains the exact normalized record surface.
+The structured chunk MUST expose an ordered `records` sequence with the record status and source positions. Every valid record MUST expose its complete parsed JSON value under `payload`, preserving `$type`, unknown properties, and nested values. Invalid records MUST expose a bounded raw-payload preview, its character count, whether it was truncated, and an error reason and message. A runtime parser recursion limit uses the `unsupported-depth` reason. The full artifact remains the exact normalized record surface.
 
 The manifest per-file entry MUST expose the format, role, parse status, valid and invalid counts, and artifact mappings.
 

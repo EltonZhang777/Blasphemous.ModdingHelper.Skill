@@ -21,7 +21,6 @@ EXIT_SUCCESS = 0
 EXIT_FAILURE = 1
 EXIT_PARTIAL = 3
 RUN_ROOT_NAME = "blasphemous-save-analysis"
-MAX_JSON_DEPTH = 128
 MAX_MODDING_PREVIEW_CHARS = 512
 CONVENTIONAL_MODDING_IDENTIFIER = re.compile(
     r"(?:[A-Za-z0-9_-]+\.)+[A-Za-z0-9_-]+|"
@@ -84,33 +83,28 @@ def _parse_finite_float(value: str) -> float:
     return number
 
 
-def _json_depth_exceeds(value: Any, maximum: int) -> bool:
-    stack = [(value, 0)]
-    while stack:
-        current, depth = stack.pop()
-        if isinstance(current, dict):
-            if depth >= maximum:
-                return True
-            stack.extend((child, depth + 1) for child in current.values())
-        elif isinstance(current, list):
-            if depth >= maximum:
-                return True
-            stack.extend((child, depth + 1) for child in current)
-    return False
-
-
 def _json_loads(value: str):
     try:
-        parsed = json.loads(
+        return json.loads(
             value,
             parse_constant=_reject_nonstandard_constant,
             parse_float=_parse_finite_float,
         )
     except RecursionError as error:
-        raise ValueError("JSON nesting exceeds supported depth.") from error
-    if _json_depth_exceeds(parsed, MAX_JSON_DEPTH):
-        raise ValueError("JSON nesting exceeds supported depth.")
-    return parsed
+        raise SaveAnalysisError(
+            "unsupported-depth",
+            "JSON nesting exceeds the Python runtime's supported parser depth.",
+        ) from error
+
+
+def _json_dumps(value: Any, **kwargs: Any) -> str:
+    try:
+        return json.dumps(value, **kwargs)
+    except RecursionError as error:
+        raise SaveAnalysisError(
+            "unsupported-depth",
+            "JSON nesting exceeds the Python runtime's supported serialization depth.",
+        ) from error
 
 
 def _decode_vanilla(value: bytes) -> Any:
@@ -132,8 +126,10 @@ def _decode_vanilla(value: bytes) -> Any:
 def _parse_json_line(value: str):
     try:
         return _json_loads(value), None
+    except SaveAnalysisError as error:
+        return None, (error.reason, error.message)
     except ValueError as error:
-        return None, str(error)
+        return None, ("invalid-json", str(error))
 
 
 def _decode_modding(value: bytes):
@@ -205,7 +201,8 @@ def _decode_modding(value: bytes):
                 {
                     "status": "invalid",
                     "raw_payload": raw_payload,
-                    "error": error,
+                    "error_reason": error[0],
+                    "error": error[1],
                 }
             )
             records.append(record)
@@ -227,7 +224,7 @@ def _format_modding_full(records: Sequence[Dict[str, Any]]) -> str:
         )
         if status == "valid":
             lines.append(
-                json.dumps(
+                _json_dumps(
                     record["payload"],
                     ensure_ascii=False,
                     allow_nan=False,
@@ -452,7 +449,12 @@ def _analyze_file(
         }
         if role_hint is not None:
             _apply_role(item, chunk, role_hint)
-        return item, chunk, _format_modding_full(records)
+        try:
+            full_text = _format_modding_full(records)
+        except SaveAnalysisError as error:
+            error.source = source
+            raise
+        return item, chunk, full_text
     if vanilla_error is not None:
         raise vanilla_error
 
@@ -484,11 +486,17 @@ def _analyze_file(
     }
     if role_hint is not None:
         _apply_role(item, chunk, role_hint)
-    return (
-        item,
-        chunk,
-        json.dumps(parsed, ensure_ascii=False, allow_nan=False, indent=4) + "\n",
-    )
+    try:
+        full_text = _json_dumps(
+            parsed,
+            ensure_ascii=False,
+            allow_nan=False,
+            indent=4,
+        ) + "\n"
+    except SaveAnalysisError as error:
+        error.source = source
+        raise
+    return item, chunk, full_text
 
 
 def _paths_overlap(left: Path, right: Path) -> bool:
@@ -590,6 +598,8 @@ def _write_text(root: Path, relative: str, value: str) -> None:
 
 
 def _artifact_error(name: str, error: Exception) -> Dict[str, str]:
+    if isinstance(error, SaveAnalysisError):
+        return {"reason": error.reason, "message": error.message}
     reason = "invalid-unicode" if isinstance(error, UnicodeError) else "io-failure"
     if isinstance(error, UnicodeError):
         message = f"{name.capitalize()} artifact cannot be encoded as UTF-8."
@@ -791,18 +801,25 @@ def analyze(input_path: Path) -> Tuple[Path, int]:
 
         for item, chunk, full_text in analyses:
             try:
-                _write_text(
-                    staging,
-                    item["artifacts"]["chunk"],
-                    json.dumps(chunk, ensure_ascii=True, indent=2) + "\n",
-                )
-                item["artifact_status"]["chunk"] = "complete"
-            except SaveAnalysisError:
-                raise
-            except (OSError, UnicodeError) as error:
+                chunk_text = _json_dumps(chunk, ensure_ascii=True, indent=2) + "\n"
+            except SaveAnalysisError as error:
                 partial_reasons.append(
                     _record_artifact_failure(item, "chunk", error)
                 )
+            else:
+                try:
+                    _write_text(
+                        staging,
+                        item["artifacts"]["chunk"],
+                        chunk_text,
+                    )
+                    item["artifact_status"]["chunk"] = "complete"
+                except SaveAnalysisError:
+                    raise
+                except (OSError, UnicodeError) as error:
+                    partial_reasons.append(
+                        _record_artifact_failure(item, "chunk", error)
+                    )
 
             if full_text is not None:
                 try:
