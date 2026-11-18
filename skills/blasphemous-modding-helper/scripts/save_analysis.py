@@ -1,4 +1,4 @@
-"""Read-only structured analysis of explicit Blasphemous 1 save files."""
+"""Read-only structured analysis of explicit Blasphemous 1 save files or directories."""
 
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ EXIT_SUCCESS = 0
 EXIT_FAILURE = 1
 EXIT_PARTIAL = 3
 RUN_ROOT_NAME = "blasphemous-save-analysis"
-MAX_SHAPE_MEMBERS = 40
+MAX_JSON_DEPTH = 128
 MAX_MODDING_PREVIEW_CHARS = 512
 CONVENTIONAL_MODDING_IDENTIFIER = re.compile(
     r"(?:[A-Za-z0-9_-]+\.)+[A-Za-z0-9_-]+|"
@@ -69,6 +69,10 @@ def _unavailable_source_identity(path: Path) -> Dict[str, Any]:
     }
 
 
+def _display_text(value: Any) -> str:
+    return str(value).encode("utf-8", "backslashreplace").decode("utf-8")
+
+
 def _reject_nonstandard_constant(value: str) -> None:
     raise ValueError(f"non-standard JSON constant: {value}")
 
@@ -80,12 +84,33 @@ def _parse_finite_float(value: str) -> float:
     return number
 
 
+def _json_depth_exceeds(value: Any, maximum: int) -> bool:
+    stack = [(value, 0)]
+    while stack:
+        current, depth = stack.pop()
+        if isinstance(current, dict):
+            if depth >= maximum:
+                return True
+            stack.extend((child, depth + 1) for child in current.values())
+        elif isinstance(current, list):
+            if depth >= maximum:
+                return True
+            stack.extend((child, depth + 1) for child in current)
+    return False
+
+
 def _json_loads(value: str):
-    return json.loads(
-        value,
-        parse_constant=_reject_nonstandard_constant,
-        parse_float=_parse_finite_float,
-    )
+    try:
+        parsed = json.loads(
+            value,
+            parse_constant=_reject_nonstandard_constant,
+            parse_float=_parse_finite_float,
+        )
+    except RecursionError as error:
+        raise ValueError("JSON nesting exceeds supported depth.") from error
+    if _json_depth_exceeds(parsed, MAX_JSON_DEPTH):
+        raise ValueError("JSON nesting exceeds supported depth.")
+    return parsed
 
 
 def _decode_vanilla(value: bytes) -> Any:
@@ -225,7 +250,7 @@ def _modding_chunk_records(
             if key not in {"payload", "raw_payload"}
         }
         if record["status"] == "valid":
-            chunk_record["payload_shape"] = _value_shape(record["payload"])
+            chunk_record["payload"] = record["payload"]
         elif record["status"] == "invalid":
             raw_payload = record["raw_payload"]
             chunk_record["raw_payload_preview"] = raw_payload[
@@ -257,44 +282,6 @@ def _top_level_count(value: Any) -> int:
     if isinstance(value, list):
         return len(value)
     return 0
-
-
-def _json_type(value: Any) -> str:
-    if isinstance(value, dict):
-        return "object"
-    if isinstance(value, list):
-        return "array"
-    if isinstance(value, str):
-        return "string"
-    if isinstance(value, bool):
-        return "boolean"
-    if value is None:
-        return "null"
-    if isinstance(value, (int, float)):
-        return "number"
-    return "unknown"
-
-
-def _value_shape(value: Any) -> Dict[str, Any]:
-    if isinstance(value, dict):
-        names = list(value)[:MAX_SHAPE_MEMBERS]
-        return {
-            "type": "object",
-            "member_count": len(value),
-            "members": [
-                {"name": name, "value_type": _json_type(value[name])}
-                for name in names
-            ],
-            "members_omitted": max(0, len(value) - len(names)),
-        }
-    if isinstance(value, list):
-        item_types = sorted({_json_type(item) for item in value})
-        return {
-            "type": "array",
-            "length": len(value),
-            "item_types": item_types,
-        }
-    return {"type": _json_type(value)}
 
 
 def _modding_warnings(counts: Dict[str, int]) -> list:
@@ -493,7 +480,7 @@ def _analyze_file(
         "source": source,
         "role": "vanilla",
         "format": "vanilla-base64-json",
-        "data_shape": _value_shape(parsed),
+        "data": parsed,
     }
     if role_hint is not None:
         _apply_role(item, chunk, role_hint)
@@ -622,7 +609,7 @@ def _record_artifact_failure(
     if name == "full":
         item["full_artifact_status"] = "failed"
     return (
-        f"{item['source']['path']}: {name} artifact failed "
+        f"{_display_text(item['source']['path'])}: {name} artifact failed "
         f"({detail['reason']})"
     )
 
@@ -669,7 +656,7 @@ def _summary(
         f"Status: {status}",
         f"Exit: {exit_code}",
         f"Inputs: {len(items)}",
-        f"Output: {run_root}",
+        f"Output: {_display_text(run_root)}",
         (
             "Lifetime: output is under the host temporary directory; it may be "
             "deleted early or persist beyond this invocation."
@@ -696,7 +683,7 @@ def _summary(
         lines.extend(
             [
                 "",
-                f"Input: {item['source']['path']}",
+                f"Input: {_display_text(item['source']['path'])}",
                 f"  Role: {item['role']}",
                 f"  Format: {item['format']}",
                 f"  Status: {item['parse_status']}",
@@ -714,7 +701,9 @@ def _summary(
             lines.append(f"  Role match: {'yes' if item['role_match'] else 'no'}")
         if "error" in item:
             error = item["error"]
-            lines.append(f"  Error: {error['reason']}: {error['message']}")
+            lines.append(
+                f"  Error: {error['reason']}: {_display_text(error['message'])}"
+            )
         if "top_level_keys" in item:
             lines.append(f"  Top-level keys: {item['top_level_keys']}")
         counts = item.get("counts")
@@ -727,7 +716,8 @@ def _summary(
             lines.append(f"  Warning: {warning}")
         for name, error in item.get("artifact_errors", {}).items():
             lines.append(
-                f"  Artifact error [{name}]: {error['reason']}: {error['message']}"
+                f"  Artifact error [{name}]: {error['reason']}: "
+                f"{_display_text(error['message'])}"
             )
     return "\n".join(lines) + "\n"
 
@@ -795,7 +785,8 @@ def analyze(input_path: Path) -> Tuple[Path, int]:
             if item["parse_status"] == "failed":
                 error = item["error"]
                 partial_reasons.append(
-                    f"{item['source']['path']}: parse failed ({error['reason']})"
+                    f"{_display_text(item['source']['path'])}: parse failed "
+                    f"({error['reason']})"
                 )
 
         for item, chunk, full_text in analyses:
@@ -895,7 +886,7 @@ def analyze(input_path: Path) -> Tuple[Path, int]:
         _write_text(
             staging,
             "manifest.json",
-            json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
+            json.dumps(manifest, ensure_ascii=True, indent=2) + "\n",
         )
 
         if analysis_root.is_symlink() or analysis_root.resolve(strict=True) != analysis_root:
@@ -940,14 +931,18 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     parser = build_parser()
     parser.add_argument(
         "input",
-        type=Path,
         help="One explicit save file or save directory.",
     )
     args = parser.parse_args(argv)
+    if not args.input:
+        parser.error("input path must not be empty")
     try:
-        run_root, exit_code = analyze(args.input)
+        run_root, exit_code = analyze(Path(args.input))
     except SaveAnalysisError as error:
-        print(f"Error [save-analysis]: {error.message}", file=sys.stderr)
+        print(
+            f"Error [save-analysis]: {_display_text(error.message)}",
+            file=sys.stderr,
+        )
         print(f"Reason: {error.reason}", file=sys.stderr)
         if error.source is not None:
             source = error.source
@@ -955,20 +950,28 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 source["bytes"] if source["bytes"] is not None else "unavailable"
             )
             digest = source["sha256"] or "unavailable"
-            print(f"Source path: {source['path']}", file=sys.stderr)
-            print(f"Source name: {source['name']}", file=sys.stderr)
+            print(f"Source path: {_display_text(source['path'])}", file=sys.stderr)
+            print(f"Source name: {_display_text(source['name'])}", file=sys.stderr)
             print(f"Bytes: {byte_count}", file=sys.stderr)
             print(f"SHA-256: {digest}", file=sys.stderr)
         return EXIT_FAILURE
     except OSError as error:
-        print(f"Error [save-analysis]: analysis could not complete: {error}", file=sys.stderr)
+        print(
+            "Error [save-analysis]: analysis could not complete: "
+            f"{_display_text(error)}",
+            file=sys.stderr,
+        )
         print("Reason: io-failure", file=sys.stderr)
         return EXIT_FAILURE
     except UnicodeError as error:
-        print(f"Error [save-analysis]: analysis contains unencodable text: {error}", file=sys.stderr)
+        print(
+            "Error [save-analysis]: analysis contains unencodable text: "
+            f"{_display_text(error)}",
+            file=sys.stderr,
+        )
         print("Reason: invalid-unicode", file=sys.stderr)
         return EXIT_FAILURE
-    print(run_root)
+    print(_display_text(run_root))
     if exit_code == EXIT_PARTIAL:
         print(
             "Warning [save-analysis]: partial evidence; review manifest.json "
