@@ -69,15 +69,15 @@ Where useful to clarify the request, agent SHOULD identify the desired observabl
 
 ### Step 3: Use Tools to Gather Information
 
-Agent MUST use tools to gather information required by task, including:
+For an operational branch, Agent MUST use tools to gather information required by task, including:
 
 - source-analyzer and log-analyzer when they are applicable;
 - coding standards and its selected branch references;
 - Unity API and ModdingAPI references routed by relevant sub-skills.
 
-Tools' `.md` files SHOULD contain all path specifications required for task. Agent MUST NOT ask user for path again unless needed path information is absent there.
+Tools' `.md` files SHOULD contain all path specifications required for task. Agent MUST NOT ask user for path again unless needed path information is absent there. A configuration-free branch MUST use only the local input or bundled evidence required by its route and MUST NOT read configuration, a Modding profile, game installation, or source context.
 
-**Done when**: agent has located every path task needs (source code, modding profile, and logs) in `config.yml` or navigation documents, and has handed any missing or stale path to Step 5.
+**Done when**: for an operational branch, agent has located every path task needs (source code, modding profile, and logs) in `config.yml` or navigation documents, and has handed any missing or stale path to Step 5; or, for a configuration-free branch, agent has confirmed the route-specific local input or bundled evidence and read-only context.
 
 ### Step 4: Solve User Question
 
@@ -85,10 +85,10 @@ Agent MUST use gathered information to solve user question.
 
 If repeating the same approach yields no new evidence, Agent MUST pause, summarize what was checked and learned, identify remaining unknowns, then change approach or request the specific user action or information needed to proceed.
 
-**Done when**: answer is complete and agent has verified every source-code class, file path, and log location cited in answer against actual files.
+**Done when**: answer is complete and agent has verified every source-code class, file path, log location, or save-analysis artifact cited in answer against the actual file or run output.
 
 ### Step 5: Path Failure Recovery
 
-Agent MUST follow the path-failure recovery contract in the shared entry gate.
+For an operational branch, Agent MUST follow the path-failure recovery contract in the shared entry gate. A configuration-free branch MUST report its route-specific input or evidence failure and MUST NOT enter configuration recovery.
 
-**Done when**: shared recovery contract has produced a validated configuration file, or agent has continued with current paths and reported specific failure and next action.
+**Done when**: the operational branch recovery contract has produced a validated configuration file, or agent has continued with current paths and reported specific failure and next action; or a configuration-free branch has reported its route-specific failure and next action.

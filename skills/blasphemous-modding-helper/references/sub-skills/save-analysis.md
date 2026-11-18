@@ -10,7 +10,9 @@ Save analysis MUST remain configuration-free. It MUST NOT read `config.yml`, PyY
 
 The route MUST write output only under the host temporary directory. It MUST NOT write to the selected input, the Caller Mod repository, the game installation, a Modding profile, or Skill configuration.
 
-The analyzer MUST canonicalize the selected input, the temporary output root, and each artifact target before writing. It MUST reject an output root that is a file, symbolic link, or redirected path; an artifact target that escapes its staging root or is already linked; and any input/output overlap. These conditions MUST fail as unsafe output or overlap errors rather than falling back to another path.
+The analyzer MUST reject an output root inside the current caller workspace or its enclosing Git worktree, even when the host temporary-directory variables point there. Path containment checks MUST follow the host filesystem's case semantics; case-insensitive hosts MUST treat case variants as the same location.
+
+The analyzer MUST canonicalize the selected input, the temporary output root, and each artifact target before writing. It MUST reject an output root that is a file, symbolic link, or redirected path; an artifact target that escapes its staging root or is already linked; and any input/output overlap. These conditions MUST fail as unsafe output or overlap errors rather than falling back to another path. The shared `blasphemous-save-analysis` root MUST be owner-only (`0700`); on POSIX hosts an existing root not owned by the current user MUST be rejected, and an owned root MUST have its owner-only permissions restored.
 
 ## Command
 
@@ -50,11 +52,13 @@ Only these exact names and the documented `_backup` suffix are supported. Arbitr
 - Vanilla: Base64-decoded UTF-8 JSON. The analyzer MUST preserve `$type`, unknown fields, and nested values.
 - ModdingAPI persistence: an ordered identifier/JSON-payload line stream. See [ModdingAPI persistence save format](moddingapi-persistence-save-format.md).
 
+The analyzer does not impose a fixed JSON depth cap. If the host Python runtime's parser or serializer recursion limit is reached, the input is reported with reason `unsupported-depth`; directory mode preserves usable siblings as partial evidence.
+
 ## Run artifacts
 
 Each invocation MUST create a unique run directory under the host temporary area, under `blasphemous-save-analysis/<run-id>`. The command MUST print the normalized absolute run path.
 
-Artifacts MUST be written as exclusive regular files inside a unique staging directory. The analyzer MUST NOT follow a symbolic link or existing hard link while writing. Publication MUST create the final run directory exclusively and MUST NOT merge into, overwrite, or replace an existing run. A failed publication MUST leave previously published runs unchanged and remove its staging directory when possible.
+Artifacts MUST be written as exclusive regular files inside a unique staging directory. The analyzer MUST NOT follow a symbolic link or existing hard link while writing. Publication MUST create the final run directory exclusively and MUST NOT merge into, overwrite, or replace an existing run. A failed publication MUST leave previously published runs unchanged and MUST retain its complete staged evidence in a unique `failed-<run-id>` directory when possible. The retained directory MUST contain `publication-error.txt` identifying the failure and stating that the directory is not a published successful run; the CLI MUST report the retained path. If retention is impossible, the analyzer MUST remove its staging directory when possible and MUST NOT claim that evidence was retained.
 
 The run MUST contain:
 

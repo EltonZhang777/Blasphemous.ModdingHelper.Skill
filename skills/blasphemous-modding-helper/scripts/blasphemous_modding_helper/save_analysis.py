@@ -1,4 +1,4 @@
-"""Read-only structured analysis of explicit Blasphemous 1 save files or directories."""
+"""Read-only structured analysis of one explicit Blasphemous 1 save file or directory."""
 
 from __future__ import annotations
 
@@ -10,8 +10,10 @@ import math
 import os
 import re
 import shutil
+import stat
 import sys
 import tempfile
+import unicodedata
 import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
@@ -21,7 +23,6 @@ EXIT_SUCCESS = 0
 EXIT_FAILURE = 1
 EXIT_PARTIAL = 3
 RUN_ROOT_NAME = "blasphemous-save-analysis"
-MAX_JSON_DEPTH = 128
 MAX_MODDING_PREVIEW_CHARS = 512
 CONVENTIONAL_MODDING_IDENTIFIER = re.compile(
     r"(?:[A-Za-z0-9_-]+\.)+[A-Za-z0-9_-]+|"
@@ -43,6 +44,7 @@ class SaveAnalysisError(Exception):
         self.reason = reason
         self.message = message
         self.source = source
+        self.retained: Optional[Path] = None
 
 
 def _sha256(value: bytes) -> str:
@@ -84,33 +86,28 @@ def _parse_finite_float(value: str) -> float:
     return number
 
 
-def _json_depth_exceeds(value: Any, maximum: int) -> bool:
-    stack = [(value, 0)]
-    while stack:
-        current, depth = stack.pop()
-        if isinstance(current, dict):
-            if depth >= maximum:
-                return True
-            stack.extend((child, depth + 1) for child in current.values())
-        elif isinstance(current, list):
-            if depth >= maximum:
-                return True
-            stack.extend((child, depth + 1) for child in current)
-    return False
-
-
 def _json_loads(value: str):
     try:
-        parsed = json.loads(
+        return json.loads(
             value,
             parse_constant=_reject_nonstandard_constant,
             parse_float=_parse_finite_float,
         )
     except RecursionError as error:
-        raise ValueError("JSON nesting exceeds supported depth.") from error
-    if _json_depth_exceeds(parsed, MAX_JSON_DEPTH):
-        raise ValueError("JSON nesting exceeds supported depth.")
-    return parsed
+        raise SaveAnalysisError(
+            "unsupported-depth",
+            "JSON nesting exceeds the Python runtime's supported parser depth.",
+        ) from error
+
+
+def _json_dumps(value: Any, **kwargs: Any) -> str:
+    try:
+        return json.dumps(value, **kwargs)
+    except RecursionError as error:
+        raise SaveAnalysisError(
+            "unsupported-depth",
+            "JSON nesting exceeds the Python runtime's supported serialization depth.",
+        ) from error
 
 
 def _decode_vanilla(value: bytes) -> Any:
@@ -132,8 +129,10 @@ def _decode_vanilla(value: bytes) -> Any:
 def _parse_json_line(value: str):
     try:
         return _json_loads(value), None
+    except SaveAnalysisError as error:
+        return None, (error.reason, error.message)
     except ValueError as error:
-        return None, str(error)
+        return None, ("invalid-json", str(error))
 
 
 def _decode_modding(value: bytes):
@@ -205,7 +204,8 @@ def _decode_modding(value: bytes):
                 {
                     "status": "invalid",
                     "raw_payload": raw_payload,
-                    "error": error,
+                    "error_reason": error[0],
+                    "error": error[1],
                 }
             )
             records.append(record)
@@ -227,7 +227,7 @@ def _format_modding_full(records: Sequence[Dict[str, Any]]) -> str:
         )
         if status == "valid":
             lines.append(
-                json.dumps(
+                _json_dumps(
                     record["payload"],
                     ensure_ascii=False,
                     allow_nan=False,
@@ -452,7 +452,12 @@ def _analyze_file(
         }
         if role_hint is not None:
             _apply_role(item, chunk, role_hint)
-        return item, chunk, _format_modding_full(records)
+        try:
+            full_text = _format_modding_full(records)
+        except SaveAnalysisError as error:
+            error.source = source
+            raise
+        return item, chunk, full_text
     if vanilla_error is not None:
         raise vanilla_error
 
@@ -484,27 +489,51 @@ def _analyze_file(
     }
     if role_hint is not None:
         _apply_role(item, chunk, role_hint)
-    return (
-        item,
-        chunk,
-        json.dumps(parsed, ensure_ascii=False, allow_nan=False, indent=4) + "\n",
-    )
+    try:
+        full_text = _json_dumps(
+            parsed,
+            ensure_ascii=False,
+            allow_nan=False,
+            indent=4,
+        ) + "\n"
+    except SaveAnalysisError as error:
+        error.source = source
+        raise
+    return item, chunk, full_text
 
 
 def _paths_overlap(left: Path, right: Path) -> bool:
+    left_key = _path_key(left)
+    right_key = _path_key(right)
     try:
-        common = os.path.commonpath((str(left), str(right)))
+        common = os.path.commonpath((left_key, right_key))
     except ValueError:
         return False
-    return common in {str(left), str(right)}
+    return common in {left_key, right_key}
 
 
 def _path_within(path: Path, root: Path) -> bool:
+    path_key = _path_key(path)
+    root_key = _path_key(root)
     try:
-        common = os.path.commonpath((str(path), str(root)))
+        common = os.path.commonpath((path_key, root_key))
     except ValueError:
         return False
-    return common == str(root)
+    return common == root_key
+
+
+def _path_key(path: Path) -> str:
+    value = os.path.normcase(os.path.abspath(str(path)))
+    if sys.platform == "darwin":
+        value = unicodedata.normalize("NFC", value).casefold()
+    return value
+
+
+def _enclosing_git_root(path: Path) -> Optional[Path]:
+    for directory in (path, *path.parents):
+        if (directory / ".git").exists():
+            return directory
+    return None
 
 
 def _output_root(input_path: Path) -> Path:
@@ -527,6 +556,19 @@ def _output_root(input_path: Path) -> Path:
             (
                 "Save-analysis output root must not redirect outside its "
                 f"dedicated temporary directory: {candidate}"
+            ),
+        )
+    caller_root = Path.cwd().resolve()
+    protected_roots = [caller_root]
+    git_root = _enclosing_git_root(caller_root)
+    if git_root is not None:
+        protected_roots.append(git_root)
+    if any(_path_within(analysis_root, root) for root in protected_roots):
+        raise SaveAnalysisError(
+            "unsafe-output-root",
+            (
+                "Save-analysis output root must not be inside the caller "
+                f"workspace or repository: {analysis_root}"
             ),
         )
     if _paths_overlap(input_path, analysis_root):
@@ -590,6 +632,8 @@ def _write_text(root: Path, relative: str, value: str) -> None:
 
 
 def _artifact_error(name: str, error: Exception) -> Dict[str, str]:
+    if isinstance(error, SaveAnalysisError):
+        return {"reason": error.reason, "message": error.message}
     reason = "invalid-unicode" if isinstance(error, UnicodeError) else "io-failure"
     if isinstance(error, UnicodeError):
         message = f"{name.capitalize()} artifact cannot be encoded as UTF-8."
@@ -639,6 +683,35 @@ def _publish(staging: Path, run_root: Path) -> None:
         except OSError:
             pass
         raise
+
+
+def _retain_failed_publication(
+    staging: Path,
+    analysis_root: Path,
+    run_id: str,
+    error: Exception,
+) -> Optional[Path]:
+    retained = analysis_root / f"failed-{run_id}"
+    if retained.exists() or retained.is_symlink():
+        return None
+    if isinstance(error, SaveAnalysisError):
+        reason = error.reason
+        message = error.message
+    else:
+        reason = "io-failure"
+        message = str(error)
+    marker = (
+        "Save analysis publication failed.\n"
+        f"Reason: {reason}\n"
+        f"Message: {_display_text(message)}\n"
+        "This directory is not a published successful run.\n"
+    )
+    try:
+        _write_text(staging, "publication-error.txt", marker)
+        os.rename(staging, retained)
+    except (OSError, UnicodeError, SaveAnalysisError):
+        return None
+    return retained
 
 
 def _summary(
@@ -769,12 +842,20 @@ def analyze(input_path: Path) -> Tuple[Path, int]:
         analyses.append(analysis)
 
     analysis_root = _output_root(resolved_input)
-    analysis_root.mkdir(parents=True, exist_ok=True)
+    analysis_root.mkdir(mode=0o700, exist_ok=True)
     if analysis_root.is_symlink() or analysis_root.resolve(strict=True) != analysis_root:
         raise SaveAnalysisError(
             "unsafe-output-root",
             f"Save-analysis output root was redirected: {analysis_root}",
         )
+    if os.name == "posix":
+        root_stat = analysis_root.lstat()
+        if not stat.S_ISDIR(root_stat.st_mode) or root_stat.st_uid != os.geteuid():
+            raise SaveAnalysisError(
+                "unsafe-output-root",
+                f"Save-analysis output root must be an owned directory: {analysis_root}",
+            )
+        os.chmod(analysis_root, 0o700)
     run_id = uuid.uuid4().hex
     run_root = analysis_root / run_id
     staging = Path(tempfile.mkdtemp(prefix=".staging-", dir=str(analysis_root)))
@@ -791,18 +872,25 @@ def analyze(input_path: Path) -> Tuple[Path, int]:
 
         for item, chunk, full_text in analyses:
             try:
-                _write_text(
-                    staging,
-                    item["artifacts"]["chunk"],
-                    json.dumps(chunk, ensure_ascii=True, indent=2) + "\n",
-                )
-                item["artifact_status"]["chunk"] = "complete"
-            except SaveAnalysisError:
-                raise
-            except (OSError, UnicodeError) as error:
+                chunk_text = _json_dumps(chunk, ensure_ascii=True, indent=2) + "\n"
+            except SaveAnalysisError as error:
                 partial_reasons.append(
                     _record_artifact_failure(item, "chunk", error)
                 )
+            else:
+                try:
+                    _write_text(
+                        staging,
+                        item["artifacts"]["chunk"],
+                        chunk_text,
+                    )
+                    item["artifact_status"]["chunk"] = "complete"
+                except SaveAnalysisError:
+                    raise
+                except (OSError, UnicodeError) as error:
+                    partial_reasons.append(
+                        _record_artifact_failure(item, "chunk", error)
+                    )
 
             if full_text is not None:
                 try:
@@ -894,7 +982,18 @@ def analyze(input_path: Path) -> Tuple[Path, int]:
                 "unsafe-output-root",
                 f"Save-analysis output root was redirected: {analysis_root}",
             )
-        _publish(staging, run_root)
+        try:
+            _publish(staging, run_root)
+        except Exception as error:
+            retained = _retain_failed_publication(
+                staging,
+                analysis_root,
+                run_id,
+                error,
+            )
+            if retained is not None:
+                error.retained = retained
+            raise
     except Exception:
         if staging.exists():
             shutil.rmtree(staging)
@@ -944,6 +1043,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             file=sys.stderr,
         )
         print(f"Reason: {error.reason}", file=sys.stderr)
+        if error.retained is not None:
+            print(f"Retained evidence: {_display_text(error.retained)}", file=sys.stderr)
         if error.source is not None:
             source = error.source
             byte_count = (
@@ -962,6 +1063,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             file=sys.stderr,
         )
         print("Reason: io-failure", file=sys.stderr)
+        retained = getattr(error, "retained", None)
+        if retained is not None:
+            print(f"Retained evidence: {_display_text(retained)}", file=sys.stderr)
         return EXIT_FAILURE
     except UnicodeError as error:
         print(
@@ -970,6 +1074,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             file=sys.stderr,
         )
         print("Reason: invalid-unicode", file=sys.stderr)
+        retained = getattr(error, "retained", None)
+        if retained is not None:
+            print(f"Retained evidence: {_display_text(retained)}", file=sys.stderr)
         return EXIT_FAILURE
     print(_display_text(run_root))
     if exit_code == EXIT_PARTIAL:

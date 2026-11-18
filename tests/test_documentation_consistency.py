@@ -539,6 +539,22 @@ class DocumentationConsistencyTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("RFC 2119 candidate audit: PASS", result.stdout)
 
+    def test_configuration_free_routes_are_excluded_from_operational_path_workflow(self):
+        workflow = " ".join(
+            markdown_section(MAIN_SKILL, "## Workflow").split()
+        ).casefold()
+
+        for phrase in (
+            "for an operational branch, agent must use tools to gather information required by task",
+            "a configuration-free branch must use only the local input or bundled evidence required by its route and must not read configuration, a modding profile, game installation, or source context.",
+            "for an operational branch, agent has located every path task needs (source code, modding profile, and logs) in `config.yml` or navigation documents",
+            "for a configuration-free branch, agent has confirmed the route-specific local input or bundled evidence and read-only context.",
+            "for an operational branch, agent must follow the path-failure recovery contract in the shared entry gate.",
+            "a configuration-free branch must report its route-specific input or evidence failure and must not enter configuration recovery.",
+            "or a configuration-free branch has reported its route-specific failure and next action.",
+        ):
+            self.assertIn(phrase, workflow)
+
     def test_setup_order_conditional_inputs_and_retry_preservation_are_explicit(self):
         setup = read(SKILL_ROOT / "references" / "config" / "first-time-setup.md")
         normalized = setup.casefold()
