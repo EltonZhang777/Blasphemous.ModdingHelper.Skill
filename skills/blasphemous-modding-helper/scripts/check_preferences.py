@@ -10,6 +10,8 @@ from typing import Optional, Sequence
 from blasphemous_modding_helper.preferences import (
     PreferenceError,
     preference_scope,
+    set_unity_project_path,
+    UnityProjectPathError,
     validate_preferences,
 )
 
@@ -36,6 +38,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Run freshness-gated Python validation for the active config.yml.",
     )
+    parser.add_argument(
+        "--set-unity-project-path",
+        metavar="PATH",
+        help="Validate and add only unity_project_path to the active config.yml.",
+    )
     return parser
 
 
@@ -53,8 +60,36 @@ def _print_validation_failure(error: PreferenceError) -> int:
     return EXIT_SETUP_REQUIRED
 
 
+def _print_unity_path_failure(error: UnityProjectPathError) -> int:
+    location = error.location
+    print(f"PREFERENCES_SCOPE={location.scope if location else ''}")
+    print(f"PREFERENCES_FILE={location.path if location else ''}")
+    print("PREFERENCES_SETUP=not-required")
+    print("PREFERENCES_NEXT_ACTION=retry-unity-project-path")
+    print(f"PREFERENCES_VALIDATION_REASON={_safe_field(error)}")
+    return EXIT_SETUP_REQUIRED
+
+
 def main(argv: Optional[Sequence[str]] = None) -> int:
-    args = build_parser().parse_args(argv)
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    if args.validate and args.set_unity_project_path is not None:
+        parser.error("--validate and --set-unity-project-path are mutually exclusive")
+    if args.set_unity_project_path is not None:
+        try:
+            location, project = set_unity_project_path(
+                args.set_unity_project_path,
+                cwd=args.cwd,
+                home=args.home,
+            )
+        except UnityProjectPathError as error:
+            return _print_unity_path_failure(error)
+        except PreferenceError as error:
+            return _print_validation_failure(error)
+        print(f"PREFERENCES_SCOPE={location.scope}")
+        print(f"PREFERENCES_FILE={location.path}")
+        print(f"PREFERENCES_UNITY_PROJECT_PATH={project}")
+        return 0
     if args.validate:
         try:
             result = validate_preferences(cwd=args.cwd, home=args.home)

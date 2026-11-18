@@ -39,13 +39,14 @@ flowchart TD
 
     Q3 --> LightReady["Lightweight source path resolved"]
     AutoLight --> LightReady
-    LightReady --> Batch2["Ask together: Q4 + Q5 + Q6"]
+    LightReady --> Batch2["Ask together: Q4 + Q5 + Q6 + Q7"]
 
     Batch2 --> Q4{"Q4: Full source available?"}
     Batch2 --> Q5["Q5: Ask Modding profile path"]
     Batch2 --> Q6{"Q6: Configure local ModdingAPI reference?"}
+    Batch2 --> Q7["Q7: Unity project path or Skip"]
     Q4 -->|Yes| Q4b["Q4b: Ask full source path"]
-    Q4 -->|No| AnswersReady["Wait for Q1 scope, all Q4/Q5/Q6 answers, and applicable follow-ups"]
+    Q4 -->|No| AnswersReady["Wait for Q1 scope, all Q4-Q7 answers, and applicable follow-ups"]
     Q4b --> AnswersReady
     Q5 --> AnswersReady
     Q1 --> AnswersReady
@@ -56,6 +57,7 @@ flowchart TD
     Selector -->|Branch or commit| Ref["Ask branch or commit"]
     Tag --> AnswersReady
     Ref --> AnswersReady
+    Q7 --> AnswersReady
     Q6 -->|Skip| AnswersReady
 
     AnswersReady --> CloneChoice{"Q6 = Yes?"}
@@ -82,6 +84,7 @@ flowchart TD
     Validate -->|Failure: lightweight| Q3
     Validate -->|Failure: full source| Q4b
     Validate -->|Failure: modding profile| Q5
+    Validate -->|Failure: Unity project| Q7
     Validate -->|OK| Save["Create or update config.yml"]
     Save --> Complete["Setup complete: return to Invocation preflight"]
 ```
@@ -90,11 +93,11 @@ flowchart TD
 
 After the Python runtime gate succeeds, agent MUST present setup questions as ordinary numbered text in the user's input language when available. Agent MUST NOT use agent or harness question components. Each question MUST include its existing identifier. Choice questions MUST show applicable choices and a recommendation; path questions MUST request an existing path without suggesting a default. For environment-dependent choices, the recommendation MUST match the user's actual state. Agent MUST treat recommendations as guidance, not answers.
 
-The first message MUST ask Q1 and Q2 together, in that order. If Q2 is answered **Yes**, agent MUST ask Q3 for the lightweight path. If Q2 is answered **No**, agent MUST wait until Q1 and Q2 are both answered before following the decompiler disclosure and safety gates below. Successful decompilation MUST auto-fill Q3; after failure, agent MUST ask whether to provide paths manually and MUST ask Q3 only if the user chooses manual paths. Once the lightweight source path is provided or auto-filled, agent MUST ask Q4, Q5, and Q6 together. Agent MUST ask Q4b only after Q4 is answered **Yes**, the selector only after Q6 is answered **Yes**, and tag, branch, or commit details only after the selector choice requires them. Questions MAY share a message once all their prerequisites are settled.
+The first message MUST ask Q1 and Q2 together, in that order. If Q2 is answered **Yes**, agent MUST ask Q3 for the lightweight path. If Q2 is answered **No**, agent MUST wait until Q1 and Q2 are both answered before following the decompiler disclosure and safety gates below. Successful decompilation MUST auto-fill Q3; after failure, agent MUST ask whether to provide paths manually and MUST ask Q3 only if the user chooses manual paths. Once the lightweight source path is provided or auto-filled, agent MUST ask Q4, Q5, Q6, and Q7 together. Agent MUST ask Q4b only after Q4 is answered **Yes**, the selector only after Q6 is answered **Yes**, and tag, branch, or commit details only after the selector choice requires them. Questions MAY share a message once all their prerequisites are settled.
 
 Agent MUST mark only explicitly provided answers as settled. At the next frontier, agent MUST ask every unanswered question whose applicability and wording are known, including newly eligible questions alongside unanswered questions from the prior batch. Agent MUST NOT ask settled questions again. Agent MUST defer a question only when an unresolved answer determines whether it applies or how it should be asked. A later operation needing an answer MUST NOT by itself split otherwise independent questions into separate batches.
 
-Agent MUST wait for each operation's required answers and checks before running it. The decompiler MUST NOT run until Q1 and Q2 are both explicitly answered; agent MUST present the existing execution disclosure and satisfy the safety checks below. Before cloning, agent MUST wait for Q1 scope, all answers in the Q4/Q5/Q6 batch, and any applicable Q4b or selector details; it MUST then pass the existing writable-parent and fresh-target checks. Agent MUST validate and save only after all applicable answers and required operations are complete. Agent MUST preserve the existing retry and setup-completion requirements.
+Agent MUST wait for each operation's required answers and checks before running it. The decompiler MUST NOT run until Q1 and Q2 are both explicitly answered; agent MUST present the existing execution disclosure and satisfy the safety checks below. Before cloning, agent MUST wait for Q1 scope, all answers in the Q4-Q7 batch, and any applicable Q4b or selector details; it MUST then pass the existing writable-parent and fresh-target checks. Agent MUST validate and save only after all applicable answers and required operations are complete. Agent MUST preserve the existing retry and setup-completion requirements.
 
 ### Q1: Save Location
 
@@ -164,6 +167,14 @@ This path MUST be entered manually in all branches. A Modding profile is typical
 
 If the user selects **Yes**, agent MUST use the same scope selected in Q1. See [Dependencies](invocation-preflight.md#dependencies) for Git's scope and missing-dependency handling for this optional checkout. Agent MUST NOT select an independent reference scope: local reference and its configuration MUST remain in the same scope domain. Approved paths are authoritative in [the config schema](preferences-schema.md#approved-local-reference-locations).
 
+### Q7: Unity Project (optional)
+
+**Question:** Where is the root of your exported Unity project? Answer **Skip** when Unity asset navigation is not needed.
+
+**Input guidance:** Agent MUST request an existing directory containing `Assets`, or accept **Skip**. Agent MUST NOT invent a default.
+
+Q7 MUST allow Skip and MUST leave `unity_project_path` absent when skipped. Skipping this optional field MUST NOT block source analysis, log analysis, Mod testing, coding standards, localization, or ModdingAPI reference work.
+
 ### Reference Selector
 
 Agent MUST ask this only after Q6 is answered **Yes**:
@@ -199,11 +210,13 @@ Validation criteria:
   - `lightweight_source_code_path` **MUST** exist — validate that root path exists; it SHOULD ideally contain `.sln` file
   - `full_source_code_path` (if provided) — validate that root path exists; it SHOULD ideally contain `.sln` file
   - `modding_profile_path` (if provided) — it SHOULD contain `Blasphemous.exe` and `Modding` folder
+  - `unity_project_path` (if provided) — validate that the root is an existing directory containing an `Assets` directory
   - When Q6 is enabled, local ModdingAPI reference parent MUST be writable, and fresh-clone target MUST NOT already exist.
 - If any check fails, agent MUST return to **corresponding single question** (not entire flow):
   - Lightweight fail → retry Q3 only
   - Full fail (if provided) → retry Q4b only
   - Modding profile fail → retry Q5 only
+  - Unity project fail → retry Q7 only
 - Agent MUST retain every unrelated valid answer and successful branch result when retrying. A failed path check MUST re-ask only its corresponding question; it MUST NOT discard Q1, Q2, other valid paths, or a successful decompile.
 - Decompile branch: script exit code 0 validates lightweight automatically
 
@@ -229,7 +242,7 @@ Agent MUST use approved configuration and local-reference paths in [the config s
 ## Setup Workflow After User-questions
 
 1. Agent MUST create directory if needed.
-2. Agent MUST write or update `config.yml` with selected values, preserve unknown fields, include the default `check_period_days: 7` unless an existing valid value is retained, and add `modding_api_reference_path` and `modding_api_reference_selector` only when Q6 is enabled and clone succeeds.
+2. Agent MUST write or update `config.yml` with selected values, preserve unknown fields, include the default `check_period_days: 7` unless an existing valid value is retained, and add `modding_api_reference_path` and `modding_api_reference_selector` only when Q6 is enabled and clone succeeds. Agent MUST add `unity_project_path` only when Q7 provides a valid path.
 3. If Q6 was skipped, agent MUST leave both local reference fields absent.
 4. Agent MUST confirm: "Configuration saved to [path], you can edit it by yourself at any time."
 

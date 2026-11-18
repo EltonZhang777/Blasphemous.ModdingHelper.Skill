@@ -37,12 +37,20 @@ ROUTE_DOCUMENTS = (
     "references/sub-skills/experience-note-pull-requests.md",
     "references/sub-skills/localization-lookup.md",
     "references/sub-skills/source-analyzer.md",
+    "references/sub-skills/unity-project-navigation.md",
     "references/sub-skills/log-analyzer.md",
     "references/sub-skills/blasphemous-modding-test.md",
     "references/sub-skills/blasphemous-modding-test-automated-xunit.md",
     "references/sub-skills/blasphemous-modding-test-real-profile.md",
     "references/sub-skills/coding-standards.md",
     "references/sub-skills/referencing-modding-api.md",
+    "references/unity-project-navigation/MAIN.md",
+    "references/unity-project-navigation/topology.md",
+    "references/unity-project-navigation/assets-and-guids.md",
+    "references/unity-project-navigation/scripts.md",
+    "references/unity-project-navigation/prefabs.md",
+    "references/unity-project-navigation/scenes.md",
+    "references/unity-project-navigation/component-relations.md",
 )
 DEPENDENCY_GUIDANCE = (
     REPOSITORY_ROOT / "README.md",
@@ -63,6 +71,7 @@ APPROVED_CANONICAL_OWNERS = frozenset(
         "references/sub-skills/referencing-modding-api.md",
         "references/coding-standards/coding-standards-moddingAPI.md",
         "references/source-code-navigation/MAIN.md",
+        "references/unity-project-navigation/MAIN.md",
     }
 )
 
@@ -74,6 +83,7 @@ ROUTING_CONTRACTS = (
         (
             ("natural-language identify", "Localization lookup", "MUST NOT require configuration"),
             ("Find or explain decompiled game source", "Source analyzer", "source-path gate"),
+            ("Inspect exported Unity project topology, assets, GUIDs, script assets, flattened Prefabs, Unity version, or scene-set summary", "Unity project navigation", "MUST keep exported asset evidence separate from C# behavior"),
             ("Diagnose BepInEx or Unity logs", "Log analyzer", "MUST resolve required log sources"),
             ("Test a Mod; build/deploy/launch a profile", "Mod-test entry", "classify the request"),
             ("Generate, modify, review, or refactor Mod-owned C#", "Coding standards", "ownership boundary"),
@@ -87,6 +97,7 @@ ROUTING_CONTRACTS = (
         (
             ("Localization lookup", "bundled index", "MUST NOT run scripts"),
             ("Operational branches", "shared preflight", "complete this preflight before specialized work"),
+            ("Unity project navigation", "shared preflight", "MUST require a valid `unity_project_path` only for this route"),
             ("First-time setup and Python validation", "Python Runtime → First-Time Setup", "MUST complete [Python Runtime]"),
             ("Configuration result", "selected config", "MUST consume"),
             ("Tracked-session stop", "recorded process tree", "MUST NOT read or edit configuration"),
@@ -166,6 +177,35 @@ ROUTING_CONTRACTS = (
             ("**Tools.**", "tools.md", "matching tool family as the search entry within the selected `Assembly-CSharp/` tree"),
             ("**Localization.**", "localization.md", "I2 localization or the game LocalizationManager as indicated within the selected `Assembly-CSharp/` tree"),
             ("**Lifecycle.**", "core.md", "Agent MUST start at `Framework/Managers/Core.cs`, `LogicManager.cs`, or `LevelManager.cs` for system or scene flow"),
+        ),
+    ),
+    (
+        "references/unity-project-navigation/MAIN.md",
+        "## Navigation Routes",
+        "## Evidence boundary",
+        (
+            ("Project topology", "topology.md", "MUST inspect the exported project summary"),
+            (
+                "Exact asset path, GUID, name, or extensionless stem",
+                "assets-and-guids.md",
+                "MUST report the resolved project-relative evidence",
+            ),
+            (
+                "Script asset path, GUID, or exact name",
+                "scripts.md",
+                "MUST return script asset identity and metadata only",
+            ),
+            (
+                "Flattened Prefab objects or components",
+                "prefabs.md",
+                "MUST identify the evidence as flattened",
+            ),
+            ("Scene-set membership", "scenes.md", "MUST report completeness, missing layers"),
+            (
+                "Serialized component relations",
+                "component-relations.md",
+                "MUST report traversal direction, object scope, unresolved targets",
+            ),
         ),
     ),
 )
@@ -508,13 +548,14 @@ class DocumentationConsistencyTests(unittest.TestCase):
             "### Q4b: Full Source Code Path (conditional)",
             "### Q5: Modding Profile Path",
             "### Q6: Local ModdingAPI Reference",
+            "### Q7: Unity Project (optional)",
             "### Reference Selector",
         )
         positions = [setup.index(marker) for marker in order]
         self.assertEqual(positions, sorted(positions))
         for phrase in (
             "the first message MUST ask Q1 and Q2 together, in that order",
-            "agent MUST ask Q4, Q5, and Q6 together",
+            "agent MUST ask Q4, Q5, Q6, and Q7 together",
             "MUST ask Q3 only if the user chooses manual paths",
             "agent MUST ask Q4b only after Q4 is answered **Yes**",
             "the selector only after Q6 is answered **Yes**",
@@ -522,6 +563,7 @@ class DocumentationConsistencyTests(unittest.TestCase):
             "corresponding single question",
             "retain every unrelated valid answer",
             "agent MUST NOT use agent or harness question components",
+            "Q7 MUST allow Skip and MUST leave `unity_project_path` absent when skipped",
         ):
             self.assertIn(phrase.casefold(), normalized)
 
@@ -610,7 +652,7 @@ class DocumentationConsistencyTests(unittest.TestCase):
     def test_canonical_routing_tables_have_one_owner_per_document(self):
         contract_owners = frozenset(contract[0] for contract in ROUTING_CONTRACTS)
         self.assertEqual(contract_owners, APPROVED_CANONICAL_OWNERS)
-        self.assertEqual(len(APPROVED_CANONICAL_OWNERS), 7)
+        self.assertEqual(len(APPROVED_CANONICAL_OWNERS), 8)
 
         discovered_owners = {
             path.relative_to(SKILL_ROOT).as_posix()
