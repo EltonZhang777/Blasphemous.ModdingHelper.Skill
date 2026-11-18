@@ -21,6 +21,7 @@ EXIT_SUCCESS = 0
 EXIT_FAILURE = 1
 EXIT_PARTIAL = 3
 RUN_ROOT_NAME = "blasphemous-save-analysis"
+MAX_JSON_DEPTH = 128
 MAX_MODDING_PREVIEW_CHARS = 512
 CONVENTIONAL_MODDING_IDENTIFIER = re.compile(
     r"(?:[A-Za-z0-9_-]+\.)+[A-Za-z0-9_-]+|"
@@ -83,15 +84,33 @@ def _parse_finite_float(value: str) -> float:
     return number
 
 
+def _json_depth_exceeds(value: Any, maximum: int) -> bool:
+    stack = [(value, 0)]
+    while stack:
+        current, depth = stack.pop()
+        if isinstance(current, dict):
+            if depth >= maximum:
+                return True
+            stack.extend((child, depth + 1) for child in current.values())
+        elif isinstance(current, list):
+            if depth >= maximum:
+                return True
+            stack.extend((child, depth + 1) for child in current)
+    return False
+
+
 def _json_loads(value: str):
     try:
-        return json.loads(
+        parsed = json.loads(
             value,
             parse_constant=_reject_nonstandard_constant,
             parse_float=_parse_finite_float,
         )
     except RecursionError as error:
         raise ValueError("JSON nesting exceeds supported depth.") from error
+    if _json_depth_exceeds(parsed, MAX_JSON_DEPTH):
+        raise ValueError("JSON nesting exceeds supported depth.")
+    return parsed
 
 
 def _decode_vanilla(value: bytes) -> Any:
