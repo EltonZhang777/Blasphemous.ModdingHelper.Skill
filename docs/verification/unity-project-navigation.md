@@ -35,6 +35,7 @@ The runner exits with:
 - `0` when every real-project assertion and read-only check passes.
 - `2` with `status: "blocked"` when the export is missing, unreadable, lacks `Assets`, or lacks `ProjectSettings/ProjectVersion.txt`.
 - `1` with `status: "failed"` when the export is readable but baseline counts, fixed identities, query evidence, or read-only evidence drift.
+- `4` with `status: "partial"` when the binding census returns partial or timed-out evidence; the report preserves the census status, coverage, warnings, and error instead of presenting a complete pass.
 
 The JSON report names `evidence_mode: "real_project"` and records the exact scanner commands, statuses, completion evidence, blocked reason when applicable, and next action. When a project is supplied, public project-root fields use `.` and omit the absolute export location; a run without a supplied project reports `null`. Synthetic evidence is named separately and is never substituted for a blocked real run.
 
@@ -52,7 +53,7 @@ Census mode runs the project summary, the full binding census, and the before-an
 
 The report records the Unity version, Skill and schema versions, invocation parameters, UTC start and end timestamps, a path-free snapshot identifier, source-file candidate counts, binding row counts by source kind, reference shape, target category, target-asset resolution, target-object resolution, warning counts, and all page statuses and coverage states. Aggregate counts are compared with the reviewed manifest.
 
-The census selects deterministic first matches for a C# target, a DLL target, an unresolved target, a null reference, a non-typical script file ID, an `.asset` source, malformed evidence when present, and a `Packages` binding when package source candidates exist. Every observed sample MUST equal the complete expected binding chain in the operator-local manifest, including its source identity, target identity, reference shape, and resolution states. A state absent from the export is reported as not observed instead of fabricated.
+The census selects deterministic first matches for a C# target, a DLL target, an unresolved target, a null reference, a non-typical script file ID, an `.asset` source, malformed evidence when present, and a `Packages` binding when a source or target path is observed under `Packages`. Every observed sample MUST equal the complete expected binding chain in the operator-local manifest, including its source identity, target identity, reference shape, and resolution states. A state absent from the export is reported as not observed instead of fabricated.
 
 The page benchmark separately runs the first and second page at the default 200-row limit and at the maximum 1000-row limit. Each run records the UTF-8 serialized byte size, elapsed time, cursor presence, and a changed boundary identity. The benchmark does not follow the complete cursor chain.
 
@@ -106,8 +107,8 @@ The real report is asset and serialized evidence only. C# behavior, dependencies
 
 ## Completion criteria
 
-Real-project acceptance is complete only when the synthetic suite passes separately, the real runner exits `0`, the full path inventory is unchanged, every representative hash is unchanged, and the report names the commands, evidence, and next action. Component-binding acceptance additionally requires one opt-in census summary to complete with full coverage, match the aggregate baseline, cover every observed sample state, record both two-page benchmarks, and leave the project path inventory unchanged. A blocked, timed-out, partial, or failed real run remains incomplete.
+Real-project acceptance is complete only when the synthetic suite passes separately, the real runner exits `0`, the full path inventory is unchanged, every representative hash is unchanged, and the report names the commands, evidence, and next action. Component-binding acceptance additionally requires one opt-in census summary to complete with full coverage, match the aggregate baseline, cover every observed sample state, record both two-page benchmarks, and leave the project path inventory unchanged. A blocked, timed-out, partial, or failed real run remains incomplete and MUST NOT be reported as a complete pass.
 
 ## Next action
 
-For `blocked`, provide a readable export containing `Assets` and `ProjectSettings/ProjectVersion.txt`, then rerun. For `failed`, inspect the first failed baseline, query identity, sample chain, or cursor transition and update the export or the reviewed manifest deliberately; do not weaken the gate and do not report the synthetic suite as real evidence. A timeout or partial scan is not a complete census.
+For `blocked`, provide a readable export containing `Assets` and `ProjectSettings/ProjectVersion.txt`, then rerun. For `partial`, restore the unreadable source or metadata or rerun with a larger documented timeout. For `failed`, inspect the first failed baseline, query identity, sample chain, or cursor transition and update the export or the reviewed manifest deliberately; do not weaken the gate and do not report the synthetic suite as real evidence. A timeout or partial scan is not a complete census.

@@ -43,8 +43,8 @@ MAX_LIMIT = 1000
 DEFAULT_TIMEOUT_SECONDS = 60.0
 MAX_TIMEOUT_SECONDS = 300.0
 METADATA_READ_WORKERS = 16
-SORT_VERSION = 2
-CURSOR_VERSION = 2
+SORT_VERSION = 3
+CURSOR_VERSION = 3
 INT64_MIN = -(1 << 63)
 INT64_MAX = (1 << 63) - 1
 TYPICAL_SCRIPT_FILE_ID = "11500000"
@@ -201,7 +201,7 @@ def _decode_cursor(
             validate=True,
         )
         payload = json.loads(decoded.decode("utf-8"))
-    except (binascii.Error, UnicodeError, ValueError) as error:
+    except (binascii.Error, RecursionError, UnicodeError, ValueError) as error:
         raise NavigationError(
             "invalid_query",
             "The cursor is invalid.",
@@ -865,7 +865,11 @@ def _row_key(
         str(row.get("m_script_guid") or ""),
         str(row.get("m_script_file_id") or ""),
         str(row["reference_shape"]),
-        str(row.get("raw_reference") or ""),
+        (
+            str(row["m_script_type"])
+            if row.get("m_script_type") is not None
+            else ""
+        ),
     )
 
 
@@ -1227,6 +1231,13 @@ def bindings_query(
             _check_deadline(deadline)
             positioned = _positioned_rows(rows)
             _check_deadline(deadline)
+            if cursor_key is not None and not any(
+                item[0] == cursor_key for item in positioned
+            ):
+                raise NavigationError(
+                    "invalid_query",
+                    "The cursor position does not belong to this query.",
+                )
             if cursor_key is not None:
                 positioned = [
                     item for item in positioned if item[0] > cursor_key

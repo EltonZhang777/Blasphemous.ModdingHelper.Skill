@@ -149,6 +149,7 @@ def _run_scanner_with_size(
     python_executable: str,
     project_root: Path,
     arguments: Sequence[str],
+    allow_incomplete: bool = False,
 ) -> Tuple[Dict[str, object], float, int]:
     command = [python_executable, str(SCANNER), *arguments]
     started = time.monotonic()
@@ -170,7 +171,9 @@ def _run_scanner_with_size(
             + " ".join(_scanner_command(command, project_root))
         ) from error
     elapsed = round(time.monotonic() - started, 2)
-    if result.returncode != 0:
+    if result.returncode != 0 and not (
+        allow_incomplete and result.returncode in {3, 4}
+    ):
         raise SmokeFailure(
             f"Scanner command failed with exit code {result.returncode}: "
             f"{' '.join(_scanner_command(command, project_root))}\n"
@@ -185,6 +188,15 @@ def _run_scanner_with_size(
             f"{' '.join(_scanner_command(command, project_root))}: {error}"
         ) from error
     _require(isinstance(payload, dict), "Scanner output envelope is not an object.")
+    if result.returncode != 0 and not (
+        payload.get("status") in {"partial", "timeout"}
+        and payload.get("scan_coverage") == "partial"
+    ):
+        raise SmokeFailure(
+            "Scanner command failed with exit code "
+            f"{result.returncode}: "
+            f"{' '.join(_scanner_command(command, project_root))}"
+        )
     return payload, elapsed, len(result.stdout.encode("utf-8"))
 
 
@@ -197,6 +209,7 @@ def _run_scanner(
         python_executable,
         project_root,
         arguments,
+        allow_incomplete=True,
     )
     return payload, elapsed
 
@@ -767,7 +780,7 @@ def _run_binding_census(
     project_payload: Dict[str, object],
     before_paths: Set[str],
     manifest: Dict[str, object],
-) -> Tuple[Dict[str, object], List[Dict[str, object]]]:
+) -> Tuple[Dict[str, object], List[Dict[str, object]], bool]:
     expected = manifest["bindings"]["census"]
     package_sources = _package_source_candidates(before_paths)
     _require(
@@ -781,6 +794,28 @@ def _run_binding_census(
         project_root,
         arguments,
     )
+    scanner_status = payload.get("status")
+    scan_coverage = payload.get("scan_coverage")
+    if scanner_status in {"partial", "timeout"} or scan_coverage == "partial":
+        return (
+            {
+                "status": scanner_status,
+                "scan_coverage": scan_coverage,
+                "warnings": payload.get("warnings"),
+                "error": payload.get("error"),
+                "census": payload.get("census"),
+            },
+            [
+                _query_record(
+                    "bindings_census_summary",
+                    arguments,
+                    project_root,
+                    payload,
+                    elapsed,
+                )
+            ],
+            False,
+        )
     _require(payload.get("status") == "ok", "Binding census status is not ok.")
     _require(
         payload.get("scan_coverage") == "complete",
@@ -831,16 +866,6 @@ def _run_binding_census(
         _require(
             "malformed" not in samples,
             "Binding census reported a malformed sample without malformed rows.",
-        )
-    if package_sources:
-        _require(
-            isinstance(samples.get("packages"), dict),
-            "Binding census has Packages source candidates but no package sample.",
-        )
-    else:
-        _require(
-            "packages" not in samples,
-            "Binding census reported a package sample without Packages sources.",
         )
     _verify_binding_samples(samples)
     _verify_binding_sample_chains(samples, manifest)
@@ -918,7 +943,7 @@ def _run_binding_census(
         *default_records,
         *maximum_records,
     ]
-    return census, records
+    return census, records, True
 
 
 def _blocked_report(project: Optional[str], reason: str) -> Dict[str, object]:
@@ -1033,7 +1058,11 @@ def run(
                 )
             )
             _verify_project_summary(project_payload, before_assets, manifest)
-            binding_census_result, census_records = _run_binding_census(
+            (
+                binding_census_result,
+                census_records,
+                census_complete,
+            ) = _run_binding_census(
                 python_executable,
                 project_root,
                 project_payload,
@@ -1065,21 +1094,21 @@ def run(
                 == (after_assets, after_files, after_dirs),
                 "Real-project file or directory counts changed during the census.",
             )
-            report["status"] = "ok"
+            baseline_evidence = {
+                "assets_total_files": before_assets,
+                "scanner_total_files": project_payload["results"][0]["file_counts"]["total"],
+                "unity_files": project_payload["results"][0]["file_counts"]["unity"],
+                "prefab_files": project_payload["results"][0]["file_counts"]["prefab"],
+                "asset_files": project_payload["results"][0]["file_counts"]["asset"],
+                "cs_files": project_payload["results"][0]["file_counts"]["cs"],
+                "meta_files": project_payload["results"][0]["file_counts"]["meta"],
+                "complete_scene_sets": project_payload["results"][0]["scene_counts"]["complete_sets"],
+                "standalone_scenes": project_payload["results"][0]["scene_counts"]["standalone"],
+            }
             report["commands"] = commands
             report["completion_evidence"] = {
                 "unity_version": project_payload["project"]["unity_version"],
-                "baseline": {
-                    "assets_total_files": before_assets,
-                    "scanner_total_files": project_payload["results"][0]["file_counts"]["total"],
-                    "unity_files": project_payload["results"][0]["file_counts"]["unity"],
-                    "prefab_files": project_payload["results"][0]["file_counts"]["prefab"],
-                    "asset_files": project_payload["results"][0]["file_counts"]["asset"],
-                    "cs_files": project_payload["results"][0]["file_counts"]["cs"],
-                    "meta_files": project_payload["results"][0]["file_counts"]["meta"],
-                    "complete_scene_sets": project_payload["results"][0]["scene_counts"]["complete_sets"],
-                    "standalone_scenes": project_payload["results"][0]["scene_counts"]["standalone"],
-                },
+                "baseline": baseline_evidence,
                 "bindings_census": binding_census_result,
             }
             report["read_only"] = {
@@ -1100,6 +1129,15 @@ def run(
                     for relative in representative_files
                 ],
             }
+            if not census_complete:
+                report["status"] = "partial"
+                report["next_action"] = (
+                    "Census evidence is incomplete. Restore the unreadable source "
+                    "or metadata, raise the timeout only within its documented "
+                    "limit, and rerun the same acceptance command."
+                )
+                return 4, report
+            report["status"] = "ok"
             report["next_action"] = (
                 "Record aggregate-only binding evidence separately from synthetic "
                 "results, then close the acceptance ticket."

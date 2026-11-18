@@ -130,6 +130,36 @@ class UnityRealProjectAcceptanceTests(unittest.TestCase):
         self.assertNotIn(lower_root, message)
         self.assertIn("<UNITY_PROJECT_ROOT>", message)
 
+    def test_incomplete_scanner_payload_is_accepted_for_census(self):
+        runner = self.load_runner()
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            payload = {
+                "status": "timeout",
+                "scan_coverage": "partial",
+                "warnings": [{"code": "timeout"}],
+                "error": {"code": "timeout"},
+            }
+            completed = subprocess.CompletedProcess(
+                args=[],
+                returncode=3,
+                stdout=json.dumps(payload),
+                stderr="",
+            )
+            with mock.patch.object(
+                runner.subprocess,
+                "run",
+                return_value=completed,
+            ):
+                actual, _, _ = runner._run_scanner_with_size(
+                    sys.executable,
+                    root,
+                    ["bindings", "--project", str(root)],
+                    allow_incomplete=True,
+                )
+
+        self.assertEqual(actual, payload)
+
     def test_snapshot_does_not_follow_directory_links(self):
         runner = self.load_runner()
         with tempfile.TemporaryDirectory() as temp:
@@ -300,6 +330,236 @@ class UnityRealProjectAcceptanceTests(unittest.TestCase):
                 {"cs": drifted},
                 manifest,
             )
+
+    def test_binding_census_allows_a_target_only_packages_sample(self):
+        runner = self.load_runner()
+        samples = {
+            key: {}
+            for key in (
+                "asset",
+                "cs",
+                "dll",
+                "non_typical_file_id",
+                "null",
+                "packages",
+                "unresolved",
+            )
+        }
+        payload = {
+            "status": "ok",
+            "scan_coverage": "complete",
+            "warnings": [],
+            "error": None,
+            "results": [],
+            "next_cursor": None,
+            "census": {
+                "candidate_source_files": 0,
+                "reference_shape": {},
+                "rows": 0,
+                "source_asset_kind": {},
+                "target_category": {"malformed": 0},
+                "warning_codes": {},
+                "samples": samples,
+            },
+        }
+        project_payload = {
+            "schema_version": 1,
+            "project": {
+                "included_roots": ["Assets"],
+                "unity_version": "2017.4.40f1",
+            },
+            "results": [
+                {
+                    "file_counts": {
+                        "unity": 0,
+                        "prefab": 0,
+                        "asset": 0,
+                    }
+                }
+            ]
+        }
+        manifest = {
+            "bindings": {
+                "census": {"packages_source_candidates": 0},
+            }
+        }
+
+        with mock.patch.object(
+            runner,
+            "_run_scanner_with_size",
+            return_value=(payload, 1.0, 100),
+        ), mock.patch.object(
+            runner,
+            "_run_binding_benchmark",
+            return_value=({}, []),
+        ), mock.patch.object(
+            runner,
+            "_verify_binding_samples",
+        ), mock.patch.object(
+            runner,
+            "_verify_binding_sample_chains",
+        ), mock.patch.object(
+            runner,
+            "_verify_binding_census",
+        ):
+            census, _, complete = runner._run_binding_census(
+                sys.executable,
+                REPOSITORY_ROOT,
+                project_payload,
+                set(),
+                manifest,
+            )
+
+        self.assertTrue(complete)
+        self.assertIn("packages", census["samples"])
+
+    def test_binding_census_partial_status_is_preserved(self):
+        runner = self.load_runner()
+        partial = {
+            "status": "timeout",
+            "scan_coverage": "partial",
+            "warnings": [{"code": "timeout"}],
+            "error": {"code": "timeout"},
+            "census": None,
+        }
+        project_payload = {
+            "project": {"unity_version": "2017.4.40f1"},
+            "results": [
+                {
+                    "file_counts": {
+                        "total": 0,
+                        "unity": 0,
+                        "prefab": 0,
+                        "asset": 0,
+                        "cs": 0,
+                        "meta": 0,
+                    },
+                    "scene_counts": {
+                        "complete_sets": 0,
+                        "standalone": 0,
+                    },
+                }
+            ],
+        }
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / "UnityProject"
+            (root / "Assets").mkdir(parents=True)
+            (root / "ProjectSettings").mkdir()
+            (root / "ProjectSettings" / "ProjectVersion.txt").write_text(
+                "m_EditorVersion: 2017.4.40f1\n",
+                encoding="utf-8",
+            )
+            with mock.patch.object(
+                runner,
+                "_read_json",
+                return_value={"schema_version": 1, "representative_files": []},
+            ), mock.patch.object(
+                runner,
+                "_run_scanner",
+                return_value=(project_payload, 1.0),
+            ), mock.patch.object(
+                runner,
+                "_verify_project_summary",
+            ), mock.patch.object(
+                runner,
+                "_run_binding_census",
+                return_value=(partial, [], False),
+            ):
+                return_code, report = runner.run(
+                    sys.executable,
+                    str(root),
+                    root / "manifest.json",
+                    True,
+                )
+
+        self.assertEqual(return_code, 4)
+        self.assertEqual(report["status"], "partial")
+        self.assertEqual(
+            report["completion_evidence"]["bindings_census"],
+            partial,
+        )
+        self.assertIsNotNone(report["read_only"])
+
+    def test_binding_census_accepts_package_sources_without_a_binding_sample(self):
+        runner = self.load_runner()
+        samples = {
+            key: {}
+            for key in (
+                "asset",
+                "cs",
+                "dll",
+                "non_typical_file_id",
+                "null",
+                "unresolved",
+            )
+        }
+        payload = {
+            "status": "ok",
+            "scan_coverage": "complete",
+            "warnings": [],
+            "error": None,
+            "results": [],
+            "next_cursor": None,
+            "census": {
+                "candidate_source_files": 0,
+                "reference_shape": {},
+                "rows": 0,
+                "source_asset_kind": {},
+                "target_category": {"malformed": 0},
+                "warning_codes": {},
+                "samples": samples,
+            },
+        }
+        project_payload = {
+            "schema_version": 1,
+            "project": {
+                "included_roots": ["Assets", "Packages"],
+                "unity_version": "2017.4.40f1",
+            },
+            "results": [
+                {
+                    "file_counts": {
+                        "unity": 0,
+                        "prefab": 0,
+                        "asset": 0,
+                    }
+                }
+            ]
+        }
+        manifest = {
+            "bindings": {
+                "census": {"packages_source_candidates": 1},
+            }
+        }
+
+        with mock.patch.object(
+            runner,
+            "_run_scanner_with_size",
+            return_value=(payload, 1.0, 100),
+        ), mock.patch.object(
+            runner,
+            "_run_binding_benchmark",
+            return_value=({}, []),
+        ), mock.patch.object(
+            runner,
+            "_verify_binding_samples",
+        ), mock.patch.object(
+            runner,
+            "_verify_binding_sample_chains",
+        ), mock.patch.object(
+            runner,
+            "_verify_binding_census",
+        ):
+            census, _, complete = runner._run_binding_census(
+                sys.executable,
+                REPOSITORY_ROOT,
+                project_payload,
+                {"file:Packages/com.example/Empty.asset"},
+                manifest,
+            )
+
+        self.assertTrue(complete)
+        self.assertNotIn("packages", census["samples"])
 
     def test_inventory_read_failure_redacts_the_project_root(self):
         runner = self.load_runner()

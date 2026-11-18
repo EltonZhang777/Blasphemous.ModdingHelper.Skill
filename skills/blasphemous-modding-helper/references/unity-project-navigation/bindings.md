@@ -114,7 +114,7 @@ In census mode, `results` is empty and `next_cursor` is `null`. The top-level `c
 
 Samples can contain project-relative paths and GUID hashes for local diagnostics. Callers MUST NOT commit or publish sample paths, GUID hashes, asset copies, or raw reports; publish only aggregate counts, statuses, timestamps, and a path-free snapshot identifier.
 
-The summary has `scan_coverage=complete` and `status=ok` only when all candidate evidence was scanned. Any warning yields `status=partial` and exit code `4`. A timeout yields `status=timeout`, `scan_coverage=partial`, and exit code `3`. A partial or timed-out summary MUST NOT be treated as complete census evidence.
+The summary has `scan_coverage=complete` and `status=ok` only when all candidate evidence was scanned. Any source, directory, metadata, parse, or timeout warning yields `status=partial` and exit code `4`. A Unity-version warning is reported but does not by itself make source coverage partial. A timeout yields `status=timeout`, `scan_coverage=partial`, and exit code `3`. A partial or timed-out summary MUST NOT be treated as complete census evidence.
 
 ## Partial coverage
 

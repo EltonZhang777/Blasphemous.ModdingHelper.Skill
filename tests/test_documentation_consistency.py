@@ -717,6 +717,20 @@ class DocumentationConsistencyTests(unittest.TestCase):
                         f"{relative}: boundary cell must use RFC 2119 wording",
                     )
 
+    def test_unity_relations_route_direct_bindings_without_conflict(self):
+        text = normalized(
+            SKILL_ROOT
+            / "references"
+            / "sub-skills"
+            / "unity-project-navigation.md"
+        )
+
+        self.assertIn("direct monobehaviour `m_script` questions must select `bindings`", text)
+        self.assertIn(
+            "other traversal must use `references` for direction, object scope, limits, timeout",
+            text,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

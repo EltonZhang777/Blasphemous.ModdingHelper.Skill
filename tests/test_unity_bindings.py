@@ -1,3 +1,4 @@
+import base64
 import hashlib
 import json
 import os
@@ -1792,6 +1793,101 @@ class UnityBindingNavigationTests(unittest.TestCase):
                     )
                     + "\n",
                 )
+
+    def test_cursor_position_must_exist_in_the_current_query(self):
+        self.add_source(
+            "Assets/Scenes/Main.unity",
+            [
+                (
+                    file_id,
+                    "{fileID: 11500000, guid: "
+                    + SCRIPT_GUID
+                    + ", type: 3}",
+                )
+                for file_id in (1, 2)
+            ],
+        )
+
+        _, first = self.query("--limit", "1")
+        payload = json.loads(
+            base64.urlsafe_b64decode(first["next_cursor"] + "==")
+        )
+        payload["p"][1] = "999"
+        tampered = base64.urlsafe_b64encode(
+            json.dumps(
+                payload,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        ).decode("ascii").rstrip("=")
+
+        _, invalid = self.query(
+            "--limit",
+            "1",
+            "--cursor",
+            tampered,
+            expected=3,
+        )
+
+        self.assertEqual(invalid["status"], "invalid_query")
+        self.assertEqual(invalid["results"], [])
+
+    def test_cursor_is_rejected_for_a_different_project_root(self):
+        self.add_source(
+            "Assets/Scenes/Main.unity",
+            [
+                (
+                    file_id,
+                    "{fileID: 11500000, guid: "
+                    + SCRIPT_GUID
+                    + ", type: 3}",
+                )
+                for file_id in (1, 2)
+            ],
+        )
+        _, first = self.query("--limit", "1")
+        other = Path(self.temp_dir.name) / "OtherProject"
+        (other / "Assets").mkdir(parents=True)
+        (other / "ProjectSettings").mkdir()
+        (other / "ProjectSettings" / "ProjectVersion.txt").write_text(
+            "m_EditorVersion: 2017.4.40f1\n",
+            encoding="utf-8",
+        )
+
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(SCANNER),
+                "bindings",
+                "--project",
+                str(other),
+                "--limit",
+                "1",
+                "--cursor",
+                first["next_cursor"],
+            ],
+            cwd=REPOSITORY_ROOT,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            check=False,
+        )
+        payload = json.loads(result.stdout)
+
+        self.assertEqual(result.returncode, 3, result.stdout + result.stderr)
+        self.assertEqual(payload["status"], "invalid_query")
+        self.assertEqual(payload["results"], [])
+
+    def test_deeply_nested_cursor_is_invalid_query(self):
+        nested = base64.urlsafe_b64encode(
+            (b"[" * 2000) + (b"]" * 2000)
+        ).decode("ascii").rstrip("=")
+
+        _, payload = self.query("--cursor", nested, expected=3)
+
+        self.assertEqual(payload["status"], "invalid_query")
+        self.assertEqual(payload["results"], [])
 
     def test_timeout_reports_partial_json_and_exit_three(self):
         self.add_source(
