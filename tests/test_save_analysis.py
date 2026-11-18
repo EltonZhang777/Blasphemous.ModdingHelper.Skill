@@ -17,6 +17,7 @@ CLI = (
     / "scripts"
     / "analyze_save.py"
 )
+SCRIPT_ROOT = CLI.parent
 
 
 class SaveAnalysisTests(unittest.TestCase):
@@ -184,6 +185,7 @@ class SaveAnalysisTests(unittest.TestCase):
 
         for arguments in (
             (),
+            ("",),
             ("one", "two"),
             ("--include-full", "input"),
             ("--no-full", "input"),
@@ -195,9 +197,29 @@ class SaveAnalysisTests(unittest.TestCase):
 
         invalid = self.root / "invalid.save"
         invalid.write_bytes(b"not base64!")
+        invalid_digest = hashlib.sha256(invalid.read_bytes()).hexdigest()
         fatal = self.run_cli(str(invalid))
         self.assertEqual(fatal.returncode, 1)
         self.assertIn("Reason: unsupported-format", fatal.stderr)
+        self.assertIn(f"Source path: {invalid.resolve()}", fatal.stderr)
+        self.assertIn("Source name: invalid.save", fatal.stderr)
+        self.assertIn(f"Bytes: {invalid.stat().st_size}", fatal.stderr)
+        self.assertIn(f"SHA-256: {invalid_digest}", fatal.stderr)
+
+    def test_cli_does_not_create_bytecode_cache(self):
+        before = {
+            path for path in SCRIPT_ROOT.rglob("__pycache__") if path.is_dir()
+        }
+        source = self.root / "save.bin"
+        source.write_bytes(self.vanilla_bytes({"value": 1}))
+
+        result = self.run_cli(str(source))
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        after = {
+            path for path in SCRIPT_ROOT.rglob("__pycache__") if path.is_dir()
+        }
+        self.assertEqual(after, before)
 
     def test_invalid_utf8_reports_single_file_source_evidence(self):
         source = self.root / "invalid-utf8.bin"
@@ -263,9 +285,14 @@ class SaveAnalysisTests(unittest.TestCase):
     def test_nonstandard_json_fails_before_staging(self):
         nonstandard = self.root / "nonstandard.save"
         nonstandard.write_bytes(base64.b64encode(b'{"value": NaN}'))
+        nonstandard_digest = hashlib.sha256(nonstandard.read_bytes()).hexdigest()
         result = self.run_cli(str(nonstandard))
         self.assertEqual(result.returncode, 1)
         self.assertIn("Reason: invalid-json", result.stderr)
+        self.assertIn(f"Source path: {nonstandard.resolve()}", result.stderr)
+        self.assertIn("Source name: nonstandard.save", result.stderr)
+        self.assertIn(f"Bytes: {nonstandard.stat().st_size}", result.stderr)
+        self.assertIn(f"SHA-256: {nonstandard_digest}", result.stderr)
 
         overflow = self.root / "overflow.save"
         overflow.write_bytes(base64.b64encode(b'{"value": 1e999}'))
@@ -275,6 +302,24 @@ class SaveAnalysisTests(unittest.TestCase):
         analysis_root = self.temp_root / "blasphemous-save-analysis"
         staging = list(analysis_root.glob(".staging-*")) if analysis_root.exists() else []
         self.assertEqual(staging, [])
+
+    def test_valid_save_with_unprintable_filename_is_analyzed(self):
+        source = self.root / f"bad{chr(0xDCFF)}.save"
+        try:
+            source.write_bytes(self.vanilla_bytes({"value": 1}))
+        except (OSError, UnicodeError) as error:
+            self.skipTest(f"unprintable filename unavailable: {error}")
+
+        result = self.run_cli(str(source))
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        run_root = Path(result.stdout.strip())
+        manifest_text = (run_root / "manifest.json").read_text(encoding="utf-8")
+        self.assertIn("\\udcff", manifest_text.casefold())
+        manifest = json.loads(manifest_text)
+        self.assertEqual(manifest["inputs"][0]["source"]["name"], source.name)
+        summary = (run_root / "summary.txt").read_text(encoding="utf-8")
+        self.assertIn("\\udcff", summary.casefold())
 
     def test_full_artifact_failure_preserves_structured_partial_run(self):
         surrogate = self.root / "surrogate.save"
@@ -908,6 +953,65 @@ class SaveAnalysisTests(unittest.TestCase):
         self.assertIn("Status: failed", summary)
         self.assertIn("Error: unsupported-format", summary)
         self.assertIn("Full artifact: unavailable", summary)
+
+    def test_deep_json_failure_preserves_valid_directory_sibling(self):
+        source = self.root / "deep json directory"
+        source.mkdir()
+        valid = source / "app_settings"
+        valid.write_bytes(self.vanilla_bytes({"value": 1}))
+        deep = source / "savegame_0.save"
+        deep.write_bytes(base64.b64encode((b"[" * 1100) + b"0" + (b"]" * 1100)))
+
+        result = self.run_cli(str(source))
+
+        self.assertEqual(result.returncode, 3, result.stderr)
+        self.assertNotIn("Traceback", result.stderr)
+        self.assertIn("Warning [save-analysis]: partial evidence", result.stderr)
+        run_root = Path(result.stdout.strip())
+        manifest = json.loads((run_root / "manifest.json").read_text(encoding="utf-8"))
+        self.assertEqual(manifest["status"], "partial")
+        by_name = {item["source"]["name"]: item for item in manifest["inputs"]}
+        self.assertEqual(by_name["app_settings"]["parse_status"], "ok")
+        failed = by_name["savegame_0.save"]
+        self.assertEqual(failed["parse_status"], "failed")
+        self.assertEqual(failed["error"]["reason"], "invalid-json")
+        self.assertEqual(failed["artifact_status"]["full"], "unavailable")
+        self.assertTrue(
+            (run_root / by_name["app_settings"]["artifacts"]["chunk"]).is_file()
+        )
+        self.assertTrue(
+            (run_root / by_name["app_settings"]["artifacts"]["full"]).is_file()
+        )
+
+    def test_chunk_write_failure_preserves_full_artifact(self):
+        source = self.root / "app_settings_modded"
+        source.write_bytes(self.modding_bytes(("demo.mod", {"value": 1})))
+        shadow = self.shadow_sitecustomize()
+
+        result = self.run_cli(
+            str(source),
+            extra_env={
+                "PYTHONPATH": str(shadow),
+                "SAVE_ANALYSIS_TEST_FAIL_WRITE": "input-1.json",
+            },
+        )
+
+        self.assertEqual(result.returncode, 3, result.stderr)
+        run_root = Path(result.stdout.strip())
+        manifest = json.loads((run_root / "manifest.json").read_text(encoding="utf-8"))
+        item = manifest["inputs"][0]
+        self.assertEqual(manifest["usable_artifacts"], ["full/input-1.txt"])
+        self.assertEqual(
+            item["artifact_status"],
+            {"chunk": "failed", "full": "complete"},
+        )
+        self.assertEqual(item["full_artifact_status"], "complete")
+        self.assertEqual(item["artifact_errors"]["chunk"]["reason"], "io-failure")
+        self.assertFalse((run_root / item["artifacts"]["chunk"]).exists())
+        self.assertTrue((run_root / item["artifacts"]["full"]).is_file())
+        summary = (run_root / "summary.txt").read_text(encoding="utf-8")
+        self.assertIn("Chunk status: failed", summary)
+        self.assertIn("Full status: complete", summary)
 
     def test_directory_unreadable_input_preserves_valid_siblings_as_partial(self):
         source = self.root / "unreadable directory"

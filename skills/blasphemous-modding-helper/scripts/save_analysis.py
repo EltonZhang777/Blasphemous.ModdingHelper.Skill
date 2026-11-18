@@ -68,6 +68,10 @@ def _unavailable_source_identity(path: Path) -> Dict[str, Any]:
     }
 
 
+def _display_text(value: Any) -> str:
+    return str(value).encode("utf-8", "backslashreplace").decode("utf-8")
+
+
 def _reject_nonstandard_constant(value: str) -> None:
     raise ValueError(f"non-standard JSON constant: {value}")
 
@@ -80,11 +84,14 @@ def _parse_finite_float(value: str) -> float:
 
 
 def _json_loads(value: str):
-    return json.loads(
-        value,
-        parse_constant=_reject_nonstandard_constant,
-        parse_float=_parse_finite_float,
-    )
+    try:
+        return json.loads(
+            value,
+            parse_constant=_reject_nonstandard_constant,
+            parse_float=_parse_finite_float,
+        )
+    except RecursionError as error:
+        raise ValueError("JSON nesting exceeds supported depth.") from error
 
 
 def _decode_vanilla(value: bytes) -> Any:
@@ -583,7 +590,7 @@ def _record_artifact_failure(
     if name == "full":
         item["full_artifact_status"] = "failed"
     return (
-        f"{item['source']['path']}: {name} artifact failed "
+        f"{_display_text(item['source']['path'])}: {name} artifact failed "
         f"({detail['reason']})"
     )
 
@@ -630,7 +637,7 @@ def _summary(
         f"Status: {status}",
         f"Exit: {exit_code}",
         f"Inputs: {len(items)}",
-        f"Output: {run_root}",
+        f"Output: {_display_text(run_root)}",
         (
             "Lifetime: output is under the host temporary directory; it may be "
             "deleted early or persist beyond this invocation."
@@ -657,7 +664,7 @@ def _summary(
         lines.extend(
             [
                 "",
-                f"Input: {item['source']['path']}",
+                f"Input: {_display_text(item['source']['path'])}",
                 f"  Role: {item['role']}",
                 f"  Format: {item['format']}",
                 f"  Status: {item['parse_status']}",
@@ -756,7 +763,8 @@ def analyze(input_path: Path) -> Tuple[Path, int]:
             if item["parse_status"] == "failed":
                 error = item["error"]
                 partial_reasons.append(
-                    f"{item['source']['path']}: parse failed ({error['reason']})"
+                    f"{_display_text(item['source']['path'])}: parse failed "
+                    f"({error['reason']})"
                 )
 
         for item, chunk, full_text in analyses:
@@ -856,7 +864,7 @@ def analyze(input_path: Path) -> Tuple[Path, int]:
         _write_text(
             staging,
             "manifest.json",
-            json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
+            json.dumps(manifest, ensure_ascii=True, indent=2) + "\n",
         )
 
         if analysis_root.is_symlink() or analysis_root.resolve(strict=True) != analysis_root:
@@ -901,14 +909,18 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     parser = build_parser()
     parser.add_argument(
         "input",
-        type=Path,
         help="One explicit save file or save directory.",
     )
     args = parser.parse_args(argv)
+    if not args.input:
+        parser.error("input path must not be empty")
     try:
-        run_root, exit_code = analyze(args.input)
+        run_root, exit_code = analyze(Path(args.input))
     except SaveAnalysisError as error:
-        print(f"Error [save-analysis]: {error.message}", file=sys.stderr)
+        print(
+            f"Error [save-analysis]: {_display_text(error.message)}",
+            file=sys.stderr,
+        )
         print(f"Reason: {error.reason}", file=sys.stderr)
         if error.source is not None:
             source = error.source
@@ -916,8 +928,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 source["bytes"] if source["bytes"] is not None else "unavailable"
             )
             digest = source["sha256"] or "unavailable"
-            print(f"Source path: {source['path']}", file=sys.stderr)
-            print(f"Source name: {source['name']}", file=sys.stderr)
+            print(f"Source path: {_display_text(source['path'])}", file=sys.stderr)
+            print(f"Source name: {_display_text(source['name'])}", file=sys.stderr)
             print(f"Bytes: {byte_count}", file=sys.stderr)
             print(f"SHA-256: {digest}", file=sys.stderr)
         return EXIT_FAILURE

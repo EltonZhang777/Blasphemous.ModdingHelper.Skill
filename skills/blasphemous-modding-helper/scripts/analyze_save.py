@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Analyze one explicit Blasphemous 1 save file without modifying it."""
+"""Analyze one explicit Blasphemous 1 save file or directory read-only."""
+
+import sys
+
+sys.dont_write_bytecode = True
 
 from save_analysis import main
 
