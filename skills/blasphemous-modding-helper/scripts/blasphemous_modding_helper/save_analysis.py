@@ -1,4 +1,4 @@
-"""Read-only structured analysis of explicit Blasphemous 1 save files or directories."""
+"""Read-only structured analysis of one explicit Blasphemous 1 save file or directory."""
 
 from __future__ import annotations
 

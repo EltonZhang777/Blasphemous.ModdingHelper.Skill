@@ -5,7 +5,7 @@ import sys
 
 sys.dont_write_bytecode = True
 
-from save_analysis import main
+from blasphemous_modding_helper.save_analysis import main
 
 
 if __name__ == "__main__":
