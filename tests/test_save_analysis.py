@@ -203,6 +203,67 @@ class SaveAnalysisTests(unittest.TestCase):
         self.assertEqual(fatal.returncode, 1)
         self.assertIn("Reason: unsupported-format", fatal.stderr)
 
+    def test_invalid_utf8_reports_single_file_source_evidence(self):
+        source = self.root / "invalid-utf8.bin"
+        source.write_bytes(b"\xff\xfe")
+        expected_digest = hashlib.sha256(source.read_bytes()).hexdigest()
+
+        result = self.run_cli(str(source))
+
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(result.stdout, "")
+        self.assertIn("Reason: invalid-utf8", result.stderr)
+        self.assertIn(f"Source path: {source.resolve()}", result.stderr)
+        self.assertIn("Source name: invalid-utf8.bin", result.stderr)
+        self.assertIn("Bytes: 2", result.stderr)
+        self.assertIn(f"SHA-256: {expected_digest}", result.stderr)
+        self.assertNotIn("Traceback", result.stderr)
+        self.assertFalse(
+            (self.temp_root / "blasphemous-save-analysis").exists()
+        )
+
+    def test_missing_single_file_reports_unavailable_source_evidence(self):
+        source = self.root / "missing.save"
+
+        result = self.run_cli(str(source))
+
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(result.stdout, "")
+        self.assertIn("Reason: input-missing", result.stderr)
+        self.assertIn(f"Source path: {source.resolve()}", result.stderr)
+        self.assertIn("Source name: missing.save", result.stderr)
+        self.assertIn("Bytes: unavailable", result.stderr)
+        self.assertIn("SHA-256: unavailable", result.stderr)
+        self.assertNotIn("Traceback", result.stderr)
+        self.assertFalse(
+            (self.temp_root / "blasphemous-save-analysis").exists()
+        )
+
+    def test_unreadable_single_file_reports_unavailable_source_evidence(self):
+        source = self.root / "unreadable.save"
+        source.write_bytes(self.vanilla_bytes({"value": 1}))
+        shadow = self.shadow_sitecustomize()
+
+        result = self.run_cli(
+            str(source),
+            extra_env={
+                "PYTHONPATH": str(shadow),
+                "SAVE_ANALYSIS_TEST_FAIL_READ": source.name,
+            },
+        )
+
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(result.stdout, "")
+        self.assertIn("Reason: input-unreadable", result.stderr)
+        self.assertIn(f"Source path: {source.resolve()}", result.stderr)
+        self.assertIn("Source name: unreadable.save", result.stderr)
+        self.assertIn("Bytes: unavailable", result.stderr)
+        self.assertIn("SHA-256: unavailable", result.stderr)
+        self.assertNotIn("Traceback", result.stderr)
+        self.assertFalse(
+            (self.temp_root / "blasphemous-save-analysis").exists()
+        )
+
     def test_nonstandard_json_fails_before_staging(self):
         nonstandard = self.root / "nonstandard.save"
         nonstandard.write_bytes(base64.b64encode(b'{"value": NaN}'))
@@ -611,6 +672,67 @@ class SaveAnalysisTests(unittest.TestCase):
         self.assertIn("Valid records: 1", summary)
         self.assertIn("Invalid records: 1", summary)
         self.assertIn("Incomplete records: 1", summary)
+
+    def test_moddingapi_blank_lines_do_not_shift_following_records(self):
+        source = self.root / "blank-lines.bin"
+        source.write_bytes(
+            b"first.mod\n\n{\"coins\":1}\nbad.mod\nnot-json\n\n"
+            b"second.mod\n{\"coins\":2}\nincomplete.mod\n"
+        )
+
+        result = self.run_cli(str(source))
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        run_root = Path(result.stdout.strip())
+        manifest = json.loads((run_root / "manifest.json").read_text(encoding="utf-8"))
+        item = manifest["inputs"][0]
+        self.assertEqual(
+            item["counts"],
+            {
+                "valid_records": 2,
+                "invalid_records": 1,
+                "incomplete_records": 1,
+                "blank_lines": 2,
+            },
+        )
+
+        chunk = json.loads(
+            (run_root / item["artifacts"]["chunk"]).read_text(encoding="utf-8")
+        )
+        records = chunk["records"]
+        self.assertEqual(
+            [record["status"] for record in records],
+            ["valid", "invalid", "blank", "valid", "incomplete"],
+        )
+        self.assertEqual(
+            records[0]["blank_lines"],
+            [{"line": 2, "text": ""}],
+        )
+        self.assertEqual(
+            (records[0]["identifier_line"], records[0]["payload_line"]),
+            (1, 3),
+        )
+        self.assertEqual(
+            (records[1]["identifier_line"], records[1]["payload_line"]),
+            (4, 5),
+        )
+        self.assertEqual(records[2]["line"], 6)
+        self.assertEqual(
+            (records[3]["identifier_line"], records[3]["payload_line"]),
+            (7, 8),
+        )
+        self.assertEqual(records[4]["identifier"], "incomplete.mod")
+        self.assertIsNone(records[4]["payload_line"])
+
+        full_text = (run_root / item["artifacts"]["full"]).read_text(
+            encoding="utf-8"
+        )
+        self.assertEqual(
+            full_text,
+            'first.mod\n\n{\n    "coins": 1\n}\n'
+            'bad.mod\nnot-json\n\nsecond.mod\n'
+            '{\n    "coins": 2\n}\nincomplete.mod\n',
+        )
 
     def test_moddingapi_format_is_recognized_when_every_payload_is_malformed(self):
         source = self.root / "damaged-records.bin"
