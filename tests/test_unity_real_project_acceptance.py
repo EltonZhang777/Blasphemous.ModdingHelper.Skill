@@ -160,6 +160,63 @@ class UnityRealProjectAcceptanceTests(unittest.TestCase):
 
         self.assertEqual(actual, payload)
 
+    def test_binding_census_accepts_an_incomplete_scanner_exit(self):
+        runner = self.load_runner()
+        payload = {
+            "status": "timeout",
+            "scan_coverage": "partial",
+            "warnings": [{"code": "timeout"}],
+            "error": {"code": "timeout"},
+            "results": [],
+            "next_cursor": None,
+            "census": None,
+        }
+        completed = subprocess.CompletedProcess(
+            args=[],
+            returncode=3,
+            stdout=json.dumps(payload),
+            stderr="",
+        )
+        project_payload = {
+            "project": {"unity_version": "2017.4.40f1"},
+            "results": [
+                {
+                    "file_counts": {
+                        "total": 0,
+                        "unity": 0,
+                        "prefab": 0,
+                        "asset": 0,
+                    },
+                    "scene_counts": {
+                        "complete_sets": 0,
+                        "standalone": 0,
+                    },
+                }
+            ],
+        }
+        manifest = {
+            "bindings": {
+                "census": {"packages_source_candidates": 0},
+            }
+        }
+
+        with mock.patch.object(
+            runner.subprocess,
+            "run",
+            return_value=completed,
+        ):
+            census, _, complete = runner._run_binding_census(
+                sys.executable,
+                REPOSITORY_ROOT,
+                project_payload,
+                set(),
+                manifest,
+            )
+
+        self.assertFalse(complete)
+        self.assertEqual(census["status"], "timeout")
+        self.assertEqual(census["scan_coverage"], "partial")
+
     def test_snapshot_does_not_follow_directory_links(self):
         runner = self.load_runner()
         with tempfile.TemporaryDirectory() as temp:

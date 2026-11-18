@@ -209,7 +209,6 @@ def _run_scanner(
         python_executable,
         project_root,
         arguments,
-        allow_incomplete=True,
     )
     return payload, elapsed
 
@@ -793,6 +792,7 @@ def _run_binding_census(
         python_executable,
         project_root,
         arguments,
+        allow_incomplete=True,
     )
     scanner_status = payload.get("status")
     scan_coverage = payload.get("scan_coverage")
