@@ -520,6 +520,47 @@ class SaveAnalysisTests(unittest.TestCase):
         )
         self.assertEqual(list(analysis_root.glob(".staging-*")), [])
 
+    def test_output_inside_caller_workspace_is_rejected(self):
+        source = self.root / "save.bin"
+        source.write_bytes(self.vanilla_bytes({"value": 1}))
+        local_temp = self.work / "local temp"
+
+        result = self.run_cli(
+            str(source),
+            extra_env={
+                "TEMP": str(local_temp),
+                "TMP": str(local_temp),
+                "TMPDIR": str(local_temp),
+            },
+        )
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("Reason: unsafe-output-root", result.stderr)
+        self.assertFalse((local_temp / "blasphemous-save-analysis").exists())
+
+    def test_output_inside_enclosing_git_worktree_is_rejected(self):
+        source = self.root / "save.bin"
+        source.write_bytes(self.vanilla_bytes({"value": 1}))
+        repository = self.root / "caller repository"
+        nested = repository / "nested"
+        nested.mkdir(parents=True)
+        (repository / ".git").mkdir()
+        local_temp = repository / "local temp"
+
+        result = self.run_cli(
+            str(source),
+            extra_env={
+                "TEMP": str(local_temp),
+                "TMP": str(local_temp),
+                "TMPDIR": str(local_temp),
+            },
+            cwd=nested,
+        )
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("Reason: unsafe-output-root", result.stderr)
+        self.assertFalse((local_temp / "blasphemous-save-analysis").exists())
+
     def test_output_root_symlink_does_not_redirect_artifacts(self):
         source = self.root / "save.bin"
         source.write_bytes(self.vanilla_bytes({"value": 1}))

@@ -10,6 +10,8 @@ Save analysis MUST remain configuration-free. It MUST NOT read `config.yml`, PyY
 
 The route MUST write output only under the host temporary directory. It MUST NOT write to the selected input, the Caller Mod repository, the game installation, a Modding profile, or Skill configuration.
 
+The analyzer MUST reject an output root inside the current caller workspace or its enclosing Git worktree, even when the host temporary-directory variables point there.
+
 The analyzer MUST canonicalize the selected input, the temporary output root, and each artifact target before writing. It MUST reject an output root that is a file, symbolic link, or redirected path; an artifact target that escapes its staging root or is already linked; and any input/output overlap. These conditions MUST fail as unsafe output or overlap errors rather than falling back to another path.
 
 ## Command

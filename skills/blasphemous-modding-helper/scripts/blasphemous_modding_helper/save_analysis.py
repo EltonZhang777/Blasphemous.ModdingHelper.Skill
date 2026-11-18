@@ -515,6 +515,13 @@ def _path_within(path: Path, root: Path) -> bool:
     return common == str(root)
 
 
+def _enclosing_git_root(path: Path) -> Optional[Path]:
+    for directory in (path, *path.parents):
+        if (directory / ".git").exists():
+            return directory
+    return None
+
+
 def _output_root(input_path: Path) -> Path:
     temp_root = Path(tempfile.gettempdir()).resolve()
     candidate = temp_root / RUN_ROOT_NAME
@@ -535,6 +542,19 @@ def _output_root(input_path: Path) -> Path:
             (
                 "Save-analysis output root must not redirect outside its "
                 f"dedicated temporary directory: {candidate}"
+            ),
+        )
+    caller_root = Path.cwd().resolve()
+    protected_roots = [caller_root]
+    git_root = _enclosing_git_root(caller_root)
+    if git_root is not None:
+        protected_roots.append(git_root)
+    if any(_path_within(analysis_root, root) for root in protected_roots):
+        raise SaveAnalysisError(
+            "unsafe-output-root",
+            (
+                "Save-analysis output root must not be inside the caller "
+                f"workspace or repository: {analysis_root}"
             ),
         )
     if _paths_overlap(input_path, analysis_root):
