@@ -2,10 +2,12 @@ import base64
 import hashlib
 import json
 import os
+import stat
 import subprocess
 import sys
 import tempfile
 import unittest
+import uuid
 from pathlib import Path
 
 
@@ -524,6 +526,7 @@ class SaveAnalysisTests(unittest.TestCase):
         source = self.root / "save.bin"
         source.write_bytes(self.vanilla_bytes({"value": 1}))
         local_temp = self.work / "local temp"
+        local_temp.mkdir()
 
         result = self.run_cli(
             str(source),
@@ -546,6 +549,7 @@ class SaveAnalysisTests(unittest.TestCase):
         nested.mkdir(parents=True)
         (repository / ".git").mkdir()
         local_temp = repository / "local temp"
+        local_temp.mkdir()
 
         result = self.run_cli(
             str(source),
@@ -560,6 +564,41 @@ class SaveAnalysisTests(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         self.assertIn("Reason: unsafe-output-root", result.stderr)
         self.assertFalse((local_temp / "blasphemous-save-analysis").exists())
+
+    def test_output_inside_case_varied_caller_workspace_is_rejected(self):
+        if sys.platform not in ("win32", "darwin"):
+            self.skipTest("case-insensitive filesystem required")
+        source = self.root / "save.bin"
+        source.write_bytes(self.vanilla_bytes({"value": 1}))
+        local_temp = self.root / "CALLER REPO" / "local temp"
+        local_temp.mkdir()
+
+        result = self.run_cli(
+            str(source),
+            extra_env={
+                "TEMP": str(local_temp),
+                "TMP": str(local_temp),
+                "TMPDIR": str(local_temp),
+            },
+        )
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("Reason: unsafe-output-root", result.stderr)
+        self.assertFalse((local_temp / "blasphemous-save-analysis").exists())
+
+    def test_existing_output_root_is_restricted_to_owner(self):
+        if os.name != "posix":
+            self.skipTest("POSIX permission check required")
+        source = self.root / "save.bin"
+        source.write_bytes(self.vanilla_bytes({"value": 1}))
+        analysis_root = self.temp_root / "blasphemous-save-analysis"
+        analysis_root.mkdir()
+        os.chmod(analysis_root, 0o777)
+
+        result = self.run_cli(str(source))
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(stat.S_IMODE(analysis_root.stat().st_mode), 0o700)
 
     def test_output_root_symlink_does_not_redirect_artifacts(self):
         source = self.root / "save.bin"
@@ -632,13 +671,54 @@ class SaveAnalysisTests(unittest.TestCase):
 
         self.assertEqual(second.returncode, 1)
         self.assertIn("Reason: run-collision", second.stderr)
+        self.assertIn("Retained evidence:", second.stderr)
+        retained_line = next(
+            line
+            for line in second.stderr.splitlines()
+            if line.startswith("Retained evidence: ")
+        )
+        retained = Path(retained_line.removeprefix("Retained evidence: "))
+        analysis_root = self.temp_root / "blasphemous-save-analysis"
+        self.assertEqual(
+            retained,
+            analysis_root / f"failed-{uuid.UUID(fixed_uuid).hex}",
+        )
+        marker = (retained / "publication-error.txt").read_text(encoding="utf-8")
+        self.assertIn("Reason: run-collision", marker)
+        self.assertIn("not a published successful run", marker)
         after = {
             path.relative_to(run_root).as_posix(): path.read_bytes()
             for path in run_root.rglob("*")
             if path.is_file()
         }
         self.assertEqual(after, before)
+        self.assertEqual(list(analysis_root.glob(".staging-*")), [])
+
+    def test_retention_failure_preserves_original_publication_error(self):
+        source = self.root / "save.bin"
+        source.write_bytes(self.vanilla_bytes({"value": 1}))
+        fixed_uuid = "00000000-0000-4000-8000-000000000002"
         analysis_root = self.temp_root / "blasphemous-save-analysis"
+        run_id = uuid.UUID(fixed_uuid).hex
+        analysis_root.mkdir()
+        (analysis_root / run_id).mkdir()
+        retained = analysis_root / f"failed-{run_id}"
+        retained.mkdir()
+        sentinel = retained / "keep.txt"
+        sentinel.write_text("keep", encoding="utf-8")
+
+        result = self.run_cli(
+            str(source),
+            extra_env={
+                "PYTHONPATH": str(self.shadow_sitecustomize()),
+                "SAVE_ANALYSIS_TEST_UUID": fixed_uuid,
+            },
+        )
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("Reason: run-collision", result.stderr)
+        self.assertNotIn("Retained evidence:", result.stderr)
+        self.assertEqual(sentinel.read_text(encoding="utf-8"), "keep")
         self.assertEqual(list(analysis_root.glob(".staging-*")), [])
 
     def test_missing_configuration_and_external_sentinels_remain_untouched(self):

@@ -10,8 +10,10 @@ import math
 import os
 import re
 import shutil
+import stat
 import sys
 import tempfile
+import unicodedata
 import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
@@ -42,6 +44,7 @@ class SaveAnalysisError(Exception):
         self.reason = reason
         self.message = message
         self.source = source
+        self.retained: Optional[Path] = None
 
 
 def _sha256(value: bytes) -> str:
@@ -500,19 +503,30 @@ def _analyze_file(
 
 
 def _paths_overlap(left: Path, right: Path) -> bool:
+    left_key = _path_key(left)
+    right_key = _path_key(right)
     try:
-        common = os.path.commonpath((str(left), str(right)))
+        common = os.path.commonpath((left_key, right_key))
     except ValueError:
         return False
-    return common in {str(left), str(right)}
+    return common in {left_key, right_key}
 
 
 def _path_within(path: Path, root: Path) -> bool:
+    path_key = _path_key(path)
+    root_key = _path_key(root)
     try:
-        common = os.path.commonpath((str(path), str(root)))
+        common = os.path.commonpath((path_key, root_key))
     except ValueError:
         return False
-    return common == str(root)
+    return common == root_key
+
+
+def _path_key(path: Path) -> str:
+    value = os.path.normcase(os.path.abspath(str(path)))
+    if sys.platform == "darwin":
+        value = unicodedata.normalize("NFC", value).casefold()
+    return value
 
 
 def _enclosing_git_root(path: Path) -> Optional[Path]:
@@ -671,6 +685,35 @@ def _publish(staging: Path, run_root: Path) -> None:
         raise
 
 
+def _retain_failed_publication(
+    staging: Path,
+    analysis_root: Path,
+    run_id: str,
+    error: Exception,
+) -> Optional[Path]:
+    retained = analysis_root / f"failed-{run_id}"
+    if retained.exists() or retained.is_symlink():
+        return None
+    if isinstance(error, SaveAnalysisError):
+        reason = error.reason
+        message = error.message
+    else:
+        reason = "io-failure"
+        message = str(error)
+    marker = (
+        "Save analysis publication failed.\n"
+        f"Reason: {reason}\n"
+        f"Message: {_display_text(message)}\n"
+        "This directory is not a published successful run.\n"
+    )
+    try:
+        _write_text(staging, "publication-error.txt", marker)
+        os.rename(staging, retained)
+    except (OSError, UnicodeError, SaveAnalysisError):
+        return None
+    return retained
+
+
 def _summary(
     run_id: str,
     run_root: Path,
@@ -799,12 +842,20 @@ def analyze(input_path: Path) -> Tuple[Path, int]:
         analyses.append(analysis)
 
     analysis_root = _output_root(resolved_input)
-    analysis_root.mkdir(parents=True, exist_ok=True)
+    analysis_root.mkdir(mode=0o700, exist_ok=True)
     if analysis_root.is_symlink() or analysis_root.resolve(strict=True) != analysis_root:
         raise SaveAnalysisError(
             "unsafe-output-root",
             f"Save-analysis output root was redirected: {analysis_root}",
         )
+    if os.name == "posix":
+        root_stat = analysis_root.lstat()
+        if not stat.S_ISDIR(root_stat.st_mode) or root_stat.st_uid != os.geteuid():
+            raise SaveAnalysisError(
+                "unsafe-output-root",
+                f"Save-analysis output root must be an owned directory: {analysis_root}",
+            )
+        os.chmod(analysis_root, 0o700)
     run_id = uuid.uuid4().hex
     run_root = analysis_root / run_id
     staging = Path(tempfile.mkdtemp(prefix=".staging-", dir=str(analysis_root)))
@@ -931,7 +982,18 @@ def analyze(input_path: Path) -> Tuple[Path, int]:
                 "unsafe-output-root",
                 f"Save-analysis output root was redirected: {analysis_root}",
             )
-        _publish(staging, run_root)
+        try:
+            _publish(staging, run_root)
+        except Exception as error:
+            retained = _retain_failed_publication(
+                staging,
+                analysis_root,
+                run_id,
+                error,
+            )
+            if retained is not None:
+                error.retained = retained
+            raise
     except Exception:
         if staging.exists():
             shutil.rmtree(staging)
@@ -981,6 +1043,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             file=sys.stderr,
         )
         print(f"Reason: {error.reason}", file=sys.stderr)
+        if error.retained is not None:
+            print(f"Retained evidence: {_display_text(error.retained)}", file=sys.stderr)
         if error.source is not None:
             source = error.source
             byte_count = (
@@ -999,6 +1063,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             file=sys.stderr,
         )
         print("Reason: io-failure", file=sys.stderr)
+        retained = getattr(error, "retained", None)
+        if retained is not None:
+            print(f"Retained evidence: {_display_text(retained)}", file=sys.stderr)
         return EXIT_FAILURE
     except UnicodeError as error:
         print(
@@ -1007,6 +1074,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             file=sys.stderr,
         )
         print("Reason: invalid-unicode", file=sys.stderr)
+        retained = getattr(error, "retained", None)
+        if retained is not None:
+            print(f"Retained evidence: {_display_text(retained)}", file=sys.stderr)
         return EXIT_FAILURE
     print(_display_text(run_root))
     if exit_code == EXIT_PARTIAL:
