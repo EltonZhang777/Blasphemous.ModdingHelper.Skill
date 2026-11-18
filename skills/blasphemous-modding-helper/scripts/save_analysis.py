@@ -134,49 +134,58 @@ def _decode_modding(value: bytes):
     while index < len(lines):
         identifier = lines[index]
         if not identifier.strip():
-            records.append({"status": "blank", "line": index + 1})
+            records.append(
+                {"status": "blank", "line": index + 1, "text": identifier}
+            )
             counts["blank_lines"] += 1
             index += 1
             continue
-        if index + 1 >= len(lines):
+        blank_lines = []
+        payload_index = index + 1
+        while payload_index < len(lines) and not lines[payload_index].strip():
+            blank_lines.append(
+                {"line": payload_index + 1, "text": lines[payload_index]}
+            )
+            counts["blank_lines"] += 1
+            payload_index += 1
+        if payload_index >= len(lines):
             records.append(
                 {
                     "status": "incomplete",
                     "identifier": identifier,
                     "identifier_line": index + 1,
                     "payload_line": None,
+                    **({"blank_lines": blank_lines} if blank_lines else {}),
                 }
             )
             counts["incomplete_records"] += 1
-            index += 1
+            index = payload_index
             continue
 
-        raw_payload = lines[index + 1]
+        raw_payload = lines[payload_index]
         parsed, error = _parse_json_line(raw_payload)
+        record = {
+            "identifier": identifier,
+            "identifier_line": index + 1,
+            "payload_line": payload_index + 1,
+        }
+        if blank_lines:
+            record["blank_lines"] = blank_lines
         if error is None:
-            records.append(
-                {
-                    "status": "valid",
-                    "identifier": identifier,
-                    "identifier_line": index + 1,
-                    "payload_line": index + 2,
-                    "payload": parsed,
-                }
-            )
+            record.update({"status": "valid", "payload": parsed})
+            records.append(record)
             counts["valid_records"] += 1
         else:
-            records.append(
+            record.update(
                 {
                     "status": "invalid",
-                    "identifier": identifier,
-                    "identifier_line": index + 1,
-                    "payload_line": index + 2,
                     "raw_payload": raw_payload,
                     "error": error,
                 }
             )
+            records.append(record)
             counts["invalid_records"] += 1
-        index += 2
+        index = payload_index + 1
     return records, counts
 
 
@@ -185,9 +194,12 @@ def _format_modding_full(records: Sequence[Dict[str, Any]]) -> str:
     for record in records:
         status = record["status"]
         if status == "blank":
-            lines.append("")
+            lines.append(record["text"])
             continue
         lines.append(record["identifier"])
+        lines.extend(
+            blank_line["text"] for blank_line in record.get("blank_lines", [])
+        )
         if status == "valid":
             lines.append(
                 json.dumps(
@@ -737,7 +749,11 @@ def _directory_inputs(path: Path) -> List[tuple]:
 def analyze(input_path: Path) -> Tuple[Path, int]:
     resolved_input = input_path.expanduser().resolve(strict=False)
     if not resolved_input.exists():
-        raise SaveAnalysisError("input-missing", f"Input path does not exist: {resolved_input}")
+        raise SaveAnalysisError(
+            "input-missing",
+            f"Input path does not exist: {resolved_input}",
+            source=_unavailable_source_identity(resolved_input),
+        )
     if resolved_input.is_file():
         inputs = [(resolved_input, None)]
         input_mode = "file"
@@ -933,6 +949,16 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     except SaveAnalysisError as error:
         print(f"Error [save-analysis]: {error.message}", file=sys.stderr)
         print(f"Reason: {error.reason}", file=sys.stderr)
+        if error.source is not None:
+            source = error.source
+            byte_count = (
+                source["bytes"] if source["bytes"] is not None else "unavailable"
+            )
+            digest = source["sha256"] or "unavailable"
+            print(f"Source path: {source['path']}", file=sys.stderr)
+            print(f"Source name: {source['name']}", file=sys.stderr)
+            print(f"Bytes: {byte_count}", file=sys.stderr)
+            print(f"SHA-256: {digest}", file=sys.stderr)
         return EXIT_FAILURE
     except OSError as error:
         print(f"Error [save-analysis]: analysis could not complete: {error}", file=sys.stderr)
