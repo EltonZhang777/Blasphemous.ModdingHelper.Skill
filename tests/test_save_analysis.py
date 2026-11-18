@@ -984,33 +984,49 @@ class SaveAnalysisTests(unittest.TestCase):
         self.assertIn("Full artifact: unavailable", summary)
 
     def test_deep_json_failure_preserves_valid_directory_sibling(self):
-        source = self.root / "deep json directory"
-        source.mkdir()
-        valid = source / "app_settings"
-        valid.write_bytes(self.vanilla_bytes({"value": 1}))
-        deep = source / "savegame_0.save"
-        deep.write_bytes(base64.b64encode((b"[" * 1100) + b"0" + (b"]" * 1100)))
+        for depth in (129, 1100):
+            with self.subTest(depth=depth):
+                source = self.root / f"deep json directory {depth}"
+                source.mkdir()
+                valid = source / "app_settings"
+                valid.write_bytes(self.vanilla_bytes({"value": 1}))
+                deep = source / "savegame_0.save"
+                deep.write_bytes(
+                    base64.b64encode((b"[" * depth) + b"0" + (b"]" * depth))
+                )
 
-        result = self.run_cli(str(source))
+                result = self.run_cli(str(source))
 
-        self.assertEqual(result.returncode, 3, result.stderr)
-        self.assertNotIn("Traceback", result.stderr)
-        self.assertIn("Warning [save-analysis]: partial evidence", result.stderr)
-        run_root = Path(result.stdout.strip())
-        manifest = json.loads((run_root / "manifest.json").read_text(encoding="utf-8"))
-        self.assertEqual(manifest["status"], "partial")
-        by_name = {item["source"]["name"]: item for item in manifest["inputs"]}
-        self.assertEqual(by_name["app_settings"]["parse_status"], "ok")
-        failed = by_name["savegame_0.save"]
-        self.assertEqual(failed["parse_status"], "failed")
-        self.assertEqual(failed["error"]["reason"], "invalid-json")
-        self.assertEqual(failed["artifact_status"]["full"], "unavailable")
-        self.assertTrue(
-            (run_root / by_name["app_settings"]["artifacts"]["chunk"]).is_file()
-        )
-        self.assertTrue(
-            (run_root / by_name["app_settings"]["artifacts"]["full"]).is_file()
-        )
+                self.assertEqual(result.returncode, 3, result.stderr)
+                self.assertNotIn("Traceback", result.stderr)
+                self.assertIn(
+                    "Warning [save-analysis]: partial evidence", result.stderr
+                )
+                run_root = Path(result.stdout.strip())
+                manifest = json.loads(
+                    (run_root / "manifest.json").read_text(encoding="utf-8")
+                )
+                self.assertEqual(manifest["status"], "partial")
+                by_name = {
+                    item["source"]["name"]: item for item in manifest["inputs"]
+                }
+                self.assertEqual(by_name["app_settings"]["parse_status"], "ok")
+                failed = by_name["savegame_0.save"]
+                self.assertEqual(failed["parse_status"], "failed")
+                self.assertEqual(failed["error"]["reason"], "invalid-json")
+                self.assertEqual(failed["artifact_status"]["full"], "unavailable")
+                self.assertTrue(
+                    (
+                        run_root
+                        / by_name["app_settings"]["artifacts"]["chunk"]
+                    ).is_file()
+                )
+                self.assertTrue(
+                    (
+                        run_root
+                        / by_name["app_settings"]["artifacts"]["full"]
+                    ).is_file()
+                )
 
     def test_chunk_write_failure_preserves_full_artifact(self):
         source = self.root / "app_settings_modded"
