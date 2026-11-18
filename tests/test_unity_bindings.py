@@ -5,19 +5,15 @@ import re
 import subprocess
 import sys
 import tempfile
-import time
+import textwrap
 import unittest
 from pathlib import Path
-from unittest import mock
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 SCRIPT_ROOT = REPOSITORY_ROOT / "skills" / "blasphemous-modding-helper" / "scripts"
 SCANNER = SCRIPT_ROOT / "unity_project_navigation.py"
 sys.dont_write_bytecode = True
-sys.path.insert(0, str(SCRIPT_ROOT))
-
-from blasphemous_modding_helper import unity_bindings  # noqa: E402
 
 SCRIPT_GUID = "a" * 32
 BINDING_FIELDS = {
@@ -94,7 +90,10 @@ class UnityBindingNavigationTests(unittest.TestCase):
     def add_source(self, relative, entries):
         return self.write(relative, self.source_text(entries))
 
-    def run_bindings(self, *arguments):
+    def run_bindings(self, *arguments, env=None):
+        environment = os.environ.copy()
+        if env is not None:
+            environment.update(env)
         return subprocess.run(
             [
                 sys.executable,
@@ -105,6 +104,7 @@ class UnityBindingNavigationTests(unittest.TestCase):
                 *arguments,
             ],
             cwd=REPOSITORY_ROOT,
+            env=environment,
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -112,8 +112,8 @@ class UnityBindingNavigationTests(unittest.TestCase):
             check=False,
         )
 
-    def query(self, *arguments, expected=0):
-        result = self.run_bindings(*arguments)
+    def query(self, *arguments, expected=0, env=None):
+        result = self.run_bindings(*arguments, env=env)
         self.assertEqual(
             result.returncode,
             expected,
@@ -121,6 +121,22 @@ class UnityBindingNavigationTests(unittest.TestCase):
         )
         self.assertEqual(result.stderr, "")
         return result, json.loads(result.stdout)
+
+    def sitecustomize(self, source):
+        directory = Path(self.temp_dir.name) / "sitecustomize"
+        directory.mkdir(exist_ok=True)
+        (directory / "sitecustomize.py").write_text(
+            textwrap.dedent(source),
+            encoding="utf-8",
+        )
+        current = os.environ.get("PYTHONPATH")
+        return {
+            "PYTHONPATH": (
+                str(directory)
+                if not current
+                else str(directory) + os.pathsep + current
+            )
+        }
 
     def inventory_tree(self):
         inventory = {}
@@ -478,9 +494,11 @@ class UnityBindingNavigationTests(unittest.TestCase):
         self.assertEqual(first.stdout, repeated.stdout)
         self.assertEqual(first_payload, repeated_payload)
         self.assertNotIn("/", first_payload["next_cursor"])
-        for page in (first_payload, second_payload, third_payload):
+        for page in (first_payload, second_payload):
             self.assertEqual(page["status"], "ok")
-            self.assertEqual(page["scan_coverage"], "complete")
+            self.assertEqual(page["scan_coverage"], "pending")
+        self.assertEqual(third_payload["status"], "ok")
+        self.assertEqual(third_payload["scan_coverage"], "complete")
 
     def test_default_and_maximum_page_limits(self):
         self.add_source(
@@ -507,12 +525,15 @@ class UnityBindingNavigationTests(unittest.TestCase):
 
         self.assertEqual(len(default_page["results"]), 200)
         self.assertEqual(default_page["status"], "ok")
+        self.assertEqual(default_page["scan_coverage"], "pending")
         self.assertIsNotNone(default_page["next_cursor"])
         self.assertEqual(len(maximum_page["results"]), 1000)
         self.assertEqual(maximum_page["status"], "ok")
+        self.assertEqual(maximum_page["scan_coverage"], "pending")
         self.assertIsNotNone(maximum_page["next_cursor"])
         self.assertEqual(len(final_page["results"]), 1)
         self.assertEqual(final_page["status"], "ok")
+        self.assertEqual(final_page["scan_coverage"], "complete")
         self.assertIsNone(final_page["next_cursor"])
 
     def test_directory_with_cs_suffix_is_not_a_resolved_script(self):
@@ -886,42 +907,83 @@ class UnityBindingNavigationTests(unittest.TestCase):
                 "not_applicable",
             )
 
-    def test_metadata_reads_preserve_order_and_keep_the_deadline(self):
-        paths = []
-        for index in range(4):
-            relative = f"Assets/Scripts/Order{index}.cs.meta"
-            self.write(
-                relative,
-                f"fileFormatVersion: 2\nguid: {str(index) * 32}\n",
-            )
-            paths.append(self.root / relative)
-
-        def read_metadata(path):
-            if path.name == "Order0.cs.meta":
-                time.sleep(0.05)
-            return path, path.read_bytes(), None
-
-        with mock.patch.object(
-            unity_bindings,
-            "_read_metadata",
-            side_effect=read_metadata,
-        ):
-            results = list(
-                unity_bindings._metadata_reads(
-                    paths,
-                    time.monotonic() + 5,
+    def test_duplicate_guid_lines_are_not_a_unique_metadata_identity(self):
+        guid = "5" * 32
+        source_path = "Assets/Scenes/DuplicateGuidMetadata.unity"
+        self.write("Assets/Scripts/Duplicate.cs", "class Duplicate {}\n")
+        self.write(
+            "Assets/Scripts/Duplicate.cs.meta",
+            (
+                "fileFormatVersion: 2\n"
+                f"guid: {guid}\n"
+                f"guid: {'6' * 32}\n"
+            ),
+        )
+        self.add_source(
+            source_path,
+            [
+                (
+                    1,
+                    "{fileID: 11500000, guid: "
+                    + guid
+                    + ", type: 3}",
                 )
-            )
+            ],
+        )
 
-        self.assertEqual([item[0] for item in results], paths)
-        with self.assertRaises(unity_bindings.NavigationError) as raised:
-            list(
-                unity_bindings._metadata_reads(
-                    paths,
-                    time.monotonic() - 1,
-                )
+        _, payload = self.query(expected=4)
+
+        self.assertEqual(payload["status"], "partial")
+        self.assertEqual(payload["scan_coverage"], "partial")
+        self.assertIn(
+            {
+                "code": "metadata_unusable",
+                "message": "Metadata must have exactly one valid GUID.",
+                "path": "Assets/Scripts/Duplicate.cs.meta",
+            },
+            payload["warnings"],
+        )
+        self.assertEqual(len(payload["results"]), 1)
+        self.assertEqual(
+            payload["results"][0]["asset_resolution_reason"],
+            "unreadable_meta",
+        )
+
+    def test_metadata_resolution_is_deterministic_across_parallel_reads(self):
+        expected = []
+        for index in range(16):
+            guid = f"{index:032x}"
+            script_path = f"Assets/Scripts/Order{index}.cs"
+            self.add_script(script_path, guid)
+            source_path = f"Assets/Scenes/Scene{index}.unity"
+            self.add_source(
+                source_path,
+                [
+                    (
+                        index + 1,
+                        "{fileID: 11500000, guid: "
+                        + guid
+                        + ", type: 3}",
+                    )
+                ],
             )
-        self.assertEqual(raised.exception.code, "timeout")
+            expected.append((source_path, script_path))
+
+        _, first = self.query("--limit", "100")
+        _, second = self.query("--limit", "100")
+
+        expected.sort()
+        for payload in (first, second):
+            self.assertEqual(
+                [
+                    (
+                        row["source_asset_path"],
+                        row["target_asset_path"],
+                    )
+                    for row in payload["results"]
+                ],
+                expected,
+            )
 
     def test_partial_source_warnings_continue_scanning_and_preserve_rows(self):
         binary_guid = "5" * 32
@@ -983,7 +1045,7 @@ class UnityBindingNavigationTests(unittest.TestCase):
         )
 
     def test_unreadable_source_warning_continues_scanning(self):
-        unreadable = self.write(
+        self.write(
             "Assets/Scenes/AA_Unreadable.unity",
             self.source_text(
                 [
@@ -995,7 +1057,7 @@ class UnityBindingNavigationTests(unittest.TestCase):
                     )
                 ]
             ),
-        ).resolve()
+        )
         source_path = "Assets/Scenes/ZZ_Readable.unity"
         self.add_source(
             source_path,
@@ -1008,19 +1070,24 @@ class UnityBindingNavigationTests(unittest.TestCase):
                 )
             ],
         )
-        original_read_bytes = Path.read_bytes
+        env = self.sitecustomize(
+            """
+            import pathlib
 
-        def read_bytes(path):
-            if path.resolve() == unreadable:
-                raise PermissionError("synthetic unreadable source")
-            return original_read_bytes(path)
+            original = pathlib.Path.read_bytes
 
-        with mock.patch.object(Path, "read_bytes", read_bytes):
-            payload = unity_bindings.bindings_query(self.root, None, None)
+            def read_bytes(path):
+                if path.name == "AA_Unreadable.unity":
+                    raise PermissionError("synthetic unreadable source")
+                return original(path)
+
+            pathlib.Path.read_bytes = read_bytes
+            """
+        )
+        _, payload = self.query(expected=4, env=env)
 
         self.assertEqual(payload["status"], "partial")
         self.assertEqual(payload["scan_coverage"], "partial")
-        self.assertEqual(unity_bindings.bindings_exit_code(payload), 4)
         self.assertEqual(
             [
                 (warning["code"], warning["path"])
@@ -1259,7 +1326,9 @@ class UnityBindingNavigationTests(unittest.TestCase):
 
         self.assertEqual(len(first["results"]), 1)
         self.assertIsNotNone(first["next_cursor"])
+        self.assertEqual(first["scan_coverage"], "pending")
         self.assertEqual(len(second["results"]), 1)
+        self.assertEqual(second["scan_coverage"], "complete")
         self.assertIsNone(second["next_cursor"])
         self.assertEqual(
             first["results"][0]["source_object_file_id"],
@@ -1531,7 +1600,7 @@ class UnityBindingNavigationTests(unittest.TestCase):
             "symlink_outside_root",
         )
 
-    def test_not_found_precedes_partial_coverage_for_unique_queries(self):
+    def test_partial_coverage_precedes_unique_not_found(self):
         broken_guid = "9" * 32
         source_path = "Assets/Scenes/PartialUnique.unity"
         self.write("Assets/Scripts/Broken.cs", "class Broken {}\n")
@@ -1560,12 +1629,130 @@ class UnityBindingNavigationTests(unittest.TestCase):
             source_path,
             "--object-file-id",
             "99",
-            expected=2,
+            expected=4,
         )
 
-        self.assertEqual(payload["status"], "not_found")
+        self.assertEqual(payload["status"], "partial")
         self.assertEqual(payload["scan_coverage"], "partial")
         self.assertEqual(payload["results"], [])
+
+    def test_partial_coverage_precedes_unique_ambiguous(self):
+        broken_guid = "8" * 32
+        source_path = "Assets/Scenes/PartialAmbiguous.unity"
+        self.write("Assets/Scripts/Broken.cs", "class Broken {}\n")
+        self.write(
+            "Assets/Scripts/Broken.cs.meta",
+            (
+                "fileFormatVersion: 2\n"
+                f"guid: {broken_guid}\n"
+            ).encode("utf-8")
+            + b"\xff",
+        )
+        self.add_source(
+            source_path,
+            [
+                (
+                    1,
+                    "{fileID: 11500000, guid: "
+                    + SCRIPT_GUID
+                    + ", type: 3}",
+                ),
+                (
+                    1,
+                    "{fileID: 11500000, guid: "
+                    + SCRIPT_GUID
+                    + ", type: 3}",
+                ),
+            ],
+        )
+
+        _, payload = self.query(
+            "--path",
+            source_path,
+            "--object-file-id",
+            "1",
+            expected=4,
+        )
+
+        self.assertEqual(payload["status"], "partial")
+        self.assertEqual(payload["scan_coverage"], "partial")
+        self.assertEqual(len(payload["results"]), 2)
+
+    def test_malformed_document_header_marks_partial_coverage(self):
+        source_path = "Assets/Scenes/MalformedHeader.unity"
+        self.write(
+            source_path,
+            self.source_text(
+                [
+                    (
+                        1,
+                        "{fileID: 11500000, guid: "
+                        + SCRIPT_GUID
+                        + ", type: 3}",
+                    )
+                ]
+            )
+            + "--- !u!114\n"
+            + "MonoBehaviour:\n"
+            + "  m_Script: {fileID: 11500000, guid: "
+            + SCRIPT_GUID
+            + ", type: 3}\n",
+        )
+
+        _, payload = self.query(expected=4)
+
+        self.assertEqual(payload["status"], "partial")
+        self.assertEqual(payload["scan_coverage"], "partial")
+        self.assertIn(
+            {
+                "code": "malformed_document",
+                "message": (
+                    "Source contains an unparseable Unity YAML document header."
+                ),
+                "path": source_path,
+            },
+            payload["warnings"],
+        )
+        self.assertEqual(
+            [row["source_object_file_id"] for row in payload["results"]],
+            ["1"],
+        )
+
+    def test_oversized_document_file_id_marks_partial_coverage(self):
+        source_path = "Assets/Scenes/OversizedHeader.unity"
+        self.write(
+            source_path,
+            self.source_text(
+                [
+                    (
+                        1,
+                        "{fileID: 11500000, guid: "
+                        + SCRIPT_GUID
+                        + ", type: 3}",
+                    )
+                ]
+            )
+            + "--- !u!114 &"
+            + ("9" * 5000)
+            + "\n"
+            + "MonoBehaviour:\n"
+            + "  m_Script: {fileID: 11500000, guid: "
+            + SCRIPT_GUID
+            + ", type: 3}\n",
+        )
+
+        _, payload = self.query(expected=4)
+
+        self.assertEqual(payload["status"], "partial")
+        self.assertEqual(payload["scan_coverage"], "partial")
+        self.assertIn(
+            "malformed_document",
+            [warning["code"] for warning in payload["warnings"]],
+        )
+        self.assertEqual(
+            [row["source_object_file_id"] for row in payload["results"]],
+            ["1"],
+        )
 
     def test_invalid_limit_and_cursor_return_json_errors(self):
         self.add_source(
@@ -1586,7 +1773,7 @@ class UnityBindingNavigationTests(unittest.TestCase):
             ("--limit", "not-a-number"),
             ("--cursor", "not-a-cursor"),
             ("--timeout-seconds", "-0.1"),
-            ("--timeout-seconds", "120.1"),
+            ("--timeout-seconds", "300.1"),
             ("--timeout-seconds", "nan"),
             ("--timeout-seconds", "inf"),
             ("--timeout-seconds", "not-a-number"),
@@ -1619,8 +1806,8 @@ class UnityBindingNavigationTests(unittest.TestCase):
             ],
         )
 
-        _, maximum = self.query("--timeout-seconds", "120")
-        self.assertEqual(maximum["limits"]["timeout_seconds"], 120.0)
+        _, maximum = self.query("--timeout-seconds", "300")
+        self.assertEqual(maximum["limits"]["timeout_seconds"], 300.0)
 
         result, payload = self.query("--timeout-seconds", "0", expected=3)
 

@@ -206,6 +206,8 @@ ROUTING_CONTRACTS = (
                 "Serialized component relations",
                 "component-relations.md",
                 "MUST report traversal direction, object scope, unresolved targets",
+            ),
+            (
                 "Direct MonoBehaviour `m_Script` bindings",
                 "bindings.md",
                 "MUST report source and target evidence separately",

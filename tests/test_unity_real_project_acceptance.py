@@ -114,6 +114,258 @@ class UnityRealProjectAcceptanceTests(unittest.TestCase):
         self.assertNotIn(str(root), message)
         self.assertIn("<UNITY_PROJECT_ROOT>", message)
 
+    def test_redaction_is_case_insensitive_on_windows(self):
+        if os.name != "nt":
+            self.skipTest("Windows path case folding")
+        runner = self.load_runner()
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / "UnityProject"
+            lower_root = str(root).lower()
+
+            message = runner._redact_project_root(
+                f"failed at {lower_root}",
+                root,
+            )
+
+        self.assertNotIn(lower_root, message)
+        self.assertIn("<UNITY_PROJECT_ROOT>", message)
+
+    def test_snapshot_does_not_follow_directory_links(self):
+        runner = self.load_runner()
+        with tempfile.TemporaryDirectory() as temp:
+            base = Path(temp)
+            root = base / "UnityProject"
+            outside = base / "Outside"
+            root.mkdir()
+            outside.mkdir()
+            (outside / "secret.txt").write_text("secret", encoding="utf-8")
+            link = root / "Linked"
+            try:
+                os.symlink(outside, link, target_is_directory=True)
+            except OSError as error:
+                self.skipTest(f"directory link unavailable: {error}")
+
+            paths, _, _, _ = runner._snapshot_paths(root)
+
+        self.assertIn("dir:Linked", paths)
+        self.assertFalse(
+            any("Linked/secret.txt" in path for path in paths),
+        )
+
+    def test_binding_benchmark_records_both_page_sizes_and_coverage(self):
+        runner = self.load_runner()
+
+        def page(start):
+            return {
+                "status": "ok",
+                "scan_coverage": "pending",
+                "warnings": [],
+                "error": None,
+                "limits": {"limit": 2},
+                "next_cursor": "next" if start == 0 else "next-two",
+                "results": [
+                    {
+                        "source_asset_path": "Assets/Test.unity",
+                        "source_object_file_id": str(index),
+                    }
+                    for index in range(start, start + 2)
+                ],
+            }
+
+        with mock.patch.object(
+            runner,
+            "_run_scanner_with_size",
+            side_effect=(
+                (page(0), 1.0, 1234),
+                (page(2), 2.0, 5678),
+            ),
+        ):
+            benchmark, records = runner._run_binding_benchmark(
+                sys.executable,
+                REPOSITORY_ROOT,
+                2,
+            )
+
+        self.assertEqual(benchmark["serialized_bytes"], 1234)
+        self.assertEqual(benchmark["scan_coverage"], "pending")
+        self.assertEqual(
+            benchmark["cursor_transition"]["serialized_bytes"],
+            5678,
+        )
+        self.assertEqual(
+            benchmark["cursor_transition"]["scan_coverage"],
+            "pending",
+        )
+        self.assertEqual(records[0]["serialized_bytes"], 1234)
+        self.assertEqual(records[1]["serialized_bytes"], 5678)
+        self.assertEqual(records[0]["scan_coverage"], "pending")
+        self.assertEqual(records[1]["scan_coverage"], "pending")
+
+    def test_binding_benchmark_rejects_a_repeated_page_boundary(self):
+        runner = self.load_runner()
+
+        def page(cursor):
+            return {
+                "status": "ok",
+                "scan_coverage": "pending",
+                "warnings": [],
+                "error": None,
+                "limits": {"limit": 2},
+                "next_cursor": cursor,
+                "results": [
+                    {
+                        "source_asset_path": "Assets/Test.unity",
+                        "source_object_file_id": str(index),
+                    }
+                    for index in range(2)
+                ],
+            }
+
+        with mock.patch.object(
+            runner,
+            "_run_scanner_with_size",
+            side_effect=(
+                (page("first-cursor"), 1.0, 1234),
+                (page("second-cursor"), 2.0, 5678),
+            ),
+        ):
+            with self.assertRaises(runner.SmokeFailure):
+                runner._run_binding_benchmark(
+                    sys.executable,
+                    REPOSITORY_ROOT,
+                    2,
+                )
+
+    def test_binding_benchmark_accepts_a_final_second_page(self):
+        runner = self.load_runner()
+
+        def page(start):
+            next_cursor = "next" if start == 0 else None
+            return {
+                "status": "ok",
+                "scan_coverage": "pending" if next_cursor else "complete",
+                "warnings": [],
+                "error": None,
+                "limits": {"limit": 2},
+                "next_cursor": next_cursor,
+                "results": [
+                    {
+                        "source_asset_path": "Assets/Test.unity",
+                        "source_object_file_id": str(index),
+                    }
+                    for index in range(start, start + 2)
+                ],
+            }
+
+        with mock.patch.object(
+            runner,
+            "_run_scanner_with_size",
+            side_effect=(
+                (page(0), 1.0, 1234),
+                (page(2), 2.0, 5678),
+            ),
+        ):
+            benchmark, _ = runner._run_binding_benchmark(
+                sys.executable,
+                REPOSITORY_ROOT,
+                2,
+            )
+
+        self.assertEqual(
+            benchmark["cursor_transition"]["scan_coverage"],
+            "complete",
+        )
+        self.assertFalse(
+            benchmark["cursor_transition"]["next_cursor_present"],
+        )
+
+    def test_binding_sample_chains_must_match_the_manifest(self):
+        runner = self.load_runner()
+        expected = {
+            "source_asset_path": "Assets/Fixture.unity",
+            "source_object_file_id": "1",
+            "target_asset_path": "Assets/Fixture.cs",
+        }
+        manifest = {"bindings": {"samples": {"cs": expected}}}
+
+        runner._verify_binding_sample_chains(
+            {"cs": dict(expected)},
+            manifest,
+        )
+
+        drifted = dict(expected)
+        drifted["target_asset_path"] = "Assets/Other.cs"
+        with self.assertRaises(runner.SmokeFailure):
+            runner._verify_binding_sample_chains(
+                {"cs": drifted},
+                manifest,
+            )
+
+    def test_inventory_read_failure_redacts_the_project_root(self):
+        runner = self.load_runner()
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / "UnityProject"
+            (root / "Assets").mkdir(parents=True)
+            (root / "ProjectSettings").mkdir()
+            (root / "ProjectSettings" / "ProjectVersion.txt").write_text(
+                "m_EditorVersion: 2017.4.40f1\n",
+                encoding="utf-8",
+            )
+
+            with mock.patch.object(
+                runner,
+                "_read_json",
+                return_value={"schema_version": 1},
+            ):
+                with mock.patch.object(
+                    runner,
+                    "_snapshot_paths",
+                    side_effect=PermissionError(f"Cannot read {root}"),
+                ):
+                    return_code, report = runner.run(
+                        sys.executable,
+                        str(root),
+                        root / "manifest.json",
+                        True,
+                    )
+
+        self.assertEqual(return_code, 1)
+        self.assertEqual(report["status"], "failed")
+        self.assertNotIn(str(root), report["error"])
+        self.assertIn("<UNITY_PROJECT_ROOT>", report["error"])
+
+    def test_external_manifest_failure_does_not_echo_its_path(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / "UnityProject"
+            (root / "Assets").mkdir(parents=True)
+            (root / "ProjectSettings").mkdir()
+            (root / "ProjectSettings" / "ProjectVersion.txt").write_text(
+                "m_EditorVersion: 2017.4.40f1\n",
+                encoding="utf-8",
+            )
+            manifest = Path(temp) / "private-manifest.json"
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(RUNNER),
+                    "--project",
+                    str(root),
+                    "--manifest",
+                    str(manifest),
+                ],
+                cwd=REPOSITORY_ROOT,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                check=False,
+            )
+
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(result.stderr, "")
+        self.assertNotIn(str(manifest), result.stdout)
+        self.assertNotIn(str(root), result.stdout)
+
     def test_manifest_failure_redacts_an_in_project_root(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp) / "UnityProject"
@@ -161,11 +413,19 @@ class UnityRealProjectAcceptanceTests(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         self.assertEqual(report["project"]["root"], ".")
         self.assertNotIn(str(root), result.stdout)
-        self.assertIn("<UNITY_PROJECT_ROOT>", report["error"])
+        self.assertNotIn(str(missing), result.stdout)
+        self.assertEqual(
+            report["error"],
+            "Could not read local real-project manifest.",
+        )
         relative_report = json.loads(relative_result.stdout)
         self.assertEqual(relative_result.returncode, 1)
         self.assertEqual(relative_report["project"]["root"], ".")
-        self.assertIn("missing.manifest.json", relative_report["error"])
+        self.assertNotIn("missing.manifest.json", relative_result.stdout)
+        self.assertEqual(
+            relative_report["error"],
+            "Could not read local real-project manifest.",
+        )
         self.assertNotIn(str(root), relative_result.stdout)
 
     def test_real_project_smoke_when_configured(self):
@@ -225,6 +485,17 @@ class UnityRealProjectAcceptanceTests(unittest.TestCase):
         self.assertEqual(bindings["distinct_m_script_file_ids"], 50)
         self.assertEqual(bindings["non_typical_file_id_rows"], 6484)
         self.assertEqual(bindings["packages_source_candidates"], 0)
+        self.assertEqual(
+            set(manifest["bindings"]["samples"]),
+            {
+                "asset",
+                "cs",
+                "dll",
+                "non_typical_file_id",
+                "null",
+                "unresolved",
+            },
+        )
 
     def test_example_manifest_is_path_free_and_local_manifest_is_ignored(self):
         manifest = json.loads(EXAMPLE_MANIFEST.read_text(encoding="utf-8"))

@@ -28,7 +28,7 @@ PowerShell:
 & $PYTHON3 tests\run_unity_real_project_acceptance.py --project '<UNITY_PROJECT_ROOT>'
 ```
 
-The operator-local manifest is `tests/fixtures/unity-real-project-smoke.json`; it is ignored and MUST NOT be committed. It locks the Unity version, real-tree counts, fixed sample identities, the component-binding census aggregate, and the representative files used for content hashing. The committed `tests/fixtures/unity-real-project-smoke.example.json` documents the required shape with placeholders and aggregate counts only.
+The operator-local manifest is `tests/fixtures/unity-real-project-smoke.json`; it is ignored and MUST NOT be committed. It locks the Unity version, real-tree counts, fixed sample identities, the component-binding census aggregate and sample chains, and the representative files used for content hashing. The committed `tests/fixtures/unity-real-project-smoke.example.json` documents the required shape with placeholders and aggregate counts only.
 
 The runner exits with:
 
@@ -52,7 +52,7 @@ Census mode runs the project summary, the full binding census, and the before-an
 
 The report records the Unity version, Skill and schema versions, invocation parameters, UTC start and end timestamps, a path-free snapshot identifier, source-file candidate counts, binding row counts by source kind, reference shape, target category, target-asset resolution, target-object resolution, warning counts, and all page statuses and coverage states. Aggregate counts are compared with the reviewed manifest.
 
-The census selects deterministic first matches for a C# target, a DLL target, an unresolved target, a null reference, a non-typical script file ID, an `.asset` source, malformed evidence when present, and a `Packages` binding when package source candidates exist. Each sample is checked for the expected binding-chain state. A state absent from the export is reported as not observed instead of fabricated.
+The census selects deterministic first matches for a C# target, a DLL target, an unresolved target, a null reference, a non-typical script file ID, an `.asset` source, malformed evidence when present, and a `Packages` binding when package source candidates exist. Every observed sample MUST equal the complete expected binding chain in the operator-local manifest, including its source identity, target identity, reference shape, and resolution states. A state absent from the export is reported as not observed instead of fabricated.
 
 The page benchmark separately runs the first and second page at the default 200-row limit and at the maximum 1000-row limit. Each run records the UTF-8 serialized byte size, elapsed time, cursor presence, and a changed boundary identity. The benchmark does not follow the complete cursor chain.
 
@@ -85,9 +85,9 @@ The operator-local manifest selects one complete five-layer scene set, one stand
 
 The runner snapshots the complete project path inventory before and after all queries. It fails if any file or directory is added or removed. The full binding census runs inside the same before-and-after inventory window. The runner also hashes every representative queried file, including `.meta` evidence, before and after; a content change fails the gate. The navigation command contract remains read-only; the gate does not hash every project file outside the fixed representative set.
 
-## Current record
+## Historical aggregate record
 
-Observed on 2026-11-16 on native Windows with the supplied export:
+The following read-only observation was recorded on 2026-11-16 at exact HEAD `4738d2c747f204aad98412e75cc973d70ef8f5e1`. It is a historical baseline and does not verify later changes. Rerun the acceptance runner at the exact candidate HEAD before marking real-project acceptance complete.
 
 - Assets inventory: 94,153 files.
 - Unity version: `2017.4.40f1`.

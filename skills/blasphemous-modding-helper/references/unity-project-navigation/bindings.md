@@ -89,18 +89,18 @@ Repeated values within one selector or status axis use OR semantics. Different s
 & $PYTHON3 (Join-Path $SkillRoot 'scripts\unity_project_navigation.py') bindings --project '<UNITY_PROJECT_ROOT>' --script-guid 0123456789abcdef0123456789abcdef --reference-shape structured --asset-resolution missing
 ```
 
-An invalid path, object ID, GUID, status value, or cursor is an `invalid_query` with exit code `3`. An unsupported selector format, such as a non-Unity source path, reports `error.code=unsupported_format` with `status=invalid_query` and exit code `3`. An `--object-file-id` lookup has a uniqueness requirement: no matching object reports `status=not_found`, while more than one row reports `status=ambiguous`; both use exit code `2`. These uniqueness outcomes take precedence over partial coverage, while `scan_coverage` and warnings still report unavailable evidence.
+An invalid path, object ID, GUID, status value, or cursor is an `invalid_query` with exit code `3`. An unsupported selector format, such as a non-Unity source path, reports `error.code=unsupported_format` with `status=invalid_query` and exit code `3`. An `--object-file-id` lookup has a uniqueness requirement: with complete coverage, no matching object reports `status=not_found`, while more than one row reports `status=ambiguous`; both use exit code `2`. Partial source coverage takes precedence over those uniqueness outcomes and reports `status=partial` with exit code `4`.
 
 ## Census summary
 
 `--census-summary` returns aggregate binding evidence from one complete scan. It is intended for bounded real-project acceptance when following every cursor page would repeatedly rescan the same export:
 
 ```bash
-"$PYTHON3" "$SKILL_ROOT/scripts/unity_project_navigation.py" bindings --project "<UNITY_PROJECT_ROOT>" --census-summary --timeout-seconds 120
+"$PYTHON3" "$SKILL_ROOT/scripts/unity_project_navigation.py" bindings --project "<UNITY_PROJECT_ROOT>" --census-summary --timeout-seconds 300
 ```
 
 ```powershell
-& $PYTHON3 (Join-Path $SkillRoot 'scripts\unity_project_navigation.py') bindings --project '<UNITY_PROJECT_ROOT>' --census-summary --timeout-seconds 120
+& $PYTHON3 (Join-Path $SkillRoot 'scripts\unity_project_navigation.py') bindings --project '<UNITY_PROJECT_ROOT>' --census-summary --timeout-seconds 300
 ```
 
 Census summary is opt-in and additive; ordinary project-wide and paginated output remains unchanged. It cannot be combined with `--limit`, `--cursor`, or `--object-file-id`. Source path, script GUID, reference-shape, asset-resolution, and script-object-resolution filters MAY be used to summarize a narrower inventory.
@@ -126,21 +126,22 @@ Candidate source failures are non-fatal. The scanner continues with later source
 | `source_unreadable` | A candidate source could not be read. |
 | `source_unrecognized` | A candidate source is not recognizable Unity text serialization. |
 | `metadata_unusable` | A candidate `.meta` file is unreadable, malformed, or has no valid GUID. |
+| `malformed_document` | A source contains a document header that cannot be parsed. |
 | `scan_unreadable` | A project directory could not be traversed. |
 | `symlink_not_followed` | A link inside the project was not traversed. |
 | `symlink_outside_root` | A link resolving outside the project was rejected. |
 
-Any of these warnings makes `scan_coverage=partial`. When no object-ID uniqueness outcome takes precedence, `status=partial` and the command exits with code `4`. Normal pagination and ordinary `resolved`, `missing`, `ambiguous`, `unsupported_binary`, `not_applicable`, `null`, or `malformed` rows remain ordinary evidence and keep an otherwise complete query at `status=ok`.
+Any of these warnings makes `scan_coverage=partial`. The query reports `status=partial` and exits with code `4`, including when an object-ID lookup also has no unique result. Normal pagination and ordinary `resolved`, `missing`, `ambiguous`, `unsupported_binary`, `not_applicable`, `null`, or `malformed` rows remain ordinary evidence and keep an otherwise complete query at `status=ok`.
 
 For recovery, inspect each warning path, restore a valid export or metadata file when appropriate, or query the known-good source paths directly. Rerun the exact query after recovery. The agent MUST NOT treat a missing row from a partial scan as proof that the relationship does not exist.
 
 ## Execution limits and timeout
 
-`--timeout-seconds` bounds directory traversal, metadata indexing, source reads, and result preparation. The value is a non-negative decimal number of seconds, defaults to `60`, and cannot exceed `120`. A value of `0` expires immediately. The selected value is echoed in `limits.timeout_seconds`.
+`--timeout-seconds` bounds directory traversal, metadata indexing, source reads, and result preparation. The value is a non-negative decimal number of seconds, defaults to `60`, and cannot exceed `300`. A value of `0` expires immediately. The selected value is echoed in `limits.timeout_seconds`.
 
 On timeout, the command emits one JSON object with `status=timeout`, `scan_coverage=partial`, a warning and error code of `timeout`, and exit code `3`. The result is incomplete even when `results` contains evidence collected before the deadline. The agent MUST NOT cite it as a complete inventory or infer an absent relationship from it.
 
-To recover, rerun with the same query and a larger timeout up to `120` seconds. If the project remains too large, narrow the request with exact `--path` values or selectors before retrying.
+To recover, rerun with the same query and a larger timeout up to `300` seconds. If the project remains too large, narrow the request with exact `--path` values or selectors before retrying.
 
 ## Pagination
 
@@ -154,12 +155,12 @@ To recover, rerun with the same query and a larger timeout up to `120` seconds. 
 & $PYTHON3 (Join-Path $SkillRoot 'scripts\unity_project_navigation.py') bindings --project '<UNITY_PROJECT_ROOT>' --limit 200 --cursor '<NEXT_CURSOR>'
 ```
 
-A normal middle page and a normal final page for a complete, non-unique query both report `status=ok`. A final page has `next_cursor=null`. Object-ID not-found or ambiguous outcomes and partial coverage use their documented non-success status.
+A normal middle page and a normal final page for a complete, non-unique query both report `status=ok`. A middle page has a non-null `next_cursor` and reports `scan_coverage=pending`; a final page has `next_cursor=null` and reports `scan_coverage=complete`. Object-ID not-found or ambiguous outcomes and partial coverage use their documented non-success status.
 
 ## Status and limits
 
 - `status=ok` uses exit code `0`.
-- `status=partial` uses exit code `4` when source or metadata evidence could not be scanned completely and no object-ID uniqueness outcome takes precedence; `scan_coverage` is then `partial`.
+- `status=partial` uses exit code `4` when source, directory, or metadata evidence is incomplete, even when an object-ID lookup also has no unique result; `scan_coverage` is then `partial`.
 - `status=not_found` or `status=ambiguous` uses exit code `2` when an object-ID query cannot produce one unique row.
 - `status=timeout` uses exit code `3`; evidence is incomplete and the `timeout` warning and error identify the execution condition.
 - `status=invalid_query` uses exit code `3` for an invalid limit, timeout, source path, object ID, GUID, status value, unsupported format, or cursor.

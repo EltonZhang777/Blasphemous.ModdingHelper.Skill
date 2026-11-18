@@ -8,6 +8,7 @@ import datetime
 import hashlib
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -23,13 +24,17 @@ SCANNER = (
     / "scripts"
     / "unity_project_navigation.py"
 )
+sys.path.insert(0, str(SCANNER.parent))
+
+from blasphemous_modding_helper.unity_project import _is_link_like  # noqa: E402
+
 DEFAULT_MANIFEST = (
     REPOSITORY_ROOT / "tests" / "fixtures" / "unity-real-project-smoke.json"
 )
 PROJECT_ENV = "BLASPHEMOUS_UNITY_PROJECT_PATH"
 SCANNER_TIMEOUT_SECONDS = 600
 BINDINGS_LIMIT = 1000
-BINDINGS_TIMEOUT_SECONDS = 120
+BINDINGS_TIMEOUT_SECONDS = 300
 TYPICAL_SCRIPT_FILE_ID = "11500000"
 
 
@@ -46,7 +51,7 @@ def _read_json(path: Path) -> Dict[str, object]:
     try:
         value = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, UnicodeError, json.JSONDecodeError) as error:
-        raise SmokeFailure(f"Could not read JSON evidence at {path}: {error}") from error
+        raise SmokeFailure("Could not read local real-project manifest.") from error
     if not isinstance(value, dict):
         raise SmokeFailure(f"JSON evidence at {path} is not an object.")
     return value
@@ -65,12 +70,29 @@ def _snapshot_paths(root: Path) -> Tuple[Set[str], int, int, int]:
     assets_files = 0
     file_count = 0
     directory_count = 0
+
+    def raise_walk_error(error: OSError) -> None:
+        raise SmokeFailure(
+            f"Project path inventory could not be read: {error}"
+        ) from error
+
     for directory, names, filenames in os.walk(
         str(root),
         topdown=True,
         followlinks=False,
+        onerror=raise_walk_error,
     ):
         base = Path(directory)
+        kept_names = []
+        for name in names:
+            child = base / name
+            if not _is_link_like(child):
+                kept_names.append(name)
+                continue
+            relative = child.relative_to(root).as_posix()
+            paths.add("dir:" + relative)
+            directory_count += 1
+        names[:] = kept_names
         for name in names:
             relative = (base / name).relative_to(root).as_posix()
             paths.add("dir:" + relative)
@@ -112,8 +134,14 @@ def _redact_project_root(value: object, *project_roots: Path) -> str:
         if "\\" in variant
     )
     text = str(value)
+    flags = re.IGNORECASE if os.name == "nt" else 0
     for variant in sorted(variants, key=len, reverse=True):
-        text = text.replace(variant, "<UNITY_PROJECT_ROOT>")
+        text = re.sub(
+            re.escape(variant),
+            "<UNITY_PROJECT_ROOT>",
+            text,
+            flags=flags,
+        )
     return text
 
 
@@ -179,13 +207,18 @@ def _query_record(
     project_root: Path,
     payload: Dict[str, object],
     elapsed: float,
+    serialized_bytes: Optional[int] = None,
 ) -> Dict[str, object]:
-    return {
+    record = {
         "query": name,
         "command": _scanner_command(arguments, project_root),
         "status": payload.get("status"),
+        "scan_coverage": payload.get("scan_coverage"),
         "elapsed_seconds": elapsed,
     }
+    if serialized_bytes is not None:
+        record["serialized_bytes"] = serialized_bytes
+    return record
 
 
 def _verify_project_summary(
@@ -489,6 +522,26 @@ def _verify_binding_samples(samples: Dict[str, Dict[str, object]]) -> None:
         )
 
 
+def _verify_binding_sample_chains(
+    samples: Dict[str, Dict[str, object]],
+    manifest: Dict[str, object],
+) -> None:
+    expected = manifest["bindings"].get("samples")
+    _require(
+        isinstance(expected, dict),
+        "Binding manifest has no expected sample chains.",
+    )
+    _require(
+        set(samples) == set(expected),
+        "Binding census sample categories drifted.",
+    )
+    for category, sample in samples.items():
+        _require(
+            sample == expected[category],
+            f"Binding {category} sample chain drifted.",
+        )
+
+
 def _verify_binding_census(
     census: Dict[str, object],
     manifest: Dict[str, object],
@@ -595,11 +648,12 @@ def _verify_binding_page(
     payload: Dict[str, object],
     limit: int,
     expected_rows: Optional[int] = None,
+    expected_coverage: str = "complete",
 ) -> None:
     _require(payload.get("status") == "ok", "Binding page status is not ok.")
     _require(
-        payload.get("scan_coverage") == "complete",
-        "Binding page scan coverage is not complete.",
+        payload.get("scan_coverage") == expected_coverage,
+        f"Binding page scan coverage is not {expected_coverage}.",
     )
     _require(
         payload.get("warnings") == [] and payload.get("error") is None,
@@ -629,34 +683,58 @@ def _run_binding_benchmark(
         project_root,
         first_args,
     )
-    _verify_binding_page(first, limit, limit)
+    _verify_binding_page(first, limit, limit, "pending")
     cursor = first.get("next_cursor")
     _require(isinstance(cursor, str) and cursor, "First page has no next cursor.")
 
     second_args = _binding_arguments(project_root, limit, cursor)
-    second, second_elapsed, _ = _run_scanner_with_size(
+    second, second_elapsed, second_bytes = _run_scanner_with_size(
         python_executable,
         project_root,
         second_args,
     )
-    _verify_binding_page(second, limit, limit)
+    next_cursor = second.get("next_cursor")
+    second_coverage = "complete" if next_cursor is None else "pending"
+    if next_cursor is not None:
+        _require(
+            isinstance(next_cursor, str) and next_cursor,
+            "Second binding page has an invalid next cursor.",
+        )
+        _require(
+            next_cursor != cursor,
+            "Binding cursor did not advance to the second page.",
+        )
+    _verify_binding_page(second, limit, limit, second_coverage)
     first_rows = first["results"]
     second_rows = second["results"]
-    transitioned = (
-        second_rows[0].get("source_asset_path"),
-        second_rows[0].get("source_object_file_id"),
-    ) != (
-        first_rows[-1].get("source_asset_path"),
-        first_rows[-1].get("source_object_file_id"),
+
+    def binding_identity(row: Dict[str, object]) -> Tuple[object, ...]:
+        return (
+            row.get("source_asset_path"),
+            row.get("source_object_file_id"),
+            row.get("reference_shape"),
+            row.get("m_script_file_id"),
+            row.get("m_script_guid"),
+        )
+
+    first_identities = {binding_identity(row) for row in first_rows}
+    second_identities = {binding_identity(row) for row in second_rows}
+    transitioned = first_identities.isdisjoint(second_identities)
+    _require(
+        transitioned,
+        "Binding cursor repeated the first page boundary.",
     )
     benchmark = {
         "limit": limit,
         "page_row_count": len(first_rows),
         "serialized_bytes": first_bytes,
+        "scan_coverage": first.get("scan_coverage"),
         "first_page_elapsed_seconds": first_elapsed,
         "next_cursor_present": True,
         "cursor_transition": {
             "page_row_count": len(second_rows),
+            "serialized_bytes": second_bytes,
+            "scan_coverage": second.get("scan_coverage"),
             "second_page_elapsed_seconds": second_elapsed,
             "boundary_identity_changed": transitioned,
             "next_cursor_present": second.get("next_cursor") is not None,
@@ -669,6 +747,7 @@ def _run_binding_benchmark(
             project_root,
             first,
             first_elapsed,
+            first_bytes,
         ),
         _query_record(
             f"bindings_benchmark_{limit}_cursor",
@@ -676,6 +755,7 @@ def _run_binding_benchmark(
             project_root,
             second,
             second_elapsed,
+            second_bytes,
         ),
     ]
     return benchmark, records
@@ -763,6 +843,7 @@ def _run_binding_census(
             "Binding census reported a package sample without Packages sources.",
         )
     _verify_binding_samples(samples)
+    _verify_binding_sample_chains(samples, manifest)
     _verify_binding_census(census, manifest)
 
     default_benchmark, default_records = _run_binding_benchmark(
@@ -882,21 +963,27 @@ def run(
             "The supplied real Unity project root could not be resolved.",
         )
     project_root = project_input
-    if not project_root.is_dir():
+    try:
+        if not project_root.is_dir():
+            return 2, _blocked_report(
+                str(project_root),
+                "The supplied real Unity project root is not a readable directory.",
+            )
+        project_root = project_root.resolve()
+        if not (project_root / "Assets").is_dir():
+            return 2, _blocked_report(
+                str(project_root),
+                "The supplied real Unity project root has no Assets directory.",
+            )
+        if not (project_root / "ProjectSettings" / "ProjectVersion.txt").is_file():
+            return 2, _blocked_report(
+                str(project_root),
+                "The supplied real Unity project root has no ProjectVersion.txt evidence.",
+            )
+    except (OSError, RuntimeError):
         return 2, _blocked_report(
-            str(project_root),
-            "The supplied real Unity project root is not a readable directory.",
-        )
-    project_root = project_root.resolve()
-    if not (project_root / "Assets").is_dir():
-        return 2, _blocked_report(
-            str(project_root),
-            "The supplied real Unity project root has no Assets directory.",
-        )
-    if not (project_root / "ProjectSettings" / "ProjectVersion.txt").is_file():
-        return 2, _blocked_report(
-            str(project_root),
-            "The supplied real Unity project root has no ProjectVersion.txt evidence.",
+            str(project_input),
+            "The supplied real Unity export could not be read.",
         )
 
     report: Dict[str, object] = {
@@ -1284,7 +1371,7 @@ def run(
             "binding acceptance."
         )
         return 0, report
-    except (SmokeFailure, KeyError, IndexError, TypeError) as error:
+    except (OSError, SmokeFailure, KeyError, IndexError, TypeError) as error:
         report["error"] = _redact_project_root(
             str(error),
             project_root,

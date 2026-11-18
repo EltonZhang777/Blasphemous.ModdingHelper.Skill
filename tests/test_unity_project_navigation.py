@@ -8,6 +8,7 @@ import tempfile
 import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
+from unittest import mock
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
@@ -17,6 +18,9 @@ SCRIPT_ROOT = (
     / "blasphemous-modding-helper"
     / "scripts"
 )
+sys.path.insert(0, str(SCRIPT_ROOT))
+
+from blasphemous_modding_helper import unity_project  # noqa: E402
 
 
 SCANNER = (

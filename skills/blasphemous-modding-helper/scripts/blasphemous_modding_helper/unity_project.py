@@ -455,7 +455,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     bindings.add_argument(
         "--timeout-seconds",
-        help="Binding scan timeout in seconds (default: 60, maximum: 120).",
+        help="Binding scan timeout in seconds (default: 60, maximum: 300).",
     )
     bindings.add_argument(
         "--census-summary",

@@ -18,7 +18,9 @@ from typing import Dict, Iterable, Iterator, List, Optional, Sequence, Tuple
 from .unity_assets import (
     BINARY_SUFFIXES,
     GUID_PATTERN,
+    MAX_METADATA_VERSION_DIGITS,
     META_GUID,
+    META_GUID_KEY,
     META_VERSION,
     _project_info,
     _normalize_path,
@@ -39,7 +41,7 @@ from .unity_project import (
 DEFAULT_LIMIT = 200
 MAX_LIMIT = 1000
 DEFAULT_TIMEOUT_SECONDS = 60.0
-MAX_TIMEOUT_SECONDS = 120.0
+MAX_TIMEOUT_SECONDS = 300.0
 METADATA_READ_WORKERS = 16
 SORT_VERSION = 2
 CURSOR_VERSION = 2
@@ -248,19 +250,37 @@ def _decode_cursor(
 
 def _iter_documents(
     text: str,
-) -> Iterable[Tuple[Tuple[int, int], List[str]]]:
+) -> Iterable[Tuple[Optional[Tuple[int, int]], List[str]]]:
     header: Optional[Tuple[int, int]] = None
     lines: List[str] = []
     for line in text.splitlines():
-        if line.startswith("---"):
+        if line.startswith("--- !u!"):
             if header is not None:
                 yield header, lines
             match = DOCUMENT_HEADER.match(line)
-            header = (
-                (int(match.group("class_id")), int(match.group("file_id")))
+            class_id = (
+                _decimal_integer(
+                    match.group("class_id"),
+                    0,
+                    INT64_MAX,
+                )
                 if match is not None
                 else None
             )
+            file_id = (
+                _decimal_integer(
+                    match.group("file_id"),
+                    INT64_MIN,
+                    INT64_MAX,
+                )
+                if match is not None
+                else None
+            )
+            if class_id is None or file_id is None:
+                yield None, []
+                header = None
+            else:
+                header = (class_id, file_id)
             lines = []
         elif header is not None:
             lines.append(line)
@@ -541,13 +561,18 @@ def _parse_source(
     path: Path,
     root: Path,
     text: str,
-) -> List[Dict[str, object]]:
+) -> Tuple[List[Dict[str, object]], Optional[Dict[str, object]]]:
     rows: List[Dict[str, object]] = []
-    if "--- !u!114 &" not in text:
-        return rows
+    if "--- !u!114" not in text:
+        return rows, None
     kind = SOURCE_KINDS[path.suffix.lower()]
     source_path = _relative(path, root)
-    for (class_id, object_file_id), lines in _iter_documents(text):
+    malformed = False
+    for header, lines in _iter_documents(text):
+        if header is None:
+            malformed = True
+            continue
+        class_id, object_file_id = header
         if class_id != 114:
             continue
         field = _direct_script_field(lines)
@@ -570,7 +595,16 @@ def _parse_source(
             )
         )
         rows.append(row)
-    return rows
+    warning = (
+        _warning(
+            "malformed_document",
+            "Source contains an unparseable Unity YAML document header.",
+            source_path,
+        )
+        if malformed
+        else None
+    )
+    return rows, warning
 
 
 def _asset_kind(path: Path) -> str:
@@ -670,8 +704,8 @@ def _build_guid_index(
                     relative,
                 )
             )
-        guid_match = META_GUID.search(text)
-        if guid_match is None:
+        guid_matches = list(META_GUID.finditer(text))
+        if not guid_matches:
             warnings.append(
                 _warning(
                     "metadata_unusable",
@@ -680,6 +714,15 @@ def _build_guid_index(
                 )
             )
             continue
+        if len(META_GUID_KEY.findall(text)) != 1 or len(guid_matches) != 1:
+            unreadable = True
+            warnings.append(
+                _warning(
+                    "metadata_unusable",
+                    "Metadata must have exactly one valid GUID.",
+                    relative,
+                )
+            )
         version_match = META_VERSION.search(text)
         if version_match is None:
             unreadable = True
@@ -691,18 +734,29 @@ def _build_guid_index(
                 )
             )
         else:
-            try:
-                int(version_match.group(1))
-            except ValueError:
+            version_value = version_match.group(1)
+            if len(version_value) > MAX_METADATA_VERSION_DIGITS:
                 unreadable = True
                 warnings.append(
                     _warning(
                         "metadata_unusable",
-                        "Metadata has an unusable fileFormatVersion.",
+                        "Metadata has an unsupported fileFormatVersion.",
                         relative,
                     )
                 )
-        guid = guid_match.group(1).lower()
+            else:
+                try:
+                    int(version_value)
+                except ValueError:
+                    unreadable = True
+                    warnings.append(
+                        _warning(
+                            "metadata_unusable",
+                            "Metadata has an unusable fileFormatVersion.",
+                            relative,
+                        )
+                    )
+        guids = {match.group(1).lower() for match in guid_matches}
         try:
             exists = (
                 target.is_file()
@@ -711,14 +765,15 @@ def _build_guid_index(
             )
         except OSError:
             exists = False
-        index[guid].append(
-            {
-                "exists": exists,
-                "kind": _asset_kind(target),
-                "metadata_unreadable": unreadable,
-                "path": _relative(target, root),
-            }
-        )
+        for guid in guids:
+            index[guid].append(
+                {
+                    "exists": exists,
+                    "kind": _asset_kind(target),
+                    "metadata_unreadable": unreadable,
+                    "path": _relative(target, root),
+                }
+            )
     for candidates in index.values():
         candidates.sort(
             key=lambda item: (
@@ -1131,7 +1186,10 @@ def bindings_query(
             if warning is not None:
                 source_warnings.append(warning)
                 continue
-            for row in _parse_source(path, root, str(text)):
+            parsed_rows, parse_warning = _parse_source(path, root, str(text))
+            if parse_warning is not None:
+                source_warnings.append(parse_warning)
+            for row in parsed_rows:
                 row.update(
                     _target_fields(
                         row["reference_shape"],
@@ -1182,11 +1240,15 @@ def bindings_query(
                 if has_more and page
                 else None
             )
-            payload["scan_coverage"] = coverage
-            if unique_status is not None:
-                payload["status"] = unique_status
-            elif coverage == "partial":
+            payload["scan_coverage"] = (
+                "pending"
+                if coverage == "complete" and has_more
+                else coverage
+            )
+            if coverage == "partial":
                 payload["status"] = "partial"
+            elif unique_status is not None:
+                payload["status"] = unique_status
             else:
                 payload["status"] = "ok"
     except NavigationError as error:
