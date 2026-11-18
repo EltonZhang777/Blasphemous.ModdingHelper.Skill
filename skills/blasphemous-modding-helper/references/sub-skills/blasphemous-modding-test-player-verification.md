@@ -1,6 +1,6 @@
 # Player-performed in-game verification
 
-The agent MUST follow this guide only after [In-game test coordination](blasphemous-modding-test-in-game-coordination.md) selects Player-performed verification and the shared [Real-profile preparation](blasphemous-modding-test-real-profile.md) has produced startup evidence. The Real-profile branch remains authoritative for every command, profile safeguard, session operation, and snapshot.
+The agent MUST follow this guide only after [In-game test coordination](blasphemous-modding-test-in-game-coordination.md) selects Player-performed verification and reaches the [Player-performed in-game verification handoff and turn boundary](blasphemous-modding-test-in-game-coordination.md#player-performed-in-game-verification-handoff-and-turn-boundary). That boundary is the sole owner of the handoff content, turn ending, and post-handoff inactivity; this guide owns the detailed in-game actions, observations, and evidence below. The Real-profile branch remains authoritative for every command, profile safeguard, session operation, and snapshot.
 
 ## Perform and record the planned scenario
 

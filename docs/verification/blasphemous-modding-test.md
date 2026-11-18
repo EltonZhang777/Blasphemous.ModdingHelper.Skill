@@ -129,6 +129,10 @@ PYTHON3=/path/to/python3
 
 Completion criterion: the user has supplied the Manual verification and the agent has paired it with CLI/log evidence, or the record contains a warning naming the exact blocked step. `mod_loaded` never satisfies this gate by itself.
 
+## Unity project navigation real-project gate
+
+Synthetic Unity navigation tests are part of the repository acceptance suite. The opt-in real-export gate is separate and runs only with an explicit UTinyRipper project path. Its commands, fixed manifest, baseline counts, read-only evidence, and blocked/failed behavior are defined in [Unity project navigation acceptance](unity-project-navigation.md). A missing real export is reported as `blocked`; a synthetic pass MUST NOT be used as a substitute.
+
 ## Current environment warnings
 
 - **Native Python matrix:** this local record was produced on Windows. Linux and macOS evidence is supplied by the CI matrix using the same Python entry point; a local Windows shell is not a substitute for either host.

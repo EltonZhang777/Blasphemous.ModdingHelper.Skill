@@ -16,6 +16,8 @@ unity_log_dir: Path/to/unity-log-directory
 modding_api_reference_path: /absolute/path/to/references/modding-api
 
 modding_api_reference_selector: latest
+
+unity_project_path: /absolute/path/to/exported-unity-project
 ```
 
 ## Fields
@@ -28,6 +30,7 @@ modding_api_reference_selector: latest
 | `unity_log_dir` | string | Optional | Directory containing the current Unity log. Windows normally contains `output_log.txt`; native Linux/macOS profiles normally contain `Player.log`. The test CLI reports a recovery handoff when this field or its log is missing. |
 | `modding_api_reference_path` | string, optional | N/A | Normalized absolute path to a local ModdingAPI reference checkout. When absent, the agent uses the release-aware remote fallback. |
 | `modding_api_reference_selector` | string, optional | `latest` when a local path is configured | Selector used for the local checkout: `latest`, `tag:REF`, `branch:REF`, or `commit:SHA`. `main` is not an implicit selector. |
+| `unity_project_path` | string, optional | N/A | Exported Unity project root used only by Unity project navigation. The root MUST contain an `Assets` directory. Omitting this field leaves all other routes usable. |
 | `check_period_days` | positive number, optional | `7` | Validation period (freshness window) for shared configuration validation. Positive floating-point values are rounded down and stored as positive integers; invalid values enter first-time setup. |
 
 ## Validation metadata and period
@@ -41,6 +44,8 @@ check_period_days: 7
 ```
 
 `last_checked_time` and `last_checked_version` are validation metadata. `check_period_days` is the validation period. `last_checked_time` is UTC ISO 8601 metadata and `last_checked_version` is the exact Skill version from the installed Skill's [`version.yml`](../../version.yml). Missing, malformed, or future metadata triggers validation. A current configuration within its period returns `skipped` without writing. Successful validation returns `passed` or `normalized`, writes the managed metadata, and preserves unrelated fields, comments, and order. Invalid YAML or invalid `check_period_days` returns `failed`, leaves the file unchanged, and routes to first-time setup.
+
+When valid configuration omits `unity_project_path`, the Unity navigation route asks only for that path. The agent MUST use `check_preferences.py --set-unity-project-path PATH`; that command validates the directory and atomically adds only this field while preserving comments, order, unknown YAML, and unrelated paths. Invalid YAML still routes through full first-time setup.
 
 ## Approved local reference locations
 
