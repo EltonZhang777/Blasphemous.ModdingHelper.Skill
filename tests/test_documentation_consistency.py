@@ -90,7 +90,7 @@ ROUTING_CONTRACTS = (
             ("Test a Mod; build/deploy/launch a profile", "Mod-test entry", "classify the request"),
             ("Generate, modify, review, or refactor Mod-owned C#", "Coding standards", "ownership boundary"),
             ("Need ModdingAPI documentation", "Referencing ModdingAPI", "local or release-aware reference"),
-            ("Analyze an explicit Blasphemous 1 save file read-only", "Save analysis", "MUST require one explicit input path"),
+            ("Analyze one explicit Blasphemous 1 save file or directory read-only", "Save analysis", "MUST require one explicit input path"),
         ),
     ),
     (

@@ -126,6 +126,7 @@ class SaveAnalysisTests(unittest.TestCase):
             "$type": "Demo.Save, Assembly-CSharp",
             "unknown": {"nested": [1, {"kept": "值"}]},
         }
+        payload.update({f"member_{index}": index for index in range(45)})
         source.write_bytes(self.vanilla_bytes(payload))
         before_hash = hashlib.sha256(source.read_bytes()).hexdigest()
         before_mtime = source.stat().st_mtime_ns
@@ -153,14 +154,9 @@ class SaveAnalysisTests(unittest.TestCase):
             )
         )
         self.assertEqual(chunk["source"]["path"], str(source.resolve()))
-        self.assertEqual(chunk["data_shape"]["type"], "object")
-        member_types = {
-            member["name"]: member["value_type"]
-            for member in chunk["data_shape"]["members"]
-        }
-        self.assertEqual(member_types["$type"], "string")
-        self.assertEqual(member_types["unknown"], "object")
-        self.assertNotIn("值", json.dumps(chunk, ensure_ascii=False))
+        self.assertEqual(chunk["data"], payload)
+        self.assertEqual(chunk["data"]["unknown"]["nested"][1]["kept"], "值")
+        self.assertEqual(chunk["data"]["member_44"], 44)
 
         full_text = (run_root / manifest["inputs"][0]["artifacts"]["full"]).read_text(
             encoding="utf-8"
@@ -171,7 +167,7 @@ class SaveAnalysisTests(unittest.TestCase):
         summary = (run_root / "summary.txt").read_text(encoding="utf-8")
         self.assertIn("Status: success", summary)
         self.assertIn("Format: vanilla-base64-json", summary)
-        self.assertIn("Top-level keys: 2", summary)
+        self.assertIn("Top-level keys: 47", summary)
 
         self.assertEqual(hashlib.sha256(source.read_bytes()).hexdigest(), before_hash)
         self.assertEqual(source.stat().st_mtime_ns, before_mtime)
@@ -550,19 +546,19 @@ class SaveAnalysisTests(unittest.TestCase):
 
     def test_moddingapi_records_preserve_duplicate_identifiers_and_order(self):
         source = self.root / "renamed-no-extension.bin"
+        first_payload = {
+            "coins": 1,
+            "name": "值",
+            "separator": "值\u2028行",
+            "note": "x" * 2000,
+            "unknown": {"nested": [True, {"kept": "nested value"}]},
+        }
+        final_payload = {"coins": 3, "$type": "Demo.State"}
         source.write_bytes(
             self.modding_bytes(
-                (
-                    "demo.mod1",
-                    {
-                        "coins": 1,
-                        "name": "值",
-                        "separator": "值\u2028行",
-                        "note": "x" * 2000,
-                    },
-                ),
+                ("demo.mod1", first_payload),
                 ("demo.mod2", {"coins": 2}),
-                ("demo.mod1", {"coins": 3, "$type": "Demo.State"}),
+                ("demo.mod1", final_payload),
             )
         )
         before = hashlib.sha256(source.read_bytes()).hexdigest()
@@ -594,21 +590,13 @@ class SaveAnalysisTests(unittest.TestCase):
             [record["payload_line"] for record in chunk["records"]],
             [2, 4, 6],
         )
-        member_types = {
-            member["name"]: member["value_type"]
-            for member in chunk["records"][0]["payload_shape"]["members"]
-        }
-        self.assertEqual(member_types["name"], "string")
-        self.assertEqual(member_types["note"], "string")
-        self.assertNotIn("值", json.dumps(chunk, ensure_ascii=False))
-        self.assertNotIn("x" * 100, json.dumps(chunk, ensure_ascii=False))
-        self.assertIn(
-            "$type",
-            [
-                member["name"]
-                for member in chunk["records"][2]["payload_shape"]["members"]
-            ],
+        self.assertEqual(chunk["records"][0]["payload"], first_payload)
+        self.assertEqual(
+            chunk["records"][0]["payload"]["unknown"]["nested"][1]["kept"],
+            "nested value",
         )
+        self.assertEqual(chunk["records"][1]["payload"], {"coins": 2})
+        self.assertEqual(chunk["records"][2]["payload"], final_payload)
 
         full_text = (run_root / item["artifacts"]["full"]).read_text(encoding="utf-8")
         self.assertTrue(full_text.startswith("demo.mod1\n{\n"))

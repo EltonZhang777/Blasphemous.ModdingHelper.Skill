@@ -1,4 +1,4 @@
-"""Read-only structured analysis of explicit Blasphemous 1 save files."""
+"""Read-only structured analysis of explicit Blasphemous 1 save files or directories."""
 
 from __future__ import annotations
 
@@ -21,7 +21,6 @@ EXIT_SUCCESS = 0
 EXIT_FAILURE = 1
 EXIT_PARTIAL = 3
 RUN_ROOT_NAME = "blasphemous-save-analysis"
-MAX_SHAPE_MEMBERS = 40
 MAX_MODDING_PREVIEW_CHARS = 512
 CONVENTIONAL_MODDING_IDENTIFIER = re.compile(
     r"(?:[A-Za-z0-9_-]+\.)+[A-Za-z0-9_-]+|"
@@ -225,7 +224,7 @@ def _modding_chunk_records(
             if key not in {"payload", "raw_payload"}
         }
         if record["status"] == "valid":
-            chunk_record["payload_shape"] = _value_shape(record["payload"])
+            chunk_record["payload"] = record["payload"]
         elif record["status"] == "invalid":
             raw_payload = record["raw_payload"]
             chunk_record["raw_payload_preview"] = raw_payload[
@@ -257,44 +256,6 @@ def _top_level_count(value: Any) -> int:
     if isinstance(value, list):
         return len(value)
     return 0
-
-
-def _json_type(value: Any) -> str:
-    if isinstance(value, dict):
-        return "object"
-    if isinstance(value, list):
-        return "array"
-    if isinstance(value, str):
-        return "string"
-    if isinstance(value, bool):
-        return "boolean"
-    if value is None:
-        return "null"
-    if isinstance(value, (int, float)):
-        return "number"
-    return "unknown"
-
-
-def _value_shape(value: Any) -> Dict[str, Any]:
-    if isinstance(value, dict):
-        names = list(value)[:MAX_SHAPE_MEMBERS]
-        return {
-            "type": "object",
-            "member_count": len(value),
-            "members": [
-                {"name": name, "value_type": _json_type(value[name])}
-                for name in names
-            ],
-            "members_omitted": max(0, len(value) - len(names)),
-        }
-    if isinstance(value, list):
-        item_types = sorted({_json_type(item) for item in value})
-        return {
-            "type": "array",
-            "length": len(value),
-            "item_types": item_types,
-        }
-    return {"type": _json_type(value)}
 
 
 def _modding_warnings(counts: Dict[str, int]) -> list:
@@ -493,7 +454,7 @@ def _analyze_file(
         "source": source,
         "role": "vanilla",
         "format": "vanilla-base64-json",
-        "data_shape": _value_shape(parsed),
+        "data": parsed,
     }
     if role_hint is not None:
         _apply_role(item, chunk, role_hint)

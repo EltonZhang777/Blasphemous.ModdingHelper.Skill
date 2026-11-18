@@ -75,7 +75,7 @@ After installation, manually activate the skill:
   - **Source Analyzer** — Read and analyze game source code to understand mechanics, structure, and dependencies
   - **Log Analyzer** — Debug and error tracking for mod development (BepInEx and Unity logs)
   - **Mod Test** — Build, deploy, launch, inspect startup evidence, stop, clean, and verify in-game behavior with Player or Computer Use
-  - **Save Analysis** — Read-only decode and inspect explicit Blasphemous 1 save files under the host temporary directory
+  - **Save Analysis** — Read-only decode and inspect an explicit Blasphemous 1 save file or directory under the host temporary directory
   - **Localization Lookup** — Read-only lookup and translation support for Blasphemous 1 terms and UI text
   - **Unity Project Navigation** — Read-only topology and scene-set summary for an exported Unity project
 - **Configuration Reference** — First-time setup and configuration documentation
