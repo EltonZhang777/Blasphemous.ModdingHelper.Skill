@@ -680,8 +680,8 @@ class SaveAnalysisTests(unittest.TestCase):
         retained = Path(retained_line.removeprefix("Retained evidence: "))
         analysis_root = self.temp_root / "blasphemous-save-analysis"
         self.assertEqual(
-            retained,
-            analysis_root / f"failed-{uuid.UUID(fixed_uuid).hex}",
+            retained.resolve(),
+            (analysis_root / f"failed-{uuid.UUID(fixed_uuid).hex}").resolve(),
         )
         marker = (retained / "publication-error.txt").read_text(encoding="utf-8")
         self.assertIn("Reason: run-collision", marker)
