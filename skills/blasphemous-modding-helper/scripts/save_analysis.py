@@ -682,7 +682,9 @@ def _summary(
             lines.append(f"  Role match: {'yes' if item['role_match'] else 'no'}")
         if "error" in item:
             error = item["error"]
-            lines.append(f"  Error: {error['reason']}: {error['message']}")
+            lines.append(
+                f"  Error: {error['reason']}: {_display_text(error['message'])}"
+            )
         if "top_level_keys" in item:
             lines.append(f"  Top-level keys: {item['top_level_keys']}")
         counts = item.get("counts")
@@ -695,7 +697,8 @@ def _summary(
             lines.append(f"  Warning: {warning}")
         for name, error in item.get("artifact_errors", {}).items():
             lines.append(
-                f"  Artifact error [{name}]: {error['reason']}: {error['message']}"
+                f"  Artifact error [{name}]: {error['reason']}: "
+                f"{_display_text(error['message'])}"
             )
     return "\n".join(lines) + "\n"
 
@@ -934,14 +937,22 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             print(f"SHA-256: {digest}", file=sys.stderr)
         return EXIT_FAILURE
     except OSError as error:
-        print(f"Error [save-analysis]: analysis could not complete: {error}", file=sys.stderr)
+        print(
+            "Error [save-analysis]: analysis could not complete: "
+            f"{_display_text(error)}",
+            file=sys.stderr,
+        )
         print("Reason: io-failure", file=sys.stderr)
         return EXIT_FAILURE
     except UnicodeError as error:
-        print(f"Error [save-analysis]: analysis contains unencodable text: {error}", file=sys.stderr)
+        print(
+            "Error [save-analysis]: analysis contains unencodable text: "
+            f"{_display_text(error)}",
+            file=sys.stderr,
+        )
         print("Reason: invalid-unicode", file=sys.stderr)
         return EXIT_FAILURE
-    print(run_root)
+    print(_display_text(run_root))
     if exit_code == EXIT_PARTIAL:
         print(
             "Warning [save-analysis]: partial evidence; review manifest.json "

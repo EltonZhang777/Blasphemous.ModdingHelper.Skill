@@ -17,7 +17,6 @@ CLI = (
     / "scripts"
     / "analyze_save.py"
 )
-SCRIPT_ROOT = CLI.parent
 
 
 class SaveAnalysisTests(unittest.TestCase):
@@ -207,19 +206,49 @@ class SaveAnalysisTests(unittest.TestCase):
         self.assertIn(f"SHA-256: {invalid_digest}", fatal.stderr)
 
     def test_cli_does_not_create_bytecode_cache(self):
-        before = {
-            path for path in SCRIPT_ROOT.rglob("__pycache__") if path.is_dir()
-        }
+        cache_root = self.root / "bytecode cache"
+        cache_root.mkdir()
         source = self.root / "save.bin"
         source.write_bytes(self.vanilla_bytes({"value": 1}))
 
-        result = self.run_cli(str(source))
+        result = self.run_cli(
+            str(source),
+            extra_env={"PYTHONPYCACHEPREFIX": str(cache_root)},
+        )
 
         self.assertEqual(result.returncode, 0, result.stderr)
-        after = {
-            path for path in SCRIPT_ROOT.rglob("__pycache__") if path.is_dir()
-        }
-        self.assertEqual(after, before)
+        local_caches = [
+            path
+            for path in cache_root.rglob("*.pyc")
+            if path.name.startswith(("analyze_save.", "save_analysis."))
+        ]
+        self.assertEqual(local_caches, [])
+
+    def test_unprintable_temporary_root_still_prints_run_path(self):
+        output_root = self.root / f"os{chr(0xDCFF)} temp"
+        try:
+            output_root.mkdir()
+        except (OSError, UnicodeError) as error:
+            self.skipTest(f"unprintable temporary root unavailable: {error}")
+        source = self.root / "save.bin"
+        source.write_bytes(self.vanilla_bytes({"value": 1}))
+
+        result = self.run_cli(
+            str(source),
+            extra_env={
+                "TEMP": str(output_root),
+                "TMP": str(output_root),
+                "TMPDIR": str(output_root),
+            },
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("\\udcff", result.stdout.casefold())
+        self.assertNotIn("Traceback", result.stderr)
+        analysis_root = output_root / "blasphemous-save-analysis"
+        runs = [path for path in analysis_root.iterdir() if path.is_dir()]
+        self.assertEqual(len(runs), 1)
+        self.assertTrue((runs[0] / "manifest.json").is_file())
 
     def test_invalid_utf8_reports_single_file_source_evidence(self):
         source = self.root / "invalid-utf8.bin"
