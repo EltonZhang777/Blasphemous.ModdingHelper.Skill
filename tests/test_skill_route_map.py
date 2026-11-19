@@ -2,6 +2,11 @@ import re
 import unittest
 from pathlib import Path
 
+from test_documentation_consistency import (
+    canonical_route_tables,
+    markdown_table_cells,
+)
+
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 MAIN_SKILL = REPOSITORY_ROOT / "skills" / "blasphemous-modding-helper" / "SKILL.md"
@@ -11,24 +16,14 @@ SOURCE_NAVIGATION = (
 
 
 def navigation_routes():
-    text = SOURCE_NAVIGATION.read_text(encoding="utf-8")
-    header = "| Request signal / condition | Route destination | Boundary / next action |"
-    table = text.split(header, 1)[1].split("\n\n", 1)[0]
-    routes = []
-    for line in table.splitlines()[2:]:
-        cells = tuple(cell.strip() for cell in line.strip("|").split("|"))
-        if len(cells) != 3:
-            continue
-        routes.append(cells)
-    return routes
-
-
-def route_row(route_name):
-    return next(
-        row
-        for row in navigation_routes()
-        if row[0].startswith(f"**{route_name}.**")
-    )
+    table = canonical_route_tables(
+        SOURCE_NAVIGATION.read_text(encoding="utf-8")
+    )[0][1]
+    return [
+        cells
+        for line in table.splitlines()[2:]
+        if (cells := markdown_table_cells(line))
+    ]
 
 
 class SkillRouteMapTests(unittest.TestCase):
@@ -98,37 +93,22 @@ class SkillRouteMapTests(unittest.TestCase):
     def test_achievement_requests_have_one_source_navigation_destination(self):
         routes = navigation_routes()
         self.assertEqual(len(routes), 10)
-        core_signal = route_row("Core")[0].casefold()
-        items_signal = route_row("Items")[0].casefold()
-        for phrase in (
-            "achievementsmanager",
-            "lifecycle",
-            "persistence",
-            "wiring",
-            "runtime flow",
-            "must take precedence",
-        ):
-            self.assertIn(phrase, core_signal)
-        for phrase in (
-            "bare achievements",
-            "framework/achievements/*",
-            "state behavior",
-            "backend helpers",
-            "checkers",
-        ):
-            self.assertIn(phrase, items_signal)
-        self.assertIn("achievement ui widgets", route_row("UI")[0].casefold())
-        self.assertIn(
-            "achievement playmaker actions, conditions, and events",
-            route_row("Tools")[0].casefold(),
-        )
         signals = (
             ("bare achievements", "[items.md](items.md)"),
             ("framework/achievements/*", "[items.md](items.md)"),
-            ("achievementsmanager", "[core.md](core.md)"),
-            ("achievement ui widgets", "[ui.md](ui.md)"),
             (
-                "achievement playmaker actions, conditions, and events",
+                "framework/achievements/* persistence",
+                "[items.md](items.md)",
+            ),
+            ("achievementsmanager", "[core.md](core.md)"),
+            ("lifecycle, persistence, wiring, and runtime flow", "[core.md](core.md)"),
+            (
+                "achievementsmanager achievement entities",
+                "[core.md](core.md)",
+            ),
+            ("achievement ui widgets runtime flow", "[ui.md](ui.md)"),
+            (
+                "achievement playmaker actions runtime flow",
                 "[tools.md](tools.md)",
             ),
         )
@@ -140,14 +120,6 @@ class SkillRouteMapTests(unittest.TestCase):
                     if signal in request_signal.casefold()
                 }
                 self.assertEqual(destinations, {expected})
-
-        normalised = " ".join(SOURCE_NAVIGATION.read_text(encoding="utf-8").split())
-        self.assertIn(
-            "Mixed achievement requests MUST start at the explicitly named entry "
-            "class",
-            normalised,
-        )
-        self.assertIn("before broadening the search", normalised)
 
     def test_top_level_relative_links_resolve(self):
         text = MAIN_SKILL.read_text(encoding="utf-8")

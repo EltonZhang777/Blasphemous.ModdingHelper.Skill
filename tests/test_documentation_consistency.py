@@ -795,7 +795,10 @@ class DocumentationConsistencyTests(unittest.TestCase):
         navigation = SKILL_ROOT / "references" / "source-code-navigation"
         core = navigation / "core.md"
         items = navigation / "items.md"
-        core_manager_section = markdown_section(core, "## Managers")
+        core_manager_section = markdown_section(
+            core,
+            "### AchievementsManager.cs",
+        ).split("\n### ", 1)[0]
         items_achievement_section = markdown_section(items, "## Achievement System")
 
         core_links = [
