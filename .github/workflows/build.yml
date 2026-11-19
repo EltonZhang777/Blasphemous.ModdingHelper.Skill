@@ -89,8 +89,6 @@ jobs:
       run: |
         mkdir -p publish
         zip -r publish/${{ env.PROJECT_NAME }}.zip skills/${{ env.PROJECT_NAME }}
-        cp install.sh publish/install.sh
-        cp install.ps1 publish/install.ps1
 
     # Release is created only on tag pushes; main-branch pushes just run
     # the packaging steps above as a build check.
@@ -102,5 +100,3 @@ jobs:
         draft: true
         files: |
           publish/${{ env.PROJECT_NAME }}.zip
-          publish/install.sh
-          publish/install.ps1

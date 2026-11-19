@@ -283,6 +283,10 @@ class ReleaseMetadataTests(unittest.TestCase):
             "zip -r publish/${{ env.PROJECT_NAME }}.zip skills/${{ env.PROJECT_NAME }}",
             workflow,
         )
+        self.assertNotIn("cp install.sh", workflow)
+        self.assertNotIn("cp install.ps1", workflow)
+        self.assertNotIn("publish/install.sh", workflow)
+        self.assertNotIn("publish/install.ps1", workflow)
         self.assertIn('node bin/install.js --dry-run --path "$SKILL_DESTINATION"', workflow)
         self.assertNotIn("--only", workflow)
 
