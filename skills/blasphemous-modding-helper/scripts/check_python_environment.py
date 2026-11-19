@@ -3,7 +3,15 @@
 
 from __future__ import annotations
 
-from blasphemous_modding_helper.runtime import main
+import sys
+from pathlib import Path
+
+
+sys.path.insert(
+    0,
+    str(Path(__file__).resolve().parent / "blasphemous_modding_helper"),
+)
+from runtime import main  # noqa: E402
 
 
 if __name__ == "__main__":
