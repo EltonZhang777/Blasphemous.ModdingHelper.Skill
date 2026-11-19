@@ -51,6 +51,7 @@ ROUTE_DOCUMENTS = (
     "references/unity-project-navigation/prefabs.md",
     "references/unity-project-navigation/scenes.md",
     "references/unity-project-navigation/component-relations.md",
+    "references/unity-project-navigation/bindings.md",
 )
 DEPENDENCY_GUIDANCE = (
     REPOSITORY_ROOT / "README.md",
@@ -205,6 +206,11 @@ ROUTING_CONTRACTS = (
                 "Serialized component relations",
                 "component-relations.md",
                 "MUST report traversal direction, object scope, unresolved targets",
+            ),
+            (
+                "Direct MonoBehaviour `m_Script` bindings",
+                "bindings.md",
+                "MUST report source and target evidence separately",
             ),
         ),
     ),
@@ -710,6 +716,20 @@ class DocumentationConsistencyTests(unittest.TestCase):
                         RFC2119_KEYWORDS,
                         f"{relative}: boundary cell must use RFC 2119 wording",
                     )
+
+    def test_unity_relations_route_direct_bindings_without_conflict(self):
+        text = normalized(
+            SKILL_ROOT
+            / "references"
+            / "sub-skills"
+            / "unity-project-navigation.md"
+        )
+
+        self.assertIn("direct monobehaviour `m_script` questions must select `bindings`", text)
+        self.assertIn(
+            "other traversal must use `references` for direction, object scope, limits, timeout",
+            text,
+        )
 
 
 if __name__ == "__main__":

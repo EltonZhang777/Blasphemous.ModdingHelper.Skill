@@ -604,6 +604,7 @@ class UnityReferenceNavigationTests(unittest.TestCase):
             """
             import os
             import pathlib
+            import sys
             import time
 
             blocked = pathlib.Path(os.environ["BLOCKED_PROJECT"])
@@ -614,7 +615,8 @@ class UnityReferenceNavigationTests(unittest.TestCase):
                     time.sleep(5)
                 return original(path, *args, **kwargs)
 
-            pathlib.Path.resolve = resolve
+            if sys.argv[0] == "-c":
+                pathlib.Path.resolve = resolve
             """
         )
         env["BLOCKED_PROJECT"] = str(self.root)

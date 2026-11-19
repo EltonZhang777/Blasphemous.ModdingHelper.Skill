@@ -7,6 +7,7 @@ import json
 import os
 import re
 import stat
+import time
 from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Callable, Dict, Iterable, List, Optional, Sequence, Set, Tuple
@@ -188,10 +189,20 @@ def _walk_files(
     included_roots: Sequence[Path],
     stopped: Optional[Callable[[], bool]] = None,
     suffixes: Optional[Sequence[str]] = None,
+    *,
+    deadline: Optional[float] = None,
 ):
     warnings: List[Dict[str, object]] = []
     files: List[Path] = []
     suffixes = frozenset(value.lower() for value in suffixes) if suffixes else None
+
+    def check_deadline() -> None:
+        if deadline is not None and time.monotonic() >= deadline:
+            raise NavigationError(
+                "timeout",
+                "The Unity project scan timed out before evidence collection completed.",
+            )
+
     for included_root in included_roots:
         if stopped is not None and stopped():
             break
@@ -219,11 +230,13 @@ def _walk_files(
         ):
             if stopped is not None and stopped():
                 break
+            check_deadline()
             base = Path(directory)
             kept_names = []
             for name in sorted(names):
                 if stopped is not None and stopped():
                     break
+                check_deadline()
                 child = base / name
                 if name.casefold() in EXCLUDED_DIRECTORY_NAMES:
                     continue
@@ -252,6 +265,7 @@ def _walk_files(
             for name in sorted(filenames):
                 if stopped is not None and stopped():
                     break
+                check_deadline()
                 child = base / name
                 if suffixes is not None and child.suffix.lower() not in suffixes:
                     continue
@@ -426,7 +440,111 @@ def build_parser() -> argparse.ArgumentParser:
         default="60",
         help="Traversal timeout in seconds, up to 120.",
     )
+    bindings = commands.add_parser(
+        "bindings",
+        help="List direct MonoBehaviour-to-script bindings.",
+    )
+    bindings.add_argument("--project", required=True, help="Exported Unity project root.")
+    bindings.add_argument(
+        "--limit",
+        help="Maximum results per page (default: 200, maximum: 1000).",
+    )
+    bindings.add_argument(
+        "--cursor",
+        help="Opaque cursor returned by a previous bindings page.",
+    )
+    bindings.add_argument(
+        "--timeout-seconds",
+        help="Binding scan timeout in seconds (default: 60, maximum: 300).",
+    )
+    bindings.add_argument(
+        "--census-summary",
+        action="store_true",
+        help=(
+            "Return aggregate counts and deterministic samples from one full "
+            "scan without pagination."
+        ),
+    )
+    bindings.add_argument(
+        "--path",
+        action="append",
+        help="Exact .unity, .prefab, or .asset source path; repeat for OR semantics.",
+    )
+    bindings.add_argument(
+        "--object-file-id",
+        help="Exact source object file ID; requires exactly one --path.",
+    )
+    bindings.add_argument(
+        "--script-guid",
+        action="append",
+        help="Raw m_Script GUID; repeat for OR semantics.",
+    )
+    bindings.add_argument(
+        "--reference-shape",
+        action="append",
+        help="Reference shape filter; repeat for OR semantics.",
+    )
+    bindings.add_argument(
+        "--asset-resolution",
+        action="append",
+        help="Target asset resolution filter; repeat for OR semantics.",
+    )
+    bindings.add_argument(
+        "--script-object-resolution",
+        action="append",
+        help="Target object resolution filter; repeat for OR semantics.",
+    )
     return parser
+
+
+def _redact_public_payload(
+    payload: Dict[str, object],
+    project: Path,
+) -> Dict[str, object]:
+    candidates = set()
+    try:
+        raw = Path(project).expanduser()
+    except (OSError, RuntimeError):
+        raw = Path(project)
+    if raw.is_absolute():
+        candidates.add(os.fspath(raw))
+    try:
+        resolved = raw.resolve(strict=False)
+    except (OSError, RuntimeError):
+        resolved = None
+    if resolved is not None and resolved.is_absolute():
+        candidates.add(os.fspath(resolved))
+        candidates.add(resolved.as_posix())
+    candidates.update(
+        candidate.replace("\\", "\\\\")
+        for candidate in tuple(candidates)
+        if "\\" in candidate
+    )
+    patterns = [
+        re.compile(
+            re.escape(candidate) + r"(?![\w-])",
+            re.IGNORECASE if os.name == "nt" else 0,
+        )
+        for candidate in sorted(candidates, key=len, reverse=True)
+    ]
+
+    def scrub(value: object) -> object:
+        if isinstance(value, dict):
+            return {key: scrub(item) for key, item in value.items()}
+        if isinstance(value, list):
+            return [scrub(item) for item in value]
+        if not isinstance(value, str):
+            return value
+        text = value
+        for pattern in patterns:
+            text = pattern.sub(".", text)
+        return text
+
+    public = scrub(payload)
+    project_block = public.get("project")
+    if isinstance(project_block, dict):
+        project_block["root"] = "."
+    return public
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
@@ -497,8 +615,26 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             args.timeout_seconds,
         )
         return_code = exit_code(payload)
+    elif args.command == "bindings":
+        from .unity_bindings import bindings_exit_code, bindings_query
+
+        payload = bindings_query(
+            Path(args.project),
+            args.limit,
+            args.cursor,
+            args.timeout_seconds,
+            census_summary=args.census_summary,
+            paths=args.path,
+            object_file_id=args.object_file_id,
+            script_guids=args.script_guid,
+            reference_shapes=args.reference_shape,
+            asset_resolutions=args.asset_resolution,
+            script_object_resolutions=args.script_object_resolution,
+        )
+        return_code = bindings_exit_code(payload)
     else:  # pragma: no cover - argparse rejects unknown commands.
         raise AssertionError(args.command)
+    payload = _redact_public_payload(payload, Path(args.project))
     print(json.dumps(payload, sort_keys=True, separators=(",", ":")))
     return return_code
 

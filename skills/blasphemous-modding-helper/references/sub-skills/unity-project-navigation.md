@@ -84,7 +84,7 @@ Resolve one scene set or one exact scene file after the project summary:
 & $PYTHON3 (Join-Path $SkillRoot 'scripts\unity_project_navigation.py') scene --project '<UNITY_PROJECT_ROOT>' --path '<SCENE_PATH>'
 ```
 
-Serialized component-relation queries MUST use the `references` command and follow [component-relations](../unity-project-navigation/component-relations.md) for direction, object scope, limits, timeout, and unresolved-evidence reporting.
+Serialized component-relation queries MUST follow [component-relations](../unity-project-navigation/component-relations.md). Direct MonoBehaviour `m_Script` questions MUST select `bindings`; other traversal MUST use `references` for direction, object scope, limits, timeout, and unresolved-evidence reporting.
 
 The scanner reads the configured directory and writes no index, cache, lock, log, copied asset, or project file. The agent MUST NOT start Unity Editor or modify, repair, or reserialize the project.
 
