@@ -13,4 +13,4 @@ The coordinator's ordinary-penalty rule and disposable-profile limits apply to t
 
 ## Completion criterion
 
-The report MUST identify the Test session, scene/save state, exact actions, expected and observed results, visible errors or approximate failure time, status, and next action. Player-performed evidence remains separate from Computer Use, startup, logs, profile-lifecycle operations, and xUnit.
+The report MUST follow the shared [completion-report contract](../config/invocation-preflight.md#common-completion-report-fields) and identify the Test session, scene/save state, exact actions, expected and observed results, and visible errors or approximate failure time. Player-performed evidence remains separate from Computer Use, startup, logs, profile-lifecycle operations, and xUnit.

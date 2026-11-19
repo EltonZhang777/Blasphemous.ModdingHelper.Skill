@@ -258,7 +258,7 @@ Setup is complete only when all of the following are true:
 4. If Q6 clone succeeded, its normalized path, selector, and lock state were recorded. If Q6 was skipped, both local-reference fields remain absent.
 5. The agent confirmed the saved path and returns the validated configuration file to Invocation preflight.
 
-Every setup result MUST satisfy the shared [completion-report contract](invocation-preflight.md#completion-criteria) and report these route-specific details. `status` is `complete` when the boundary above is satisfied, otherwise `blocked`. The result identifies the resolved Python runtime fields, selected scope, validated paths, clone result when applicable, and saved `config.yml` path. An incomplete result names the exact failed gate or unanswered decision and its corresponding retry question or repair step; a complete result names the downstream handoff.
+Every setup result MUST satisfy the shared [completion-report contract](invocation-preflight.md#common-completion-report-fields) and report these route-specific details. `status` is `complete` when the boundary above is satisfied, otherwise `blocked`. The result identifies the resolved Python runtime fields, selected scope, validated paths, clone result when applicable, and saved `config.yml` path. An incomplete result names the exact failed gate or unanswered decision and its corresponding retry question or repair step; a complete result names the downstream handoff.
 
 ### Setup incomplete
 

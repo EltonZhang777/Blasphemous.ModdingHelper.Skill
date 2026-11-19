@@ -72,7 +72,7 @@ Current analysis continues to resolve `modding_profile_path` and `unity_log_dir`
 
 ## Completion criteria
 
-Agent MUST mark log analysis complete only when the report satisfies the shared [completion-report contract](../config/invocation-preflight.md#completion-criteria) and contains all of these:
+Agent MUST mark log analysis complete only when the report satisfies the shared [completion-report contract](../config/invocation-preflight.md#common-completion-report-fields) and contains all of these:
 
 1. The exact blocked or failed reason when applicable.
 2. Active configuration file and every log source inspected, or exact missing path and required configuration-update handoff.

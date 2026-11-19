@@ -56,7 +56,7 @@ For any Real-profile phase requiring in-game behavior or a specified visible sta
 
 Each phase records independent commands, independent evidence, and independent statuses. A failure or block in one phase does not fabricate the other phase result. Both is complete only after all required phases complete.
 
-Conflicting environment or evidence requirements return `ambiguous` or `unresolved`. Ambiguous requests execute no test or profile command. The final report MUST follow the shared completion-report contract in [Invocation preflight](../config/invocation-preflight.md#completion-criteria) and include route, per-phase command, each phase's route-specific status and evidence, any blocked or failed detail, and the next route action; Automated xUnit, startup, **Player-performed in-game verification**, and **Computer Use automated in-game test** evidence remain separate.
+Conflicting environment or evidence requirements return `ambiguous` or `unresolved`. Ambiguous requests execute no test or profile command. The final report MUST follow the shared completion-report contract in [Invocation preflight](../config/invocation-preflight.md#common-completion-report-fields) and include route, per-phase command, each phase's route-specific status and evidence, any blocked or failed detail, and the next route action; Automated xUnit, startup, **Player-performed in-game verification**, and **Computer Use automated in-game test** evidence remain separate.
 
 Test doubles, mocks, and stubs remain compatible with the Automated xUnit route when the test does not require the real game process, profile, lifecycle, or player. A test that needs those runtime conditions belongs to the Real-profile route even when it references Unity or game-facing types.
 
@@ -83,4 +83,4 @@ When the result or session is ambiguous, the agent MUST NOT invoke `snapshot`, M
 
 ## Completion criterion
 
-The request is classified before execution, the selected branch owns the operational steps, and the final report follows the shared [completion-report contract](../config/invocation-preflight.md#completion-criteria) and keeps Automated xUnit, startup, **Player-performed in-game verification**, and **Computer Use automated in-game test** evidence separate. The `/blasphemous-modding-test stop SESSION_ID` safety path is owned by the [Real-profile branch](blasphemous-modding-test-real-profile.md).
+The request is classified before execution, the selected branch owns the operational steps, and the final report follows the shared [completion-report contract](../config/invocation-preflight.md#common-completion-report-fields) and keeps Automated xUnit, startup, **Player-performed in-game verification**, and **Computer Use automated in-game test** evidence separate. The `/blasphemous-modding-test stop SESSION_ID` safety path is owned by the [Real-profile branch](blasphemous-modding-test-real-profile.md).

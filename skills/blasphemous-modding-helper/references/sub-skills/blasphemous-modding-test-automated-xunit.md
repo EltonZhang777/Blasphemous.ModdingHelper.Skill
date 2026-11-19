@@ -47,7 +47,7 @@ These shapes are contrasting prior art, not templates for repository-wide restru
 
 The standard command is `dotnet test <ModRepoName>.Tests`; it may compile the test project as part of the standard test runner. A wrapper is valid only when it delegates to the standard xUnit runner. `dotnet run`, a hand-written runner, the Real-profile CLI, and a Test Mod MUST NOT silently replace xUnit.
 
-Framework or command conflicts return `blocked` or `ambiguous`; the agent MUST NOT silently switch runners. Evidence records the selected project, runner output, test result, and exit status. The report status is exactly `passed`, `failed`, or `blocked`, and states that xUnit is not gameplay proof. Every report MUST also satisfy the shared [completion-report contract](../config/invocation-preflight.md#completion-criteria).
+Framework or command conflicts return `blocked` or `ambiguous`; the agent MUST NOT silently switch runners. Evidence records the selected project, runner output, test result, and exit status. The report status is exactly `passed`, `failed`, or `blocked`, and states that xUnit is not gameplay proof. Every report MUST also satisfy the shared [completion-report contract](../config/invocation-preflight.md#common-completion-report-fields).
 
 Agent MUST NOT build, deploy, launch, inspect startup logs, stop a game process, clean a profile, or collect **Player-performed in-game verification** or **Computer Use automated in-game test** evidence in this branch.
 

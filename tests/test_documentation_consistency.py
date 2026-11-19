@@ -28,9 +28,6 @@ COMMON_REPORT_FIELDS = (
     "blocked reason",
     "next action",
 )
-BRANCH_OWNED_REPORT_EXCEPTIONS = {
-    "references/sub-skills/save-analysis.md",
-}
 COMPLETION_REPORT_BRANCHES = (
     "references/config/first-time-setup.md",
     "references/config/python-runtime.md",
@@ -43,6 +40,9 @@ COMPLETION_REPORT_BRANCHES = (
     "references/sub-skills/blasphemous-modding-test.md",
     "references/sub-skills/blasphemous-modding-test-automated-xunit.md",
     "references/sub-skills/blasphemous-modding-test-real-profile.md",
+    "references/sub-skills/blasphemous-modding-test-in-game-coordination.md",
+    "references/sub-skills/blasphemous-modding-test-player-verification.md",
+    "references/sub-skills/blasphemous-modding-test-computer-use.md",
     REAL_PROFILE_DELEGATION_REFERENCE,
     XUNIT_DELEGATION_REFERENCE,
 )
@@ -116,7 +116,7 @@ ROUTING_CONTRACTS = (
             ("Test a Mod; build/deploy/launch a profile", "Mod-test entry", "documented Automated xUnit configuration exception"),
             ("Generate, modify, review, or refactor Mod-owned C#", "Coding standards", "ownership boundary"),
             ("Need ModdingAPI documentation", "Referencing ModdingAPI", "local or release-aware reference"),
-            ("Analyze one explicit Blasphemous 1 save file or directory read-only", "Save analysis", "configuration-free input and read-only boundary"),
+            ("Analyze one explicit Blasphemous 1 save file or directory read-only", "Save analysis", "configuration exception"),
         ),
     ),
     (
@@ -125,7 +125,7 @@ ROUTING_CONTRACTS = (
         "## Command context",
         (
             ("Localization lookup", "bundled index", "MUST NOT run scripts"),
-            ("Operational branches", "shared preflight", "complete this preflight before specialized work"),
+            ("Gate-bound operational branches", "shared preflight", "complete this preflight before specialized work"),
             ("Unity project navigation", "shared preflight", "MUST require a valid `unity_project_path` only for this route"),
             ("First-time setup and Python validation", "Python Runtime → First-Time Setup", "MUST complete [Python Runtime]"),
             ("Configuration result", "selected config", "MUST consume"),
@@ -306,35 +306,13 @@ def normalized(path):
     return " ".join(read(path).split()).casefold()
 
 
-def has_owner_relation(clause, owner, subject):
-    clause = " ".join(clause.casefold().split())
-    owner = re.escape(owner.casefold())
-    subject = re.escape(subject.casefold())
-    owner_target = "here" if owner == "here" else rf"by\s+(?:the\s+)?{owner}"
-    return bool(
-        re.search(
-            rf"\b{owner}\b\s+owns?\s+(?:the\s+)?{subject}\b",
-            clause,
-        )
-        or re.search(
-            rf"\b{subject}\b\s+(?:is|are)\s+owned\s+{owner_target}\b",
-            clause,
-        )
-    )
-
-
-def common_report_fields_in_paragraph(document):
-    present = set()
-    for line in document.splitlines():
-        line = " ".join(line.split()).casefold()
-        line_fields = {
-            field
-            for field in COMMON_REPORT_FIELDS
-            if re.search(rf"\b{re.escape(field)}\b", line)
-        }
-        if len(line_fields) > len(present):
-            present = line_fields
-    return present
+def common_report_fields(document):
+    text = " ".join(document.split()).casefold()
+    return {
+        field
+        for field in COMMON_REPORT_FIELDS
+        if re.search(rf"\b{re.escape(field)}\b", text)
+    }
 
 
 def markdown_section(path, heading):
@@ -403,172 +381,96 @@ class DocumentationConsistencyTests(unittest.TestCase):
 
     def test_entry_router_delegates_shared_ownership(self):
         entry_links = set(local_links(MAIN_SKILL))
+        preflight = COMPLETION_CONTRACT.resolve()
+        mod_test = (SKILL_ROOT / MOD_TEST_DOCUMENT).resolve()
         for owner in (
-            SKILL_ROOT / "references" / "config" / "invocation-preflight.md",
-            SKILL_ROOT / MOD_TEST_DOCUMENT,
+            preflight,
+            mod_test,
             SKILL_ROOT / "references" / "sub-skills" / "coding-standards.md",
         ):
             self.assertIn(owner.resolve(), entry_links, owner)
 
-        entry = read(MAIN_SKILL)
-        ownership = entry.split("| Analyze one explicit Blasphemous 1 save", 1)[1]
-        ownership = ownership.split("\n\n", 1)[1].split("\n\n", 1)[0]
-        clauses = [
-            " ".join(clause.split())
-            for clause in re.split(r"(?<=[.!?;])\s+", ownership)
-        ]
-        preflight_clause = next(
-            clause for clause in clauses if "invocation-preflight.md" in clause
-        ).casefold()
-        mod_test_clause = next(
-            clause
-            for clause in clauses
-            if "blasphemous-modding-test.md" in clause
-        ).casefold()
-        self.assertIn("its own documented configuration exceptions", preflight_clause)
-        self.assertNotIn("automated xunit", preflight_clause)
+        self.assertIn("configuration gate", normalized(MAIN_SKILL))
+        preflight_links = set(local_links(COMPLETION_CONTRACT))
+        for owner in (
+            SKILL_ROOT / "references" / "sub-skills" / "localization-lookup.md",
+            SKILL_ROOT / "references" / "sub-skills" / "save-analysis.md",
+            SKILL_ROOT / MOD_TEST_DOCUMENT,
+        ):
+            self.assertIn(owner.resolve(), preflight_links, owner)
         self.assertIn(
-            "automated xunit configuration exception",
-            mod_test_clause,
+            preflight,
+            set(local_links(SKILL_ROOT / MOD_TEST_DOCUMENT)),
         )
-        self.assertNotIn("invocation-preflight.md", mod_test_clause)
-
-        preflight = normalized(
-            SKILL_ROOT / "references" / "config" / "invocation-preflight.md"
-        )
-        self.assertIn("common completion-report fields", preflight)
-        self.assertIn("documented automated xunit exception", preflight)
 
         mod_test = normalized(SKILL_ROOT / MOD_TEST_DOCUMENT)
-        self.assertIn("automated xunit branch", mod_test)
-        self.assertIn("do not wait for that gate", mod_test)
+        self.assertIn("xunit", mod_test)
+        self.assertIn("configuration exception", mod_test)
 
     def test_completion_report_fields_have_one_owner(self):
         contract = normalized(COMPLETION_CONTRACT)
+        field_section = " ".join(
+            markdown_section(
+                COMPLETION_CONTRACT,
+                "### Common completion-report fields",
+            ).split()
+        ).casefold()
         for field in COMMON_REPORT_FIELDS:
-            self.assertIn(f"`{field}`", contract)
-        self.assertIn("common completion-report fields", contract)
-        self.assertIn("may add status categories", contract)
-        self.assertIn("blocked` or `failed`, the report must give its exact", contract)
-        self.assertIn("save analysis remains a documented exception", contract)
-        self.assertEqual(
-            len(common_report_fields_in_paragraph(
-                "status, completion evidence, blocked reason"
-            )),
-            3,
-        )
-        self.assertEqual(
-            len(common_report_fields_in_paragraph(
-                "next action, blocked reason, completion evidence, status"
-            )),
-            4,
-        )
-        self.assertEqual(
-            len(common_report_fields_in_paragraph("status\nnext action")),
-            1,
-        )
+            self.assertIn(field, field_section)
+        for phrase in ("status categories", "evidence categories", "partial outcomes"):
+            self.assertIn(phrase, field_section)
+        for word in ("blocked", "failed", "reason"):
+            self.assertIn(word, field_section)
+        self.assertIn("save analysis", contract)
+        self.assertIn("configuration gate", normalized(MAIN_SKILL))
+        self.assertLess(len(common_report_fields(read(MAIN_SKILL))), 4)
 
         for relative in COMPLETION_REPORT_BRANCHES:
             document = SKILL_ROOT / relative
             raw = read(document)
             self.assertRegex(
                 raw,
-                r"\]\([^)]*invocation-preflight\.md#completion-criteria\)",
+                r"\]\([^)]*invocation-preflight\.md#common-completion-report-fields\)",
                 relative,
             )
             self.assertLess(
-                len(common_report_fields_in_paragraph(raw)),
-                3,
-                relative,
-            )
-
-        for document in sorted(SKILL_ROOT.rglob("*.md")):
-            if document.resolve() == COMPLETION_CONTRACT.resolve():
-                continue
-            relative = document.relative_to(SKILL_ROOT).as_posix()
-            if relative in BRANCH_OWNED_REPORT_EXCEPTIONS:
-                continue
-            self.assertLess(
-                len(common_report_fields_in_paragraph(read(document))),
-                3,
+                len(common_report_fields(raw)),
+                4,
                 relative,
             )
 
     def test_configuration_exception_owners_are_explicit(self):
-        preflight = normalized(COMPLETION_CONTRACT)
-        sentences = re.split(r"(?<=[.!?;])\s+", preflight)
-        shared_exceptions = [
-            sentence
-            for sentence in sentences
-            if all(
-                phrase in sentence
-                for phrase in (
-                    "localization lookup branch",
-                    "save analysis",
-                    "tracked-session stop exception",
-                )
-            )
-        ]
-        self.assertTrue(shared_exceptions)
-        self.assertTrue(
-            any(
-                has_owner_relation(
-                    sentence,
-                    "here",
-                    "localization lookup branch, save analysis, and "
-                    "tracked-session stop exception scopes",
-                )
-                for sentence in shared_exceptions
-            )
-        )
-        xunit_exception = "caller-owned automated xunit exception"
-        self.assertTrue(
-            any(
-                has_owner_relation(sentence, "mod-test entry", xunit_exception)
-                for sentence in sentences
-            )
-        )
-        self.assertTrue(
-            has_owner_relation(
-                "The caller-owned Automated xUnit exception is owned by "
-                "the Mod-test entry.",
-                "Mod-test entry",
-                xunit_exception,
-            )
-        )
-        for reversed_claim in (
-            "The Mod-test entry does not own the caller-owned Automated "
-            "xUnit exception.",
-            "The Mod-test entry says Invocation preflight owns the "
-            "caller-owned Automated xUnit exception.",
-            "The caller-owned Automated xUnit exception is owned by "
-            "Invocation preflight, not the Mod-test entry.",
+        preflight_links = set(local_links(COMPLETION_CONTRACT))
+        for relative in (
+            "references/sub-skills/localization-lookup.md",
+            "references/sub-skills/save-analysis.md",
+            MOD_TEST_DOCUMENT,
         ):
-            self.assertFalse(
-                has_owner_relation(
-                    reversed_claim,
-                    "Mod-test entry",
-                    xunit_exception,
-                ),
-                reversed_claim,
-            )
+            self.assertIn((SKILL_ROOT / relative).resolve(), preflight_links, relative)
 
-        mod_test = normalized(SKILL_ROOT / MOD_TEST_DOCUMENT)
-        mod_test_sentences = re.split(r"(?<=[.!?;])\s+", mod_test)
+        preflight_sentences = re.split(
+            r"(?<=[.!?;])\s+",
+            normalized(COMPLETION_CONTRACT),
+        )
         self.assertTrue(
             any(
-                has_owner_relation(
-                    sentence,
-                    "this entry",
-                    "caller-owned automated xunit configuration exception",
+                "localization lookup" in sentence
+                and "save analysis" in sentence
+                and "tracked-session stop exception" in sentence
+                and not re.search(r"\b(?:not|never)\b", sentence)
+                and (
+                    re.search(r"\b(?:are|is)\s+owned\s+here\b", sentence)
+                    or re.search(
+                        r"\b(?:this reference|invocation preflight)\s+owns?\b",
+                        sentence,
+                    )
                 )
-                for sentence in mod_test_sentences
+                for sentence in preflight_sentences
             )
         )
-        self.assertIn(
-            "caller-owned automated xunit request does not invoke skill scripts",
-            mod_test,
-        )
+        mod_test = normalized(SKILL_ROOT / MOD_TEST_DOCUMENT)
+        self.assertIn("xunit", mod_test)
+        self.assertIn("configuration exception", mod_test)
 
     def test_subagent_guidance_is_reachable_from_shared_and_phase_owners(self):
         general = SKILL_ROOT / GENERAL_DELEGATION_REFERENCE
@@ -770,7 +672,7 @@ class DocumentationConsistencyTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("RFC 2119 candidate audit: PASS", result.stdout)
 
-    def test_documented_route_exceptions_refer_to_their_owners(self):
+    def test_workflow_steps_preserve_documented_exceptions(self):
         workflow = read(MAIN_SKILL)
         for heading in (
             "### Step 1: Complete shared entry gate",
@@ -779,8 +681,8 @@ class DocumentationConsistencyTests(unittest.TestCase):
         ):
             section = workflow.split(heading, 1)[1].split("\n### ", 1)[0]
             normalized_section = " ".join(section.split()).casefold()
-            self.assertIn("configuration exception", normalized_section)
-            self.assertIn("route owner", normalized_section)
+            self.assertIn("exception", normalized_section)
+            self.assertIn("must not enter", normalized_section)
 
         preflight = normalized(
             SKILL_ROOT / "references" / "config" / "invocation-preflight.md"

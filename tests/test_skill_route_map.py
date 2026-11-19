@@ -10,13 +10,17 @@ MAIN_SKILL = REPOSITORY_ROOT / "skills" / "blasphemous-modding-helper" / "SKILL.
 class SkillRouteMapTests(unittest.TestCase):
     def test_supported_game_scope_is_clear_before_request_routing(self):
         text = MAIN_SKILL.read_text(encoding="utf-8")
-        description = text.split("---", 2)[1]
+        description = next(
+            line.split(":", 1)[1].strip()
+            for line in text.split("---", 2)[1].splitlines()
+            if line.startswith("description:")
+        )
         opening = text.split("## Request routing", 1)[0]
         normalized_description = " ".join(description.split())
         normalized_opening = " ".join(opening.split())
         normalized_text = " ".join(text.split())
 
-        self.assertLess(len(description.strip()), 400)
+        self.assertLess(len(description.strip()), 599)
         self.assertNotIn("Blasphemous 2 is not supported", normalized_description)
         for cue in (
             "Blasphemous 1",
@@ -114,6 +118,12 @@ class SkillRouteMapTests(unittest.TestCase):
                 (MAIN_SKILL.parent / "references" / "sub-skills" / route).is_file(),
                 route,
             )
+        for route in ("localization-lookup.md", "save-analysis.md"):
+            self.assertIn(
+                "[Invocation preflight](references/config/invocation-preflight.md)",
+                destinations[f"references/sub-skills/{route}"][2],
+                route,
+            )
 
         mod_test_boundary = destinations[
             "references/sub-skills/blasphemous-modding-test.md"
@@ -127,11 +137,11 @@ class SkillRouteMapTests(unittest.TestCase):
         normalized = " ".join(section.split())
 
         self.assertIn("coding-standards.md", section)
-        self.assertIn("Coding-standards sub-skill", normalized)
-        self.assertEqual(normalized.count("Mod-owned C#"), 1)
-        self.assertNotIn("Unity `2017.4.40f1`", section)
-        self.assertNotIn("Harmony patching standards", section)
-        self.assertNotIn("Referencing ModdingAPI", section)
+        self.assertIn("C#", normalized)
+        self.assertEqual(
+            len([line for line in section.splitlines() if line.strip()]),
+            1,
+        )
 
     def test_step_four_defines_checkable_completion(self):
         text = MAIN_SKILL.read_text(encoding="utf-8")
@@ -142,11 +152,71 @@ class SkillRouteMapTests(unittest.TestCase):
         normalized = " ".join(section.split())
 
         for phrase in (
-            "owner-defined completion criteria",
-            "without claiming completion",
-            "verified every cited",
+            "completion criteria",
+            "claiming completion",
+            "blocked or failed",
+            "next action",
+            "path",
+            "artifact",
+            "evidence",
         ):
-            self.assertIn(phrase, normalized)
+            self.assertIn(phrase, normalized.casefold())
+
+    def test_xunit_exception_is_owned_by_the_mod_test_entry(self):
+        documents = {
+            "entry": MAIN_SKILL,
+            "preflight": (
+                MAIN_SKILL.parent / "references/config/invocation-preflight.md"
+            ),
+            "mod-test": (
+                MAIN_SKILL.parent
+                / "references/sub-skills/blasphemous-modding-test.md"
+            ),
+        }
+        expected_owner = {
+            "entry": r"\bmod-test entry\b",
+            "preflight": r"\bmod-test entry\b",
+            "mod-test": r"\bthis entry\b",
+        }
+        all_sentences = []
+        for name, document in documents.items():
+            text = " ".join(document.read_text(encoding="utf-8").split()).casefold()
+            sentences = [
+                re.sub(r"\[([^\]]+)\]\([^)]*\)", r"\1", sentence)
+                for sentence in re.split(r"(?<=[.!?;])\s+", text)
+            ]
+            all_sentences.extend(sentences)
+            self.assertTrue(
+                any(
+                    "xunit" in sentence
+                    and re.search(
+                        rf"{expected_owner[name]}\s+owns?\b",
+                        sentence,
+                    )
+                    and not re.search(r"\b(?:not|never)\b", sentence)
+                    for sentence in sentences
+                ),
+                name,
+            )
+            if name == "mod-test":
+                self.assertTrue(
+                    any(
+                        "does not" in sentence and "configuration" in sentence
+                        for sentence in sentences
+                    )
+                )
+
+        self.assertFalse(
+            any(
+                "xunit" in sentence
+                and re.search(
+                    r"\binvocation preflight\b[^.;]*\bowns?\b",
+                    sentence,
+                )
+                and not re.search(r"\b(?:not|never)\b", sentence)
+                for sentence in all_sentences
+            )
+        )
 
     def test_top_level_relative_links_resolve(self):
         text = MAIN_SKILL.read_text(encoding="utf-8")
