@@ -141,7 +141,7 @@ ROUTING_CONTRACTS = (
         "## Route map",
         "## Coding specifications",
         (
-            ("New Mod-owned file or directory placement", "Project architecture guidelines", "established structure MUST take precedence"),
+            ("New Mod-owned file or directory placement", "Project architecture guidelines", "MUST apply the guide's placement result contract"),
             ("Mod-owned C# conventions", "C# and runtime Unity standards", "caller compiler and referenced assemblies MUST govern compatibility"),
             ("ModdingAPI APIs", "ModdingAPI standards", "caller's referenced assembly MUST govern API facts"),
             ("Harmony targets", "Harmony patching standards", "manual `Harmony.Patch` MUST follow its approval gate"),
