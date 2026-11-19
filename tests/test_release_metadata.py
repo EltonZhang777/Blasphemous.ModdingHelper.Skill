@@ -23,6 +23,10 @@ ROUTED_REFERENCES = {
         "Localization Lookup",
         "skills/blasphemous-modding-helper/references/sub-skills/localization-lookup.md",
     ),
+    "blasphemous-modding-helper:save-analysis": (
+        "Save Analysis",
+        "skills/blasphemous-modding-helper/references/sub-skills/save-analysis.md",
+    ),
 }
 
 
@@ -140,6 +144,21 @@ class ReleaseMetadataTests(unittest.TestCase):
         self.assertEqual(
             codex_entry["interface"]["displayName"],
             "Blasphemous Modding Helper",
+        )
+        for manifest_path in (
+            REPOSITORY_ROOT / "package.json",
+            REPOSITORY_ROOT / ".claude-plugin" / "plugin.json",
+            REPOSITORY_ROOT / ".codex-plugin" / "plugin.json",
+            REPOSITORY_ROOT / "gemini-extension.json",
+        ):
+            with self.subTest(manifest_description=manifest_path.name):
+                manifest = loaded_manifests[manifest_path]
+                self.assertIn("save analysis", manifest["description"].casefold())
+        self.assertIn(
+            "save analysis",
+            loaded_manifests[REPOSITORY_ROOT / "gemini-extension.json"]["skills"][0][
+                "description"
+            ].casefold(),
         )
         self.assertTrue(
             (

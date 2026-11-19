@@ -11,7 +11,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-latest
+          # Python 3.9 has no setup-python build for Ubuntu 26.04.
+          - os: ubuntu-22.04
             shell_name: bash
           - os: windows-latest
             shell_name: pwsh

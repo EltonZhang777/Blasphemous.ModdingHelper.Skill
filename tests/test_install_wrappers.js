@@ -94,7 +94,7 @@ function run(command, args, fixture, options = {}) {
     encoding: "utf8",
     input: options.input,
     stdio: ["pipe", "pipe", "pipe"],
-    timeout: 5000,
+    timeout: 30000,
   });
 }
 

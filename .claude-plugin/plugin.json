@@ -1,6 +1,6 @@
 {
   "name": "blasphemous-modding-helper",
-  "description": "Adds a `blasphemous-modding-helper` skill for Blasphemous modding, testing, log analysis, and localization lookup",
+  "description": "Adds a `blasphemous-modding-helper` skill for Blasphemous modding, save analysis, testing, log analysis, and localization lookup",
   "version": "2.0.0",
   "author": {
     "name": "EltonZhang777"

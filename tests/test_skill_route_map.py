@@ -50,6 +50,7 @@ class SkillRouteMapTests(unittest.TestCase):
             "blasphemous-modding-test.md",
             "coding-standards.md",
             "referencing-modding-api.md",
+            "save-analysis.md",
         )
 
         for route in expected_routes:
@@ -79,7 +80,6 @@ class SkillRouteMapTests(unittest.TestCase):
                 (MAIN_SKILL.parent / target).is_file(),
                 target,
             )
-
 
 if __name__ == "__main__":
     unittest.main()

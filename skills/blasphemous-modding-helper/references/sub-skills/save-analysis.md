@@ -1,0 +1,115 @@
+# Save analysis
+
+This route converts one explicit Blasphemous 1 save file or save directory into read-only evidence. The route does not edit, repair, migrate, import, or export save data.
+
+## Route boundary
+
+Save analysis MUST accept one explicit local file or directory path. It MUST NOT discover Steam accounts, save roots, game installations, or Modding profiles.
+
+Save analysis MUST remain configuration-free. It MUST NOT read `config.yml`, PyYAML, profile paths, game installation paths, Steam identifiers, or decompiled source. This exception is limited to this route.
+
+The route MUST write output only under the host temporary directory. It MUST NOT write to the selected input, the Caller Mod repository, the game installation, a Modding profile, or Skill configuration.
+
+The analyzer MUST reject an output root inside the current caller workspace or its enclosing Git worktree, even when the host temporary-directory variables point there. Path containment checks MUST follow the host filesystem's case semantics; case-insensitive hosts MUST treat case variants as the same location.
+
+The analyzer MUST canonicalize the selected input, the temporary output root, and each artifact target before writing. It MUST reject an output root that is a file, symbolic link, or redirected path; an artifact target that escapes its staging root or is already linked; and any input/output overlap. These conditions MUST fail as unsafe output or overlap errors rather than falling back to another path. The shared `blasphemous-save-analysis` root MUST be owner-only (`0700`); on POSIX hosts an existing root not owned by the current user MUST be rejected, and an owned root MUST have its owner-only permissions restored.
+
+## Command
+
+Resolve `PYTHON3` and the installed `SKILL_ROOT` before invoking the public Python entry point.
+
+PowerShell:
+
+```powershell
+& $PYTHON3 (Join-Path $SkillRoot 'scripts\analyze_save.py') <INPUT_PATH>
+```
+
+Native Bash:
+
+```bash
+"$PYTHON3" "$SKILL_ROOT/scripts/analyze_save.py" <INPUT_PATH>
+```
+
+The analyzer MUST identify a single-file format from content, not from its extension or filename.
+
+For a directory, the analyzer MUST inspect files directly inside the selected directory and MUST NOT recurse into nested directories or follow symbolic links. The filename supplies the expected save role and format; content remains authoritative.
+
+| Exact filename | Expected role | Expected format |
+| --- | --- | --- |
+| `savegame_<slot>.save` | Vanilla player save | Vanilla |
+| `savegame_<slot>.save_backup` | Vanilla player-save backup | Vanilla |
+| `savegame_<slot>_modded.save` | ModdingAPI slot companion | ModdingAPI |
+| `savegame_<slot>_modded.save_backup` | ModdingAPI slot-companion backup | ModdingAPI |
+| `app_settings` | Vanilla global settings | Vanilla |
+| `app_settings_backup` | Vanilla global-settings backup | Vanilla |
+| `app_settings_modded` | ModdingAPI global settings | ModdingAPI |
+| `app_settings_modded_backup` | ModdingAPI global-settings backup | ModdingAPI |
+
+Only these exact names and the documented `_backup` suffix are supported. Arbitrary extensions or renamed copies MUST NOT be treated as backups in directory mode. A filename/content mismatch MUST retain the filename-derived role, use the content-derived parser, and report the expected and detected formats. A supported file whose content cannot be parsed MUST remain visible as a failed input with its expected role and reason, while valid sibling files remain in the run. A directory with no supported direct file MUST fail with `no-supported-files`.
+
+## Supported formats
+
+- Vanilla: Base64-decoded UTF-8 JSON. The analyzer MUST preserve `$type`, unknown fields, and nested values.
+- ModdingAPI persistence: an ordered identifier/JSON-payload line stream. See [ModdingAPI persistence save format](moddingapi-persistence-save-format.md).
+
+The analyzer does not impose a fixed JSON depth cap. If the host Python runtime's parser or serializer recursion limit is reached, the input is reported with reason `unsupported-depth`; directory mode preserves usable siblings as partial evidence.
+
+## Run artifacts
+
+Each invocation MUST create a unique run directory under the host temporary area, under `blasphemous-save-analysis/<run-id>`. The command MUST print the normalized absolute run path.
+
+Artifacts MUST be written as exclusive regular files inside a unique staging directory. The analyzer MUST NOT follow a symbolic link or existing hard link while writing. Publication MUST create the final run directory exclusively and MUST NOT merge into, overwrite, or replace an existing run. A failed publication MUST leave previously published runs unchanged and MUST retain its complete staged evidence in a unique `failed-<run-id>` directory when possible. The retained directory MUST contain `publication-error.txt` identifying the failure and stating that the directory is not a published successful run; the CLI MUST report the retained path. If retention is impossible, the analyzer MUST remove its staging directory when possible and MUST NOT claim that evidence was retained.
+
+The run MUST contain:
+
+| Artifact | Purpose |
+| --- | --- |
+| `manifest.json` | Machine-readable source identity, digest, format, run status, exit category, per-input and per-artifact status, counts, partial reasons, and artifact mappings |
+| `summary.txt` | Human-readable per-input status, counts, usable evidence, partial reasons, recovery guidance, and output root |
+| `structured/<input-id>.json` | Structured JSON values and source identity; directory mode emits one chunk per accepted file |
+| `full/<input-id>.json` or `full/<input-id>.txt` | Normalized full evidence generated by default; its extension and validity depend on the detected format |
+
+The vanilla structured chunk exposes the complete decoded JSON value under `data`. A valid ModdingAPI record exposes its complete parsed JSON value under `payload`; both preserve unknown properties and nested values.
+
+For a failed directory input, the structured chunk records the reason and the manifest `full` mapping is `null` because no normalized full artifact can be produced.
+
+Each input MUST record separate `chunk` and `full` artifact statuses. A failed write MUST NOT leave a partial artifact in place. A failed or unavailable artifact MUST remain visible in the manifest and summary without being described as complete.
+
+When a supported directory file cannot be read, its manifest and structured chunk MUST preserve its path and name, record the `input-unreadable` reason, set byte count and digest to `null`, and set `content_status` to `unavailable`. Readable siblings remain in a partial run when any usable analysis exists.
+
+`manifest.json` is the machine-readable self-description required for a published run. If it cannot be written completely, the analyzer MUST fail with exit `1`, remove its staging directory when possible, and publish no run; it MUST NOT publish a summary-only result. A `summary.txt` write failure MAY publish a partial run, provided the manifest records the failed summary and partial reason and the CLI returns `3`.
+
+The manifest and structured chunks are the preferred evidence surface. Structured chunks and full artifacts can contain sensitive save data. The agent SHOULD inspect only the fields needed for the user's question, starting with the structured chunk; the full artifact can be larger and SHOULD be read only when the structured evidence is insufficient.
+
+The full vanilla artifact MUST be valid UTF-8 JSON with four-space indentation and a trailing newline. The analyzer MUST preserve decoded JSON values instead of mapping them to guessed game types.
+
+The full ModdingAPI artifact MUST use four-space indentation for valid payloads while preserving record order, malformed raw payload text, and incomplete trailing identifiers. It is potentially invalid JSON and MUST NOT be treated as a single JSON document.
+
+## Exit status
+
+| Exit | Meaning |
+| --- | --- |
+| `0` | Complete analysis; all required artifacts are usable |
+| `1` | Fatal analysis failure; no usable analysis was produced |
+| `2` | CLI misuse such as a missing, extra, or unsupported argument |
+| `3` | Partial analysis; usable evidence exists but one or more required artifacts are missing or incomplete |
+
+The CLI MUST reject output toggles such as `--include-full` and `--no-full`. Full evidence has one contract and cannot be disabled.
+
+## Partial evidence
+
+Partial analysis MUST apply to single-file and directory invocations. The analyzer MUST preserve successful structured output and other usable files, record each failed or unavailable artifact and its reason, and publish the partial run in its printed temporary run directory. The operating system's temporary-file policy or an explicit user action owns its later lifetime.
+
+The summary MUST identify the usable evidence, explain what failed, and give a recovery action. The manifest and summary MUST NOT describe partial evidence as complete or trusted save data.
+
+## Privacy and lifetime
+
+The run directory contains user save data. The agent MUST quote only the evidence needed for the user's question and MUST NOT copy artifacts to another location without explicit user direction.
+
+The analyzer MUST NOT clean, rotate, or move completed runs. The operating system's temporary-file policy or an explicit user action owns cleanup. An absent run directory is not proof that analysis failed because temporary storage may be removed early.
+
+## Completion criteria
+
+Save analysis is complete only when all required evidence is present. For a partial run, completion means the usable evidence and recovery action have been reported without claiming a complete analysis. The completion report MUST name the selected input, detected format or per-file roles and formats in directory mode, run status, normalized absolute run path, relevant manifest or structured evidence, and exit category.
+
+The report MUST name any role mismatch, failed or unavailable artifact, partial reason, and the next action for recovery. Reading a full artifact is the next action only when the manifest and structured chunk do not answer the evidence question.
