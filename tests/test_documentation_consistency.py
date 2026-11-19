@@ -345,6 +345,51 @@ class DocumentationConsistencyTests(unittest.TestCase):
             document = SKILL_ROOT / relative
             self.assertIn(shared, set(local_links(document)), relative)
 
+    def test_entry_router_delegates_shared_ownership(self):
+        entry_links = set(local_links(MAIN_SKILL))
+        for owner in (
+            SKILL_ROOT / "references" / "config" / "invocation-preflight.md",
+            SKILL_ROOT / MOD_TEST_DOCUMENT,
+            SKILL_ROOT / "references" / "sub-skills" / "coding-standards.md",
+        ):
+            self.assertIn(owner.resolve(), entry_links, owner)
+
+        entry = read(MAIN_SKILL)
+        ownership = entry.split("| Analyze one explicit Blasphemous 1 save", 1)[1]
+        ownership = ownership.split("\n\n", 1)[1].split("\n\n", 1)[0]
+        clauses = [
+            " ".join(clause.split())
+            for clause in re.split(r"(?<=[.!?;])\s+", ownership)
+        ]
+        preflight_clause = next(
+            clause for clause in clauses if "invocation-preflight.md" in clause
+        ).casefold()
+        mod_test_clause = next(
+            clause
+            for clause in clauses
+            if "blasphemous-modding-test.md" in clause
+        ).casefold()
+        self.assertIn("its own documented configuration exceptions", preflight_clause)
+        self.assertNotIn("automated xunit", preflight_clause)
+        self.assertIn(
+            "automated xunit configuration exception",
+            mod_test_clause,
+        )
+        self.assertNotIn("invocation-preflight.md", mod_test_clause)
+
+        preflight = normalized(
+            SKILL_ROOT / "references" / "config" / "invocation-preflight.md"
+        )
+        self.assertIn(
+            "completion evidence, the blocked reason when applicable",
+            preflight,
+        )
+        self.assertIn("documented automated xunit exception", preflight)
+
+        mod_test = normalized(SKILL_ROOT / MOD_TEST_DOCUMENT)
+        self.assertIn("automated xunit branch", mod_test)
+        self.assertIn("do not wait for that gate", mod_test)
+
     def test_subagent_guidance_is_reachable_from_shared_and_phase_owners(self):
         general = SKILL_ROOT / GENERAL_DELEGATION_REFERENCE
         read_only = SKILL_ROOT / DELEGATION_REFERENCE
@@ -545,21 +590,27 @@ class DocumentationConsistencyTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("RFC 2119 candidate audit: PASS", result.stdout)
 
-    def test_configuration_free_routes_are_excluded_from_operational_path_workflow(self):
-        workflow = " ".join(
-            markdown_section(MAIN_SKILL, "## Workflow").split()
-        ).casefold()
-
-        for phrase in (
-            "for an operational branch, agent must use tools to gather information required by task",
-            "a configuration-free branch must use only the local input or bundled evidence required by its route and must not read configuration, a modding profile, game installation, or source context.",
-            "for an operational branch, agent has located every path task needs (source code, modding profile, and logs) in `config.yml` or navigation documents",
-            "for a configuration-free branch, agent has confirmed the route-specific local input or bundled evidence and read-only context.",
-            "for an operational branch, agent must follow the path-failure recovery contract in the shared entry gate.",
-            "a configuration-free branch must report its route-specific input or evidence failure and must not enter configuration recovery.",
-            "or a configuration-free branch has reported its route-specific failure and next action.",
+    def test_documented_route_exceptions_refer_to_their_owners(self):
+        workflow = read(MAIN_SKILL)
+        for heading in (
+            "### Step 1: Complete shared entry gate",
+            "### Step 3: Use Tools to Gather Information",
+            "### Step 5: Path Failure Recovery",
         ):
-            self.assertIn(phrase, workflow)
+            section = workflow.split(heading, 1)[1].split("\n### ", 1)[0]
+            normalized_section = " ".join(section.split()).casefold()
+            self.assertIn("configuration exception", normalized_section)
+            self.assertIn("route owner", normalized_section)
+
+        preflight = normalized(
+            SKILL_ROOT / "references" / "config" / "invocation-preflight.md"
+        )
+        self.assertIn("documented configuration exceptions", preflight)
+        self.assertIn("tracked-session stop exception", preflight)
+
+        mod_test = normalized(SKILL_ROOT / MOD_TEST_DOCUMENT)
+        self.assertIn("automated xunit", mod_test)
+        self.assertIn("do not wait for that gate", mod_test)
 
     def test_setup_order_conditional_inputs_and_retry_preservation_are_explicit(self):
         setup = read(SKILL_ROOT / "references" / "config" / "first-time-setup.md")
