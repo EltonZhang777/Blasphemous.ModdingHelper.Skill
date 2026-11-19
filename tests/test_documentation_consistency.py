@@ -21,6 +21,22 @@ DELEGATION_ROUTES = (
     ("references/sub-skills/localization-lookup.md", "## Read-only lookup delegation"),
 )
 MOD_TEST_DOCUMENT = "references/sub-skills/blasphemous-modding-test.md"
+SNAPSHOT_SPEC = REPOSITORY_ROOT / "docs" / "specs" / "manual-test-log-snapshots.md"
+SNAPSHOT_ADR = (
+    REPOSITORY_ROOT
+    / "docs"
+    / "adr"
+    / "0009-user-confirmed-test-log-snapshots.md"
+)
+SNAPSHOT_OPERATIONAL = (
+    SKILL_ROOT
+    / "references"
+    / "sub-skills"
+    / "blasphemous-modding-test-real-profile.md"
+)
+MOD_TEST_VERIFICATION = (
+    REPOSITORY_ROOT / "docs" / "verification" / "blasphemous-modding-test.md"
+)
 NORMATIVE_HOST_DEPENDENCY = re.compile(
     r"\b(?:MUST|SHOULD|SHALL)\s+(?:use|require|depend on|run on|invoke|select)\b"
     r"[^.!?;\n]{0,120}\b(?:"
@@ -699,6 +715,72 @@ class DocumentationConsistencyTests(unittest.TestCase):
         self.assertIn("xUnit is not gameplay proof", xunit)
         self.assertIn("Player-performed in-game verification", xunit)
         self.assertIn("Computer Use automated in-game test", xunit)
+
+    def test_snapshot_contract_layers_and_verification_freshness_stay_distinct(self):
+        adr = read(SNAPSHOT_ADR)
+        spec = read(SNAPSHOT_SPEC)
+        spec_normalized = normalized(SNAPSHOT_SPEC)
+        operational = normalized(SNAPSHOT_OPERATIONAL)
+        verification = normalized(MOD_TEST_VERIFICATION)
+
+        self.assertRegex(adr, r"(?m)^status: accepted$")
+        self.assertIn("ADR 0009", spec)
+        self.assertIn(SNAPSHOT_ADR.resolve(), set(local_links(SNAPSHOT_SPEC)))
+        self.assertIn(
+            SNAPSHOT_OPERATIONAL.resolve(),
+            set(local_links(SNAPSHOT_SPEC)),
+        )
+        self.assertNotIn("focused adr", spec_normalized)
+        self.assertNotIn("before implementation", spec_normalized)
+        for heading in (
+            "## Problem Statement",
+            "## Rationale",
+            "## Requirements",
+            "## Acceptance Outcomes",
+            "## References",
+        ):
+            self.assertIn(heading, spec)
+        for removed_heading in (
+            "## User Stories",
+            "## Implementation Decisions",
+            "## Testing Decisions",
+            "## Out of Scope",
+            "## Further Notes",
+        ):
+            self.assertNotIn(removed_heading, spec)
+        for mechanical_detail in (
+            "sha-256",
+            "source-specific",
+            "manifest records",
+            "current-capture mode",
+            "normal stop fails",
+        ):
+            self.assertNotIn(mechanical_detail, spec_normalized)
+
+        for phrase in (
+            "apply the shared player-performed in-game verification completion and session identity rules",
+            "a clear player result must be bound to exactly one session id",
+            "ordinary stop approval",
+            "separate force-stop decision",
+            "`snapshot` copies the complete bepinex and configured unity log bytes",
+            "never changes the live log files",
+            "temporary `snapshots/` directory",
+            "snapshot files remain session data through archive and safe clean",
+            "never falls back to live sources",
+        ):
+            self.assertIn(phrase, operational)
+
+        for phrase in (
+            "historical snapshot status:",
+            "document reviewed on 2026-11-19 at head 69031cb0a8a230594aa542b9ccc6ff893849adb3",
+            "current gate status:",
+            "the current automated gate has not been revalidated at the document-review head",
+            "no fresh local suite, real game, or modding profile was run",
+            "must not be read as having run at the review head",
+            "exact head was not recorded",
+            "real profile gate deferred:",
+        ):
+            self.assertIn(phrase, verification)
 
     def test_reached_workflows_expose_completion_evidence_and_next_action(self):
         for relative in ROUTE_DOCUMENTS:

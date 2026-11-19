@@ -1,6 +1,10 @@
 # Blasphemous mod test acceptance record
 
-This record is the evidence surface for issue #19. It separates fixture evidence, native-Python entrypoint evidence, and the real-profile **Player-performed in-game verification** gate. A warning is an unresolved environment or user-operated step; it is not a gameplay pass.
+**Historical snapshot status:** Document reviewed on 2026-11-19 at HEAD 69031cb0a8a230594aa542b9ccc6ff893849adb3. This record preserves the evidence surface for issue #19 as a historical document review, not as fresh execution evidence.
+
+**Current gate status:** The current automated gate has not been revalidated at the document-review HEAD. No fresh local suite, real game, or Modding profile was run for this documentation change. The existing deferred Real-profile status remains below.
+
+This record separates fixture evidence, native-Python entrypoint evidence, and the real-profile **Player-performed in-game verification** gate. A warning is an unresolved environment or user-operated step; it is not a gameplay pass.
 
 ## Automated fixture gate
 
@@ -41,11 +45,13 @@ These commands verify functionality without requiring a clean worktree. Append `
 
 Completion criterion: the fixture command exits successfully, all rows above remain represented by passing tests, and skipped cases are reported with their environment reason.
 
-Observed on 2026-08-23: the process-scoped Windows Python runner passed CLI help and 62 tests; 2 symlink-related cases were skipped by host privilege conditions.
+The table describes the intended gate; it is not a pass claim for the document-review HEAD. The following historical runner observations predate the document review, their exact HEAD was not recorded, and they must not be read as having run at the review HEAD.
 
-Issue #49 validation on 2026-08-28: the native Python runner passed CLI help and 91 tests; the same 2 symlink-related cases were skipped by host privilege conditions.
+Historical runner observation on 2026-08-23 (exact HEAD not recorded): the process-scoped Windows Python runner passed CLI help and 62 tests; 2 symlink-related cases were skipped by host privilege conditions.
 
-Issue #79/#80 validation on 2026-08-31: the native Python runner passed CLI help and 179 tests; 2 symlink-related cases were skipped by host privilege conditions. The CI contract runs this same Python surface on native Windows, Linux, and macOS.
+Historical issue #49 runner observation on 2026-08-28 (exact HEAD not recorded): the native Python runner passed CLI help and 91 tests; the same 2 symlink-related cases were skipped by host privilege conditions.
+
+Historical issue #79/#80 runner observation on 2026-08-31 (exact HEAD not recorded): the native Python runner passed CLI help and 179 tests; 2 symlink-related cases were skipped by host privilege conditions. The CI contract runs this same Python surface on native Windows, Linux, and macOS.
 
 ## Agent-safe help gate
 
