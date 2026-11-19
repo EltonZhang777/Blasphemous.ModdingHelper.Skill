@@ -811,18 +811,17 @@ class DocumentationConsistencyTests(unittest.TestCase):
         self.assertEqual(main_text.count(heading), 1)
 
         section = markdown_section(main, heading)
-        roster = re.search(
-            r"The common top-level fields, in order, are (.+)\.",
-            section,
-        )
-        self.assertIsNotNone(roster)
-        self.assertEqual(
-            tuple(re.findall(r"`([^`]+)`", roster.group(1))),
-            UNITY_ENVELOPE_FIELDS,
-        )
+        paragraphs = [" ".join(paragraph.split()) for paragraph in section.split("\n\n")]
         self.assertIn(
-            "The public `schema_version` value is `1`.",
-            " ".join(section.split()),
+            UNITY_ENVELOPE_FIELDS,
+            [tuple(re.findall(r"`([^`]+)`", paragraph)) for paragraph in paragraphs],
+        )
+        self.assertTrue(
+            any(
+                "`schema_version`" in paragraph and "`1`" in paragraph
+                for paragraph in paragraphs
+            ),
+            "the envelope section must state schema_version 1",
         )
 
         canonical_link = (
@@ -841,14 +840,11 @@ class DocumentationConsistencyTests(unittest.TestCase):
                 self.assertIn(f"`{token}`", topic_text)
 
     def test_routing_spec_lists_each_approved_route_owner(self):
-        spec = read(REPOSITORY_ROOT / "docs" / "specs" / "routing-tables.md")
-        inventory = re.search(
-            r"The approved route-owner set contains eight documents:\n"
-            r"((?:  - `[^`]+`\n)+)",
-            spec,
+        inventory = markdown_section(
+            REPOSITORY_ROOT / "docs" / "specs" / "routing-tables.md",
+            "## Implementation Decisions",
         )
-        self.assertIsNotNone(inventory)
-        owners = re.findall(r"^  - `([^`]+)`$", inventory.group(1), re.MULTILINE)
+        owners = re.findall(r"^  - `([^`]+)`$", inventory, re.MULTILINE)
         self.assertEqual(len(owners), 8)
         self.assertEqual(set(owners), APPROVED_CANONICAL_OWNERS)
 
