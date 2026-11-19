@@ -120,6 +120,7 @@ class SkillRouteMapTests(unittest.TestCase):
         ][2]
         for classification in ("Real-profile", "xUnit", "both", "ambiguous"):
             self.assertIn(classification, mod_test_boundary)
+        self.assertIn("Mod-test entry's classification", mod_test_boundary)
 
     def test_coding_standards_heading_points_to_its_route_owner(self):
         text = MAIN_SKILL.read_text(encoding="utf-8")

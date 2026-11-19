@@ -128,6 +128,12 @@ class ProjectArchitectureDocumentationTests(unittest.TestCase):
         )
         self.assertNotIn("no established directory", route_decision)
         self.assertNotIn("explicitly asks how to organize", route_decision)
+        guide_text = guide.casefold()
+        for repeated_activation_condition in (
+            *ARCHITECTURE_ACTIVATION_CUES,
+            "without established boundaries",
+        ):
+            self.assertNotIn(repeated_activation_condition, guide_text)
 
         result_rows = {
             row[0].casefold(): row[1].casefold()
@@ -196,7 +202,6 @@ class ProjectArchitectureDocumentationTests(unittest.TestCase):
             "extension methods and support types tightly coupled",
             "mod console command classes and command-specific behavior",
             "established feature-oriented structure takes precedence",
-            "must not move, rename, or restructure existing files",
             "generic utils, helpers, or managers buckets",
             "documented gap",
             "does not redefine naming, compiler compatibility, lifecycle behavior, patch target resolution, or patch discovery",
@@ -210,7 +215,6 @@ class ProjectArchitectureDocumentationTests(unittest.TestCase):
             "must not move, rename, or restructure existing files",
             "harmonypatches",
             "harmony bridge that raises an event remains here",
-            "generic utils, helpers, or managers buckets",
             "traverseutils.cs",
             "must not be copied as an architecture requirement",
         ):

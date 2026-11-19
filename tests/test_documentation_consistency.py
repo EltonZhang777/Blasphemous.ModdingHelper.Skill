@@ -123,7 +123,7 @@ ROUTING_CONTRACTS = (
             ("Find or explain decompiled game source", "Source analyzer", "source-path gate"),
             ("Inspect exported Unity project topology, assets, GUIDs, script assets, flattened Prefabs, Unity version, or scene-set summary", "Unity project navigation", "MUST keep exported asset evidence separate from C# behavior"),
             ("Diagnose BepInEx or Unity logs", "Log analyzer", "MUST resolve required log sources"),
-            ("Test a Mod; build/deploy/launch a profile", "Mod-test entry", "classify the request"),
+            ("Test a Mod; build/deploy/launch a profile", "Mod-test entry", "Mod-test entry's classification"),
             ("Generate, modify, review, or refactor Mod-owned C#", "Coding standards", "ownership boundary"),
             ("Need ModdingAPI documentation", "Referencing ModdingAPI", "local or release-aware reference"),
             ("Analyze one explicit Blasphemous 1 save file or directory read-only", "Save analysis", "MUST require one explicit input path"),
@@ -351,6 +351,31 @@ def local_links(document):
         yield (document.parent / target).resolve()
 
 
+def local_link_fragments(document):
+    for raw_target in MARKDOWN_LINK.findall(read(document)):
+        path, separator, fragment = raw_target.partition("#")
+        if path.startswith(("http://", "https://", "mailto:")):
+            continue
+        target = (
+            document
+            if not path
+            else (document.parent / path.strip()).resolve()
+        )
+        yield target, fragment.strip() if separator else ""
+
+
+def markdown_heading_slugs(document):
+    slugs = set()
+    for line in read(document).splitlines():
+        if not line.startswith("#"):
+            continue
+        heading = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", line.lstrip("#").strip())
+        heading = heading.replace("`", "")
+        slug = re.sub(r"[^\w\- ]", "", heading.casefold(), flags=re.UNICODE)
+        slugs.add(re.sub(r"\s+", "-", slug.strip()))
+    return slugs
+
+
 def documents_containing(text):
     return [
         document
@@ -394,6 +419,13 @@ class DocumentationConsistencyTests(unittest.TestCase):
                 self.assertTrue(target.is_file(), f"{document}: {target}")
                 if target.suffix.lower() == ".md":
                     pending.append(target)
+            for target, fragment in local_link_fragments(document):
+                if fragment and target.suffix.lower() == ".md":
+                    self.assertIn(
+                        fragment.casefold(),
+                        markdown_heading_slugs(target),
+                        f"{document}: {target}#{fragment}",
+                    )
 
         self.assertIn(MAIN_SKILL, reached)
         for relative in ROUTE_DOCUMENTS:
@@ -746,11 +778,30 @@ class DocumentationConsistencyTests(unittest.TestCase):
             self.assertIn("configuration exception", normalized_section)
             self.assertIn("route owner", normalized_section)
 
+        step_one = workflow.split(
+            "### Step 1: Complete shared entry gate",
+            1,
+        )[1].split("\n### ", 1)[0]
+        self.assertIn(
+            "classify the request through the Request routing section",
+            " ".join(step_one.split()),
+        )
+        self.assertLess(
+            step_one.index("classify the request through the Request routing section"),
+            step_one.index("complete that gate"),
+        )
+
         preflight = normalized(
             SKILL_ROOT / "references" / "config" / "invocation-preflight.md"
         )
         self.assertIn("documented configuration exceptions", preflight)
         self.assertIn("tracked-session stop exception", preflight)
+        self.assertIn("every operational route subject to this shared gate", preflight)
+        self.assertIn("caller-owned automated xunit route", preflight)
+        self.assertNotIn(
+            "except the documented localization lookup and save analysis exceptions",
+            preflight,
+        )
 
         mod_test = normalized(SKILL_ROOT / MOD_TEST_DOCUMENT)
         self.assertIn("automated xunit", mod_test)
@@ -946,6 +997,7 @@ class DocumentationConsistencyTests(unittest.TestCase):
         )
 
         router_text = normalized(router)
+        self.assertIn("## Entry and scope requirements", read(router))
         for phrase in (
             "preserve direct copy as-is",
             "mechanical namespace or path changes may be made",
@@ -960,10 +1012,6 @@ class DocumentationConsistencyTests(unittest.TestCase):
         for document in (csharp, harmony, modding_api):
             links = MARKDOWN_LINK.findall(read(document))
             self.assertEqual(links.count(scope_link), 1, document)
-
-        for document in (csharp, harmony):
-            links = MARKDOWN_LINK.findall(read(document))
-            self.assertEqual(links.count(game_api_link), 1, document)
             branch_text = normalized(document)
             for repeated_rule in (
                 "direct copy as-is",
@@ -973,6 +1021,10 @@ class DocumentationConsistencyTests(unittest.TestCase):
                 "non-public members must be accessed using harmony",
             ):
                 self.assertNotIn(repeated_rule, branch_text, document)
+
+        for document in (csharp, harmony):
+            links = MARKDOWN_LINK.findall(read(document))
+            self.assertEqual(links.count(game_api_link), 1, document)
 
         csharp_text = normalized(csharp)
         self.assertIn(
@@ -1024,6 +1076,9 @@ class DocumentationConsistencyTests(unittest.TestCase):
                 document,
             )
 
+        topology_text = normalized(topology)
+        baseline_major = baseline.split(".", 1)[0]
+        self.assertNotIn(baseline_major, topology_text)
         self.assertIn(
             "caller's actual compiler target",
             normalized(csharp),

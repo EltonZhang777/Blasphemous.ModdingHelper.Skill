@@ -33,7 +33,7 @@ New namespaces SHOULD mirror their directories by default. Existing namespace ex
 
 ## Default shape
 
-For a new project without established boundaries, the default role categories are:
+The default role categories are:
 
     <ModRoot>/
         <entrypoint>.cs

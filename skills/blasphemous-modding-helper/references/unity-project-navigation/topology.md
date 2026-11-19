@@ -23,7 +23,7 @@ The version-1 envelope reports:
 - `results[0].file_counts`: total files plus `.unity`, `.prefab`, `.asset`, `.cs`, `.meta`, and `other` counts.
 - `results[0].scene_counts`: total scenes, complete five-layer sets, incomplete sets, and standalone scenes.
 
-Project-relative paths use forward slashes. A missing or unparseable Unity version produces `unity_version_unknown`. A non-2017 major version produces `unity_major_mismatch` but remains usable. A missing `Assets` root, an existing root that is not a directory, or an included root that resolves outside the project is `invalid_project`.
+Project-relative paths use forward slashes. A missing or unparseable Unity version produces `unity_version_unknown`. A major version other than the coding baseline's major version produces `unity_major_mismatch` but remains usable. A missing `Assets` root, an existing root that is not a directory, or an included root that resolves outside the project is `invalid_project`.
 
 The five recognized scene layers are `_MAIN`, `_LOGIC`, `_LAYOUT`, `_DECO`, and `_AUDIO`. Only all five members produce a complete set. Partial groups remain incomplete and MUST NOT be completed by guessing absent paths. An unsuffixed `.unity` file is standalone.
 
