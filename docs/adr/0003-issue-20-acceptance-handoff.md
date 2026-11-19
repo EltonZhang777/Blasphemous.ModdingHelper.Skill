@@ -9,7 +9,7 @@ Issue #20 has passed the final acceptance audit. Continue from the committed bra
 
 ## Snapshot state
 
-- Worktree: `C:\Users\28090\Documents\GitHub\Blasphemous.ModdingHelper.Skill\.wt\csharp-code-standards`
+- Worktree: `.wt/csharp-code-standards` (repository-relative)
 - Branch: `codex/csharp-code-standards`
 - HEAD: `904ecbf docs(skill): complete RFC 2119 audit`
 - Working tree: clean; branch is one commit ahead of its configured origin.

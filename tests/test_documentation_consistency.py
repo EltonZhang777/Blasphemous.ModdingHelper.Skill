@@ -10,6 +10,13 @@ SKILL_ROOT = REPOSITORY_ROOT / "skills" / "blasphemous-modding-helper"
 MAIN_SKILL = SKILL_ROOT / "SKILL.md"
 RFC_AUDIT = REPOSITORY_ROOT / "ci" / "audit_rfc2119.py"
 MARKDOWN_LINK = re.compile(r"\]\(([^)]+)\)")
+ADR_PREFIX = re.compile(r"^(\d{4})-")
+HANDOFF_STATUS = re.compile(r"^Status: (?:active|historical snapshot)$")
+USER_HOME_PATH = re.compile(
+    r"(?:[A-Za-z]:[\\/]+Users[\\/]+[^\\/\s`<>]+|"
+    r"(?<![A-Za-z0-9:/])/(?:home|Users)/[^/\s`<>]+)",
+    re.IGNORECASE,
+)
 DELEGATION_REFERENCE = "references/subagent-delegation/read-only-evidence-delegation.md"
 GENERAL_DELEGATION_REFERENCE = "references/subagent-delegation/subagent-delegation-general-guidelines.md"
 XUNIT_DELEGATION_REFERENCE = "references/subagent-delegation/xunit-testing-delegation.md"
@@ -750,6 +757,63 @@ class DocumentationConsistencyTests(unittest.TestCase):
             "other traversal must use `references` for direction, object scope, limits, timeout",
             text,
         )
+
+    def test_governance_records_are_consistent(self):
+        adr_identifiers = {}
+        for document in sorted((REPOSITORY_ROOT / "docs" / "adr").glob("*.md")):
+            match = ADR_PREFIX.match(document.name)
+            self.assertIsNotNone(match, document)
+            if match:
+                adr_identifiers.setdefault(match.group(1), []).append(document.name)
+        self.assertEqual(
+            {identifier: names for identifier, names in adr_identifiers.items() if len(names) > 1},
+            {},
+        )
+
+        tracked = subprocess.run(
+            [
+                "git",
+                "ls-files",
+                "-z",
+                "--cached",
+                "--others",
+                "--exclude-standard",
+                "--",
+                "AGENTS.md",
+                "docs/agents",
+                "docs/adr",
+                "docs/specs",
+            ],
+            cwd=REPOSITORY_ROOT,
+            capture_output=True,
+            check=True,
+        ).stdout.decode("utf-8")
+        for relative in filter(None, tracked.split("\0")):
+            document = REPOSITORY_ROOT / relative
+            if relative.endswith(".md") and document.is_file():
+                self.assertNotRegex(read(document), USER_HOME_PATH, relative)
+
+        handoff = read(REPOSITORY_ROOT / "docs" / "agents" / "handoff.md")
+        template = handoff.split("## Minimal template", 1)[1].split("```markdown", 1)[1].split("```", 1)[0]
+        template_lines = [line.strip() for line in template.splitlines() if line.strip()]
+        self.assertEqual(
+            [line for line in template_lines if HANDOFF_STATUS.fullmatch(line)],
+            ["Status: active"],
+        )
+        self.assertEqual(template_lines[0], "Status: active")
+
+        tracker = normalized(REPOSITORY_ROOT / "docs" / "agents" / "issue-tracker.md")
+        self.assertIn(
+            "github issues own active normative requirements and acceptance criteria",
+            tracker,
+        )
+        self.assertIn(
+            "local specification records are non-authoritative drafts or supporting records",
+            tracker,
+        )
+        repository_guidance = normalized(REPOSITORY_ROOT / "AGENTS.md")
+        self.assertIn("issue, triage, or specification-authority work", repository_guidance)
+        self.assertIn("docs/agents/issue-tracker.md", repository_guidance)
 
 
 if __name__ == "__main__":
