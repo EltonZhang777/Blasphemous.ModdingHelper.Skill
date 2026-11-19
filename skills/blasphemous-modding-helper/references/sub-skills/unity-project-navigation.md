@@ -16,8 +16,7 @@ When a valid configuration omits `unity_project_path`, the agent MUST ask only f
 & $PYTHON3 (Join-Path $SkillRoot 'scripts\check_preferences.py') --set-unity-project-path '<UNITY_PROJECT_ROOT>'
 ```
 
-An invalid path MUST repeat only the Unity-path question. Invalid YAML MUST use the existing full first-time setup flow.
-An invalid path result reports `PREFERENCES_NEXT_ACTION=retry-unity-project-path`; invalid YAML reports `PREFERENCES_SETUP=required`.
+An invalid path MUST repeat only the Unity-path question. Invalid YAML MUST use the existing full first-time setup flow. An invalid path result reports `PREFERENCES_NEXT_ACTION=retry-unity-project-path`; invalid YAML reports `PREFERENCES_SETUP=required`.
 
 ## Evidence ownership
 
