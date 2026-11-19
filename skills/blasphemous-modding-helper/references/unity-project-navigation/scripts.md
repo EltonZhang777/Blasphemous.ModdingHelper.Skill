@@ -22,7 +22,7 @@ Every query MUST provide `--project` and exactly one selector:
 
 ## Result
 
-The version-1 envelope uses the common `schema_version`, `command`, `status`, `project`, `query`, `results`, `limits`, `truncated`, `warnings`, and `error` fields. The `limits` object reports `csharp_parsed: false`.
+The common envelope is defined by [Version-1 document envelope](MAIN.md#version-1-document-envelope). The `limits` object reports `csharp_parsed: false`.
 
 Each result contains only:
 

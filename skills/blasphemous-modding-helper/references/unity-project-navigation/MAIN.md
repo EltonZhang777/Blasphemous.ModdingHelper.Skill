@@ -20,6 +20,12 @@ The Unity export is authoritative for exported asset topology and serialized evi
 
 Script identity from [scripts.md](scripts.md) is asset placement evidence only. Agent MUST NOT use Unity `.cs` files as behavioral proof. Asset evidence and source evidence MUST be reported separately when one request spans both.
 
+## Version-1 document envelope
+
+Every Unity project-navigation query returns one JSON object. The public `schema_version` value is `1`.
+
+The common top-level fields, in order, are `schema_version`, `command`, `status`, `project`, `query`, `results`, `limits`, `truncated`, `warnings`, and `error`. This roster defines common field ownership and ordering only; it does not add type, requiredness, or nullability rules. A query may add command-specific top-level fields around this common envelope.
+
 ## First query
 
 The first query is the read-only project summary:
