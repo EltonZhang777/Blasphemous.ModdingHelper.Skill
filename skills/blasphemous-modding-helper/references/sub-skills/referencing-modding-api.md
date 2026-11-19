@@ -147,4 +147,4 @@ If release resolution fails, Agent MUST NOT substitute `main` to mask the failur
 
 ## Completion criterion
 
-Agent MUST report the selected ModdingAPI reference and topic, the resolved reference evidence, status, the blocked reason when applicable, and the next source or code action. If the request did not ask for lifecycle mutation, the report MUST state that no checkout mutation was performed.
+Agent MUST report the selected ModdingAPI reference and topic, the resolved reference evidence, status, any exact blocker, and the next source or code action through the shared [completion-report contract](../config/invocation-preflight.md#completion-criteria). If the request did not ask for lifecycle mutation, the report MUST state that no checkout mutation was performed.

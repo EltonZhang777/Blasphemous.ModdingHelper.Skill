@@ -9,6 +9,8 @@ This reference is the single source of truth for the shared preflight contract o
 
 The read-only [localization lookup branch](../sub-skills/localization-lookup.md) and [Save analysis](../sub-skills/save-analysis.md) branch are the documented configuration exceptions. Localization lookup reads the bundled localization index as text and does not run Skill scripts, inspect a Modding profile, or inspect source code. Save analysis requires one explicit local input and does not read configuration, a Modding profile, game installation, or source context. Each exception applies only within its own route and does not alter other routes.
 
+The Localization lookup branch, Save analysis, and tracked-session stop exception scopes are owned here. The Mod-test entry owns the caller-owned Automated xUnit exception within its configuration scope; see [Mod-test entry](../sub-skills/blasphemous-modding-test.md). It is not centralized here.
+
 | Invocation path | Preflight route | Boundary and handoff |
 | --- | --- | --- |
 | Localization lookup | bundled index | Agent MUST read only the bundled index. Agent MUST NOT run scripts or inspect configuration, a Modding profile, or source code. Agent MUST confirm the index path and readability. Agent MUST use [Localization lookup](../sub-skills/localization-lookup.md) as the branch-completion authority. |
@@ -19,7 +21,7 @@ The read-only [localization lookup branch](../sub-skills/localization-lookup.md)
 | Configuration result | selected config | Agent MUST consume `skipped`, `passed`, `normalized`, or `failed` as valid results. When a result is `failed` or the file is missing, Agent MUST enter [First-Time Setup](first-time-setup.md). Agent MUST give project configuration precedence over user configuration. Agent MUST read, parse, and apply the selected file. Downstream branches MUST consume its scope and path without rediscovering or revalidating them. |
 | Tracked-session stop | recorded process tree | Agent MUST use only the recorded session identity. Agent MUST NOT read or edit configuration when normal context preflight is unavailable. Agent MUST stop the recorded process tree or confirm that it is gone, and MUST NOT touch unrelated processes. |
 | Path recovery | path-recovery prompt | Agent MUST use the exact prompt below. If the user answers Yes, Agent MUST delete the active `config.yml` and return to [First-Time Setup](first-time-setup.md). If the user answers No, Agent MUST continue with current paths and report the specific failure. After setup succeeds, Agent MUST return a validated configuration file to the main workflow. If recovery is declined, Agent MUST report the failure and next action. |
-| Preflight completion | preflight result | For branches subject to the shared gate, Agent MUST require ready command context, an applied selected configuration or successful setup, and branch context before mutations, process launches, or reliance on source/log paths. Agent MUST leave the documented Automated xUnit exception to the Mod-test entry. The stop exception MUST end only when its recorded process is stopped or confirmed gone, and Agent MUST NOT touch unrelated processes. Agent MUST report the route or gate status, evidence, blocked reason when applicable, and next document or action. |
+| Preflight completion | preflight result | For branches subject to the shared gate, Agent MUST require ready command context, an applied selected configuration or successful setup, and branch context before mutations, process launches, or reliance on source/log paths. Agent MUST leave the documented Automated xUnit exception to the Mod-test entry. The stop exception MUST end only when its recorded process is stopped or confirmed gone, and Agent MUST NOT touch unrelated processes. Agent MUST report the route or gate status, route-specific evidence, and next document or action under the common completion-report fields below. |
 
 ## Command context
 
@@ -117,6 +119,8 @@ The `ilspycmd` global-tool installation above is existing decompiler behavior; t
 
 ## Completion criteria
 
+The common completion-report fields are `status`, `completion evidence`, `blocked reason`, and `next action`. When `status` is `blocked` or `failed`, the report MUST give its exact blocked or failed reason; successful results need not invent one. Branch owners MAY add status categories, evidence categories, partial outcomes, and pending outcomes. Operational completion-report branches and completion-report child-handoff contracts MUST link here and add only their route-specific extensions; they MUST NOT redefine the common field list. Save analysis remains a documented exception and retains its branch-owned input, evidence, and partial-report contract.
+
 Shared preflight is complete only when all applicable conditions below hold:
 
 1. An operational branch has a ready command context, including installed Skill root, caller Mod repository, resolved Python interpreter, and supported native host; Localization lookup has a confirmed bundled index path and readable file; or Save analysis has one explicit readable local input and no configuration requirement.
@@ -124,4 +128,4 @@ Shared preflight is complete only when all applicable conditions below hold:
 3. The selected branch has received its required context before mutating files, launching a process, or relying on source or log paths.
 4. For the tracked-session stop exception, the recorded process is stopped or confirmed gone and no unrelated process was touched.
 5. For declined path recovery, the specific failure and next action have been reported. Successful setup instead returns a validated configuration file to the main workflow.
-6. The result report names the selected route or gate status, completion evidence, the blocked reason when applicable, and the next document or action.
+6. The result report uses the common completion-report fields above and gives the next document or action.

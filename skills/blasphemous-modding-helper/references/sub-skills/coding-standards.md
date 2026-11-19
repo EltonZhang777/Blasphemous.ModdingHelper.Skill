@@ -66,7 +66,7 @@ Harmony branch MUST preserve this scope gate and requirement-level contract as i
 
 ## Completion criterion
 
-Agent MUST report the selected coding branch, ownership and scope decision, standards evidence, status, the blocked reason when applicable, and the next implementation or verification action. A coding request is complete only when the selected standards reference has been applied or the exact blocking scope condition has been reported.
+Agent MUST report the selected coding branch, ownership and scope decision, standards evidence, status, any exact blocking condition, and the next implementation or verification action through the shared [completion-report contract](../config/invocation-preflight.md#completion-criteria). A coding request is complete only when the selected standards reference has been applied or the exact blocking scope condition has been reported.
 
 ## Route project architecture requests
 

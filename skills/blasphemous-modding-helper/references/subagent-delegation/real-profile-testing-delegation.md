@@ -12,6 +12,6 @@ The child MUST report only the evidence it collected. Startup states, CLI output
 
 ## Handoff
 
-The child MUST return the exact CLI commands, profile identity, Test session ID, and, for a session with a launched game process, the process ID and tracked process tree identity recorded in that session manifest. It MUST also return per-action status, evidence mode and locations, blocked reason when applicable, and next action. It MUST identify whether each result is startup evidence, **Player-performed in-game verification**, or **Computer Use automated in-game test** evidence. Evidence from another profile or session MUST NOT be mixed into the report.
+The child MUST satisfy the shared [completion-report contract](../config/invocation-preflight.md#completion-criteria) and return the exact CLI commands, profile identity, Test session ID, and, for a session with a launched game process, the process ID and tracked process tree identity recorded in that session manifest. It MUST also return per-action status, evidence mode and locations, any exact blocker, and the next action. It MUST identify whether each result is startup evidence, **Player-performed in-game verification**, or **Computer Use automated in-game test** evidence. Evidence from another profile or session MUST NOT be mixed into the report.
 
 The parent remains responsible for integrating the result with any other phase and reporting the overall request. A Real-profile result MUST NOT be presented as an Automated xUnit result.
