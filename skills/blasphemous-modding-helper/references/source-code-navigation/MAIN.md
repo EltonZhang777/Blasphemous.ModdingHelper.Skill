@@ -39,6 +39,8 @@ Blasphemous source navigation. Paths relative to `Assembly-CSharp/`.
 
 ---
 
+Mixed achievement requests MUST start at the explicitly named entry class: `AchievementsManager` in Core, or an entity, helper, or checker under `Framework/Achievements/` in Items. Agent MUST follow the reciprocal boundary link before broadening the search.
+
 This guide indexes decompiled game source under `Assembly-CSharp/`. For Mod-owned changes, [Project architecture guidelines](../sub-skills/project-architecture-guidelines.md) own project structure, [Harmony patching standards](../coding-standards/coding-standards-harmony-patching.md) own patches, and the [Mod-test entry](../sub-skills/blasphemous-modding-test.md) owns verification.
 
 For exported project topology evidence, use [Unity project navigation](../unity-project-navigation/MAIN.md) instead. For exported script-asset identity evidence only, use [scripts.md](../unity-project-navigation/scripts.md); that query returns placement and metadata without C# parsing. Matching paths or Unity `.cs` files MUST NOT replace this source tree as behavioral evidence. If this source tree cannot support a behavior, dependency, or class-semantics request, report the source gap as `blocked`.
