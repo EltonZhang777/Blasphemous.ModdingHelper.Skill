@@ -62,7 +62,7 @@ The workflow stores temporary session state for process ownership, deployment ma
 44. As a mod developer, I want removal of new deployment files to require explicit user approval, so that cleanup cannot silently destroy test resources.
 45. As a mod developer, I want a file changed during testing protected from silent restoration or deletion, so that the user's new work is not lost.
 46. As a mod developer, I want deployment state and file backups kept in temporary storage, so that rollback works across separate CLI invocations without adding files to the mod repository.
-47. As a mod developer, I want to preserve both logs after I confirm a Test session is complete, so that later launches cannot overwrite the evidence for my Manual verification.
+47. As a mod developer, I want to preserve both logs after I confirm a Test session is complete, so that later launches cannot overwrite the evidence for my Player-performed in-game verification.
 48. As an AI agent, I want a launched state, so that I can distinguish process creation from successful mod initialization.
 49. As an AI agent, I want a ready state tied to current BepInEx startup evidence, so that an old process or stale assumption cannot represent the current launch.
 50. As an AI agent, I want a mod-loaded state tied to the target mod's load evidence, so that BepInEx startup alone is not reported as target-mod success.
@@ -144,5 +144,5 @@ The workflow stores temporary session state for process ownership, deployment ma
 
 - The reference mod projects use a package directory named by the project target and may also produce archives. The directory is the normal build-test source; the archive is a recovery input.
 - Package resources are first-class deployment files. A dependency DLL in a data directory, localization text, image, or JSON file must keep its package-relative location.
-- The test workflow reports startup evidence only. A user statement about actual gameplay behavior remains required for a complete manual test record.
+- The test workflow reports startup evidence only. A user statement about actual gameplay behavior remains required for a complete Player-performed in-game verification record.
 - The stack-safe rollback choice is recorded separately because allowing repeated runs while preserving older backups is non-obvious and affects future cleanup behavior.

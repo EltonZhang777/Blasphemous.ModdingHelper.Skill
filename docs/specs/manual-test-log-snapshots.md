@@ -1,10 +1,10 @@
-# Spec: Manual test log snapshots
+# Spec: Preserve user-confirmed Test log snapshots
 
 ## Problem Statement
 
-The real-profile Test workflow currently reads the BepInEx and Unity **current logs** in place. A later game launch can overwrite the BepInEx log before the agent analyzes the result of an earlier Manual verification. The user can provide a completed test result, but the evidence for that result is not reliably preserved as a complete, session-bound artifact.
+The real-profile Test workflow currently reads the BepInEx and Unity **current logs** in place. A later game launch can overwrite the BepInEx log before the agent analyzes the result of an earlier Player-performed in-game verification. The user can provide a completed test result, but the evidence for that result is not reliably preserved as a complete, session-bound artifact.
 
-The workflow must preserve both log sources after the user confirms that the Test session is complete. It must also handle the case where the user has finished the Manual verification but has not closed the game. Stopping the game can itself produce useful log records, so stop authorization and snapshot capture must remain separate, visible decisions.
+The workflow must preserve both log sources after the user confirms that the Test session is complete. It must also handle the case where the user has finished the Player-performed in-game verification but has not closed the game. Stopping the game can itself produce useful log records, so stop authorization and snapshot capture must remain separate, visible decisions.
 
 ## Solution
 
@@ -21,11 +21,11 @@ When a completed Test session is analyzed, the log-analyzer workflow uses its Te
 ## User Stories
 
 1. As a mod developer, I want the agent to preserve logs after I confirm that a Test session is complete, so that later launches cannot erase the evidence for my result.
-2. As a mod developer, I want a successful Manual verification result to trigger preservation, so that a positive gameplay observation has bounded session evidence.
-3. As a mod developer, I want a failed or anomalous Manual verification result to trigger preservation, so that failure analysis retains the same evidence as success analysis.
+2. As a mod developer, I want a successful Player-performed in-game verification result to trigger preservation, so that a positive gameplay observation has bounded session evidence.
+3. As a mod developer, I want a failed or anomalous Player-performed in-game verification result to trigger preservation, so that failure analysis retains the same evidence as success analysis.
 4. As a mod developer, I want the agent to recognize an explicit statement that testing is complete, so that I do not need to know an internal CLI command to preserve evidence.
 5. As a mod developer, I want a process exit alone not to trigger preservation, so that the agent does not infer that a test was complete when the game crashed or was closed for another reason.
-6. As a mod developer, I want startup polling alone not to trigger preservation, so that launch evidence is not mistaken for a completed Manual verification.
+6. As a mod developer, I want startup polling alone not to trigger preservation, so that launch evidence is not mistaken for a completed Player-performed in-game verification.
 7. As a mod developer, I want `logs`, `stop`, and `clean` alone not to trigger preservation, so that lifecycle commands do not silently perform an evidence decision for me.
 8. As an AI agent, I want a snapshot request associated with one Test session, so that logs from another profile or run cannot be attached by guesswork.
 9. As an AI agent, I want ambiguous natural-language results to remain unresolved, so that I can ask for the session identity instead of saving evidence under the wrong session.
@@ -87,7 +87,7 @@ When a completed Test session is analyzed, the log-analyzer workflow uses its Te
 - Fixture coverage includes: process already exited; normal stop approved and completed; ordinary stop failure followed by force approval; explicit ordinary-stop refusal; explicit force-stop refusal; force-stop failure; unanswered approval represented as pending; exact two-source byte copies; running-process current capture; source-specific naming; repeated capture replacement; failed replacement preserving the previous copy; missing and unreadable sources; one-source success with overall incomplete status; session/profile mismatch; and manifest metadata without embedded log content.
 - Contract tests verify that current-log analysis remains current-log analysis, while completed-session analysis requires the session snapshot and reports missing/incomplete evidence without fallback.
 - Documentation checks verify that the user-confirmation gate, stop/force approval distinction, current-capture fallback, snapshot location, retention, and log-analyzer source rule remain consistent with the glossary and the broader mod-testing spec.
-- Required repository checks remain the existing Python syntax/fixture checks, Markdown link validation, `git diff --check`, and final worktree inspection. No real-game test is required to validate the file-copy seam; real-profile Manual verification remains a separate acceptance activity.
+- Required repository checks remain the existing Python syntax/fixture checks, Markdown link validation, `git diff --check`, and final worktree inspection. No real-game test is required to validate the file-copy seam; real-profile Player-performed in-game verification remains a separate acceptance activity.
 
 ## Out of Scope
 
@@ -104,6 +104,6 @@ When a completed Test session is analyzed, the log-analyzer workflow uses its Te
 
 ## Further Notes
 
-- The snapshot is evidence for a user-confirmed Test session, not proof that the game behavior was correct. The Manual verification record and automated startup evidence remain separate evidence sources.
+- The snapshot is evidence for a user-confirmed Test session, not proof that the game behavior was correct. The Player-performed in-game verification record and automated startup evidence remain separate evidence sources.
 - A snapshot captured while the process remains running is valid as a stable copy of the bytes available at that moment, but its metadata must make the non-final process condition visible.
 - The existing dynamic-baseline ADR prohibits complete log persistence as a general current-log behavior. This feature is a narrow, user-confirmed session-data exception and should be recorded in a focused ADR before implementation.

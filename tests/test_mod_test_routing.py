@@ -8,6 +8,7 @@ SKILL_ROOT = (
     / "skills"
     / "blasphemous-modding-helper"
 )
+REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 REFERENCES = SKILL_ROOT / "references" / "sub-skills"
 SHARED = REFERENCES / "blasphemous-modding-test.md"
 AUTOMATED = REFERENCES / "blasphemous-modding-test-automated-xunit.md"
@@ -19,6 +20,7 @@ GENERAL_DELEGATION = DELEGATION_REFERENCES / "subagent-delegation-general-guidel
 XUNIT_DELEGATION = DELEGATION_REFERENCES / "xunit-testing-delegation.md"
 REAL_PROFILE_DELEGATION = DELEGATION_REFERENCES / "real-profile-testing-delegation.md"
 READ_ONLY_DELEGATION = DELEGATION_REFERENCES / "read-only-evidence-delegation.md"
+ROUTING_SPEC = REPOSITORY_ROOT / "docs" / "specs" / "modding-test-routing.md"
 DOCUMENTS = (
     SHARED,
     AUTOMATED,
@@ -52,6 +54,11 @@ def links(text):
 
 
 class ModTestRoutingDocumentationTests(unittest.TestCase):
+    def test_player_verification_label_is_canonical_across_route_owners(self):
+        for document in (SHARED, REAL_PROFILE, COORDINATION, PLAYER, ROUTING_SPEC):
+            text = read(document)
+            self.assertIn("Player-performed in-game verification", text, document)
+
     def test_shared_entry_links_to_existing_branch_owners(self):
         shared = read(SHARED)
         expected = {
@@ -288,7 +295,7 @@ class ModTestRoutingDocumentationTests(unittest.TestCase):
             player,
         )
         self.assertIn(
-            "selects player-performed verification and reaches the "
+            "selects player-performed in-game verification and reaches the "
             "[player-performed in-game verification handoff and turn boundary]",
             player.casefold(),
         )

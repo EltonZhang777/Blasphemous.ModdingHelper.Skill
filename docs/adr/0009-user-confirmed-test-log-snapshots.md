@@ -4,7 +4,7 @@ status: accepted
 
 # Preserve user-confirmed Test session log snapshots
 
-The mod-testing workflow reads live BepInEx and Unity current logs, but a later game launch can overwrite the evidence for an earlier Manual verification. The user can confirm that a Test session is complete even when the game remains running, so the workflow needs a stable copy without turning every current-log read into persistent archival.
+The mod-testing workflow reads live BepInEx and Unity current logs, but a later game launch can overwrite the evidence for an earlier Player-performed in-game verification. The user can confirm that a Test session is complete even when the game remains running, so the workflow needs a stable copy without turning every current-log read into persistent archival.
 
 ## Decision
 

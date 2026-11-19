@@ -299,6 +299,37 @@ def local_links(document):
 
 
 class DocumentationConsistencyTests(unittest.TestCase):
+    def test_current_docs_and_metadata_use_one_player_verification_name(self):
+        legacy = re.compile(r"\bManual\s+verification\b", flags=re.IGNORECASE)
+        obsolete_heading = re.compile(
+            r"\bManual\s+completion\b",
+            flags=re.IGNORECASE,
+        )
+        shortened = re.compile(
+            r"\bPlayer-performed\s+verification\b",
+            flags=re.IGNORECASE,
+        )
+        tracked = subprocess.run(
+            ["git", "ls-files", "--", "*.md"],
+            cwd=REPOSITORY_ROOT,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            check=True,
+        ).stdout.splitlines()
+        documents = [
+            REPOSITORY_ROOT / path
+            for path in tracked
+            if path != "GLOSSARY.md" and not path.startswith("docs/handoff/")
+        ]
+        documents.append(REPOSITORY_ROOT / "skills-lock.json")
+
+        for document in documents:
+            text = read(document)
+            self.assertIsNone(legacy.search(text), document)
+            self.assertIsNone(obsolete_heading.search(text), document)
+            self.assertIsNone(shortened.search(text), document)
+
     def test_dependency_guidance_links_to_shared_inventory(self):
         inventory = (
             SKILL_ROOT / "references" / "config" / "invocation-preflight.md"

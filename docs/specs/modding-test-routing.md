@@ -2,7 +2,7 @@
 
 ## Problem Statement
 
-From a Blasphemous Mod developer's perspective, the Skill currently presents one testing workflow whose real-profile operations and automated code-test expectations are easy to conflate. An agent may launch a game for a deterministic code test, treat xUnit success as gameplay evidence, or describe a real-profile check without preserving the player's Manual verification boundary.
+From a Blasphemous Mod developer's perspective, the Skill currently presents one testing workflow whose real-profile operations and automated code-test expectations are easy to conflate. An agent may launch a game for a deterministic code test, treat xUnit success as gameplay evidence, or describe a real-profile check without preserving the Player-performed in-game verification boundary.
 
 The ambiguity is sharper across project shapes. A prerequisite library such as `Blasphemous.NewbieEltonLibs` can have a production library, a sibling xUnit project, and a separate external Test Mod for real-game verification. A standalone Mod such as `Blasphemous.LocalizationPatcher` has a game-side production project and no equivalent library-consumer test project. The Skill needs one routing contract that supports both shapes without making a library Test Mod, a test project, and a production Mod interchangeable.
 
@@ -10,7 +10,7 @@ The ambiguity is sharper across project shapes. A prerequisite library such as `
 
 Turn the existing mod-test document into a shared entry point. It keeps the information and constraints common to every test request, defines the boundary between Real-profile tests and Automated xUnit tests, and routes the request to one of two independent Markdown branch documents.
 
-The Real-profile branch owns the existing build, package, profile, launch, startup-evidence, stop, cleanup, and Manual verification workflow. The Automated xUnit branch owns deterministic non-game tests and describes a sibling `<ModRepoName>.Tests` project that references the main Mod project and runs through the standard .NET test runner. A prerequisite library may additionally use a separate Test Mod as an external consumer for real-game verification; a standalone Mod may use its production Mod directly. Neither branch is allowed to claim the other branch's evidence.
+The Real-profile branch owns the existing build, package, profile, launch, startup-evidence, stop, cleanup, and Player-performed in-game verification workflow. The Automated xUnit branch owns deterministic non-game tests and describes a sibling `<ModRepoName>.Tests` project that references the main Mod project and runs through the standard .NET test runner. A prerequisite library may additionally use a separate Test Mod as an external consumer for real-game verification; a standalone Mod may use its production Mod directly. Neither branch is allowed to claim the other branch's evidence.
 
 ## User Stories
 
@@ -24,7 +24,7 @@ The Real-profile branch owns the existing build, package, profile, launch, start
 8. As a maintainer, I want the shared entry point to state that `mod_loaded` and startup logs do not prove gameplay behavior, so that automated startup evidence is not reported as a gameplay pass.
 9. As a maintainer, I want the shared entry point to preserve common preflight, ownership, evidence, and safety constraints, so that the two branch documents do not drift on shared rules.
 10. As an AI agent, I want the Real-profile branch to retain the existing build, package validation, deployment, launch, process ownership, log, stop, and newest-first cleanup contract, so that routing does not weaken established safety behavior.
-11. As a player, I want Manual verification to remain a distinct player-operated evidence source, so that my observed visual, input, combat, menu, save, or other behavior is not confused with CLI output.
+11. As a player, I want Player-performed in-game verification to remain a distinct player-operated evidence source, so that my observed visual, input, combat, menu, save, or other behavior is not confused with CLI output.
 12. As a Mod developer, I want the Automated xUnit branch to explain that tests run through the normal .NET test runner, so that a hand-run program or custom success signal is not treated as the standard automated path.
 13. As a Mod developer, I want every non-real-machine test in my Mod repository to use xUnit, so that the repository has one predictable automated test technology.
 14. As a Mod developer, I want an Automated test project named `<ModRepoName>.Tests` next to the main Mod project, so that test ownership and project discovery are predictable.
@@ -39,13 +39,13 @@ The Real-profile branch owns the existing build, package, profile, launch, start
 23. As a maintainer, I want the reference library-plus-Test-Mod architecture and the standalone-Mod architecture used as contrasting examples, so that the route teaches the boundary instead of copying either repository wholesale.
 24. As a maintainer, I want this spec to define routing and execution boundaries without writing tests for one current Mod, so that the shared Skill remains reusable.
 25. As a maintainer, I want the Skill repository's own Python CLI and fixture tests to remain under their existing contract, so that the caller-Mod xUnit rule does not contradict the Skill package's accepted test architecture.
-26. As an AI agent, I want each branch to declare its completion evidence and next action, so that a passing automated test, a blocked profile setup, and a pending Manual verification cannot be reported as the same state.
+26. As an AI agent, I want each branch to declare its completion evidence and next action, so that a passing automated test, a blocked profile setup, and a pending Player-performed in-game verification cannot be reported as the same state.
 27. As a documentation maintainer, I want the shared entry point to link to exactly one owner for each branch, so that future changes have an obvious authoritative document.
 
 ## Implementation Decisions
 
 - The highest seam is the existing shared Mod-test entry point. The outer Skill routing remains stable; the entry point adds a test-kind decision table and links to the two branch owners.
-- The shared entry point owns only rules common to both branches: request classification, ownership boundaries, common prerequisites, evidence vocabulary, ambiguity handling, combined-request sequencing, and the distinction between automated evidence and Manual verification.
+- The shared entry point owns only rules common to both branches: request classification, ownership boundaries, common prerequisites, evidence vocabulary, ambiguity handling, combined-request sequencing, and the distinction between automated evidence and Player-performed in-game verification.
 - The Real-profile branch owns the existing real-game workflow. Its content moves out of the shared entry point without changing the established profile safety, process ownership, log, startup-state, stop, or cleanup contract.
 - The Automated xUnit branch owns all non-real-machine test guidance. It uses xUnit and the standard .NET test runner; it does not start the game, mutate a Modding profile, depend on player actions, or claim gameplay evidence.
 - The boundary is operational, not based only on referenced assemblies: a test may reference Unity or game-facing types and remain an Automated xUnit test if it runs without the real game process, profile, lifecycle, or player. A test that needs those runtime conditions is a Real-profile test.
@@ -63,7 +63,7 @@ The Real-profile branch owns the existing build, package, profile, launch, start
 - The primary test seam is the shared entry-point route. Documentation checks should prove that a request requiring a game/profile/player reaches the Real-profile branch and a deterministic non-game request reaches the Automated xUnit branch.
 - Tests verify observable routing, branch links, boundary wording, and evidence separation rather than the internal organization or exact prose of the documents.
 - Automated-branch checks should verify the xUnit requirement, standard test-runner execution, sibling test-project convention, main-project reference, no-game boundary, and distinction from a Test Mod.
-- Real-profile checks should verify that the existing build/deploy/launch/log/stop/clean workflow remains the sole owner of real-game operations and that Manual verification stays player-operated.
+- Real-profile checks should verify that the existing build/deploy/launch/log/stop/clean workflow remains the sole owner of real-game operations and that Player-performed in-game verification stays player-operated.
 - Combined-request checks should verify separate phase/evidence handling and rejection of implicit route guesses for ambiguous requests.
 - Architecture checks should cover both prior-art shapes: a prerequisite library with a sibling xUnit project and optional external Test Mod, and a standalone Mod whose production project is the real-game artifact.
 - Repository documentation-link checks, `git diff --check`, and final worktree inspection remain required. No real-game run is part of implementing or verifying this routing spec.
@@ -86,5 +86,5 @@ The Real-profile branch owns the existing build, package, profile, launch, start
 
 - `Blasphemous.NewbieEltonLibs` demonstrates the library shape: production library, sibling xUnit project, and a separate game-side Test Mod. Its xUnit tests run as ordinary .NET tests, while its Test Mod is packaged for real-game verification.
 - `Blasphemous.LocalizationPatcher` demonstrates the standalone-Mod shape: the production project is the natural real-game artifact, and the absence of a sibling xUnit project is an architecture fact, not evidence that real-game checks belong in xUnit.
-- The route should preserve the existing `Manual verification`, `Test session`, `Modding profile`, `Automated xUnit test`, `Automated test project`, and `Test Mod` glossary terms.
+- The route should preserve the existing `Player-performed in-game verification`, `Test session`, `Modding profile`, `Automated xUnit test`, `Automated test project`, and `Test Mod` glossary terms.
 - A future implementation may add a concrete xUnit project or branch-specific documentation tests in a caller repository; that work must keep the two evidence surfaces independent.

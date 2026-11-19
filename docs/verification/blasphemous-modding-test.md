@@ -1,6 +1,6 @@
 # Blasphemous mod test acceptance record
 
-This record is the evidence surface for issue #19. It separates fixture evidence, native-Python entrypoint evidence, and the real-profile **Manual verification** gate. A warning is an unresolved environment or user-operated step; it is not a gameplay pass.
+This record is the evidence surface for issue #19. It separates fixture evidence, native-Python entrypoint evidence, and the real-profile **Player-performed in-game verification** gate. A warning is an unresolved environment or user-operated step; it is not a gameplay pass.
 
 ## Automated fixture gate
 
@@ -91,14 +91,14 @@ Maintainers MAY run the separate live release check when network access is avail
 
 The check resolves the latest non-draft, non-prerelease Release, compares the resolved tag and commit, and verifies tag-specific documentation and source URLs. The live check is optional; report it as not run when it was not requested or network access is unavailable.
 
-## Real-profile Manual verification gate
+## Real-profile Player-performed in-game verification gate
 
 The agent does not run this gate automatically. Deployment changes an external profile, launch starts a game process, and gameplay actions require the player. Use a disposable non-Steam or mirror profile and obtain user direction before performing it. For issue #19, the user has deferred this gate until the three worktrees are merged.
 
 1. Confirm `config.yml`, the project, `modding_profile_path`, and `unity_log_dir`.
 2. Run the documented `run` command with the exact project/profile paths and an explicit `--startup-timeout`.
 3. Record the printed test session ID, `launched`, `ready`, or `mod_loaded` state, warnings, and current BepInEx/Unity log paths.
-4. Ask the player to perform the scenario and provide a natural-language **Manual verification**: state, actions, expected behavior, observed behavior, and approximate failure time.
+4. Ask the player to perform the scenario and provide a natural-language **Player-performed in-game verification**: state, actions, expected behavior, observed behavior, and approximate failure time.
 5. Read the current logs with `logs SESSION_ID --current`; use `--full` only when bounded output is insufficient.
 6. After the player reports a clear result, bind it to exactly one session and run `snapshot SESSION_ID`. If the result or session is ambiguous, ask for clarification and do not capture. If the process is still running, request ordinary stop approval and repeat with `--stop-decision approve|decline`; after a failed ordinary stop, request separate `--force-stop-decision approve|decline`. Keep pending requests uncaptured; record any explicit current-capture condition.
 7. Stop the tracked session if it remains running, then run newest-first `clean`. Confirm overwritten files are restored and new files remain unless explicit removal was approved.
@@ -127,7 +127,7 @@ PYTHON3=/path/to/python3
 "$PYTHON3" "$SKILL_ROOT/scripts/blasphemous_modding_test.py" clean <SESSION_ID>
 ```
 
-Completion criterion: the user has supplied the Manual verification and the agent has paired it with CLI/log evidence, or the record contains a warning naming the exact blocked step. `mod_loaded` never satisfies this gate by itself.
+Completion criterion: the user has supplied Player-performed in-game verification evidence and the agent has paired it with CLI/log evidence, or the record contains a warning naming the exact blocked step. `mod_loaded` never satisfies this gate by itself.
 
 ## Unity project navigation real-project gate
 
@@ -137,7 +137,7 @@ Synthetic Unity navigation tests are part of the repository acceptance suite. Th
 
 - **Native Python matrix:** this local record was produced on Windows. Linux and macOS evidence is supplied by the CI matrix using the same Python entry point; a local Windows shell is not a substitute for either host.
 - **Python setup:** if interpreter or dependency validation fails, follow the first-time setup gate and retry only after the failure is classified as a Python-environment failure.
-- **Real profile gate deferred:** no external profile was deployed to or launched by this worktree. The user will perform the authorized Manual verification after the three worktrees are merged.
+- **Real profile gate deferred:** no external profile was deployed to or launched by this worktree. The user will perform the authorized Player-performed in-game verification after the three worktrees are merged.
 - **Gameplay remains manual:** the CLI and fixture suite do not control game input or verify visual, input, combat, menu, save, or other gameplay behavior.
 - **Symlink privilege:** the existing suite may skip directory-symlink or hard-link cases when the host denies creation; the test output is the authoritative warning for that run.
 

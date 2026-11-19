@@ -185,7 +185,7 @@ Completion criterion: tracked process is stopped or confirmed gone, and no unrel
 
 `--snapshot` analyzes the complete Test-session snapshot associated with `SESSION_ID`. It never falls back to live sources: a missing or incomplete snapshot reports the affected source and tells the agent to rerun `snapshot` after recovery. Snapshot analysis prints the snapshot capture condition, process state, stop decision, and stop result, including a visible non-final condition for captures made while the game remained running.
 
-Before invoking `snapshot`, apply the shared Manual completion and session identity rules. A clear player result MUST be bound to exactly one `SESSION_ID`; an ambiguous result or session remains pending until the agent asks the user to identify it.
+Before invoking `snapshot`, apply the shared Player-performed in-game verification completion and session identity rules. A clear player result MUST be bound to exactly one `SESSION_ID`; an ambiguous result or session remains pending until the agent asks the user to identify it.
 
 CLI reads existing logs in place and stores only bounded evidence metadata in temporary session manifest. It does not create persistent log report or copy log contents. Default output is last 200 lines per source; `--full` prints complete current file. Evidence hits retain source label, concrete path, line number, match reason, kind, bounded text, and available `mod_id`/`mod_name` independently of the output tail, so early startup hits remain reportable without unbounded output.
 
@@ -294,7 +294,7 @@ The session/process boundary is strict: each `SESSION_ID` binds one lifecycle, p
 
 The CLI's Real-profile workflow handles build, package, deployment, launch, log collection, process tracking, stop, and safe cleanup. Its output and startup logs are operational or startup evidence, not in-game evidence. Agent MUST NOT claim that `mod_loaded` proves game behavior.
 
-After startup evidence is available, the coordinator hands off to the selected [Player-performed verification guide](blasphemous-modding-test-player-verification.md) or [Computer Use guide](blasphemous-modding-test-computer-use.md). Keep its in-game evidence separate from CLI state and session snapshots. Use `logs SESSION_ID --current` only when the user explicitly requests live diagnosis. No gameplay transcript or generated test report is required by this workflow. Use the existing [log analyzer](log-analyzer.md) for interpretation after test evidence is collected.
+After startup evidence is available, the coordinator hands off to the selected [Player-performed in-game verification guide](blasphemous-modding-test-player-verification.md) or [Computer Use guide](blasphemous-modding-test-computer-use.md). Keep its in-game evidence separate from CLI state and session snapshots. Use `logs SESSION_ID --current` only when the user explicitly requests live diagnosis. No gameplay transcript or generated test report is required by this workflow. Use the existing [log analyzer](log-analyzer.md) for interpretation after test evidence is collected.
 
 ## Stable failures and recovery
 

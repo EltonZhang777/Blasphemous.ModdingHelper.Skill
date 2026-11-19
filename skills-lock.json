@@ -20,7 +20,7 @@
     },
     "blasphemous-modding-helper:blasphemous-modding-test": {
       "version": "2.0.0",
-      "description": "Automatically routed local build, deployment, startup evidence, and Manual verification workflow",
+      "description": "Automatically routed local build, deployment, startup evidence, and Player-performed in-game verification workflow",
       "path": "skills/blasphemous-modding-helper/references/sub-skills/blasphemous-modding-test.md"
     },
     "blasphemous-modding-helper:localization-lookup": {
