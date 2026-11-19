@@ -10,6 +10,8 @@ SKILL_ROOT = REPOSITORY_ROOT / "skills" / "blasphemous-modding-helper"
 MAIN_SKILL = SKILL_ROOT / "SKILL.md"
 RFC_AUDIT = REPOSITORY_ROOT / "ci" / "audit_rfc2119.py"
 MARKDOWN_LINK = re.compile(r"\]\(([^)]+)\)")
+MARKDOWN_LINK_WITH_TEXT = re.compile(r"\[([^\]]+)\]\(([^)]+)\)")
+MARKDOWN_HEADING = re.compile(r"^#{2,6}\s+(.+?)\s*$", re.MULTILINE)
 DELEGATION_REFERENCE = "references/subagent-delegation/read-only-evidence-delegation.md"
 GENERAL_DELEGATION_REFERENCE = "references/subagent-delegation/subagent-delegation-general-guidelines.md"
 XUNIT_DELEGATION_REFERENCE = "references/subagent-delegation/xunit-testing-delegation.md"
@@ -288,6 +290,14 @@ def markdown_section(path, heading):
         return ""
     end = document.find("\n## ", start + len(heading))
     return document[start:] if end < 0 else document[start:end]
+
+
+def heading_anchors(document):
+    anchors = set()
+    for heading in MARKDOWN_HEADING.findall(read(document)):
+        anchor = re.sub(r"[^\w\s-]", "", heading.casefold())
+        anchors.add(re.sub(r"\s+", "-", anchor.strip()))
+    return anchors
 
 
 def local_links(document):
@@ -736,6 +746,35 @@ class DocumentationConsistencyTests(unittest.TestCase):
                         RFC2119_KEYWORDS,
                         f"{relative}: boundary cell must use RFC 2119 wording",
                     )
+
+    def test_achievement_manager_and_entity_sections_link_both_boundaries(self):
+        navigation = SKILL_ROOT / "references" / "source-code-navigation"
+        core = navigation / "core.md"
+        items = navigation / "items.md"
+        core_manager_section = markdown_section(core, "## Managers")
+        items_achievement_section = markdown_section(items, "## Achievement System")
+
+        core_links = [
+            (text, target)
+            for text, target in MARKDOWN_LINK_WITH_TEXT.findall(core_manager_section)
+            if target.startswith("items.md#")
+        ]
+        items_links = [
+            (text, target)
+            for text, target in MARKDOWN_LINK_WITH_TEXT.findall(items_achievement_section)
+            if target.startswith("core.md#")
+        ]
+
+        self.assertEqual(len(core_links), 1)
+        self.assertEqual(len(items_links), 1)
+        self.assertIn("items", core_links[0][0].casefold())
+        self.assertIn("achievement", core_links[0][0].casefold())
+        self.assertIn("core", items_links[0][0].casefold())
+        self.assertIn("achievementsmanager", items_links[0][0].casefold())
+        self.assertEqual(core_links[0][1], "items.md#achievement-system")
+        self.assertEqual(items_links[0][1], "core.md#achievementsmanagercs")
+        self.assertIn("achievement-system", heading_anchors(items))
+        self.assertIn("achievementsmanagercs", heading_anchors(core))
 
     def test_unity_relations_route_direct_bindings_without_conflict(self):
         text = normalized(

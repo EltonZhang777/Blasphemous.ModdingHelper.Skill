@@ -156,6 +156,8 @@ Inherits `ObjectEffect` — Modifies player attribute values. `EffectMode` enum:
 
 ## Achievement System
 
+Achievement entity, state, backend helper, and checker inventory. Manager lifecycle, persistence, wiring, and runtime flow MUST follow [Core AchievementsManager lifecycle and persistence](core.md#achievementsmanagercs); this section MUST remain the sole achievement-entity inventory.
+
 ### Framework/Achievements/Achievement.cs
 Serializable achievement class. Core properties: `Id`, `Progress` (0-100f), `Name`, `Description`, `Image`, `Status` (LOCKED/UNLOCKED/HIDDEN), `PreserveProgressInNewGamePlus`, `CanBeHidden`. Core methods: `AddProgress(float)`, `AddProgressSafeTo99(float)`, `Grant()`, `IsGranted()`. Localization keys are `Achievements/<Id>_NAME` / `_DESC`.
 
