@@ -19,13 +19,17 @@ ROUTED_REFERENCES = {
         "Mod Test",
         "skills/blasphemous-modding-helper/references/sub-skills/blasphemous-modding-test.md",
     ),
+    "blasphemous-modding-helper:save-analysis": (
+        "Save Analysis",
+        "skills/blasphemous-modding-helper/references/sub-skills/save-analysis.md",
+    ),
     "blasphemous-modding-helper:localization-lookup": (
         "Localization Lookup",
         "skills/blasphemous-modding-helper/references/sub-skills/localization-lookup.md",
     ),
-    "blasphemous-modding-helper:save-analysis": (
-        "Save Analysis",
-        "skills/blasphemous-modding-helper/references/sub-skills/save-analysis.md",
+    "blasphemous-modding-helper:unity-project-navigation": (
+        "Unity Project Navigation",
+        "skills/blasphemous-modding-helper/references/sub-skills/unity-project-navigation.md",
     ),
 }
 
@@ -294,6 +298,28 @@ class ReleaseMetadataTests(unittest.TestCase):
                 / "marketplace.json"
             ).read_text(encoding="utf-8")
         )
+        version_match = re.search(
+            r"^version:\s*([^\s#]+)\s*$",
+            VERSION_SOURCE.read_text(encoding="utf-8"),
+            re.MULTILINE,
+        )
+        self.assertIsNotNone(version_match)
+        version = version_match.group(1)
+        workflows = re.search(
+            r"(?ms)^- \*\*Automatically routed workflows\*\*:\s*\n"
+            r"(.*?)(?=^- \*\*|\Z)",
+            readme,
+        )
+        self.assertIsNotNone(workflows)
+        labels = re.findall(
+            r"^  - \*\*([^*]+)\*\* —",
+            workflows.group(1),
+            re.MULTILINE,
+        )
+        self.assertEqual(
+            labels,
+            [label for label, _ in ROUTED_REFERENCES.values()],
+        )
 
         self.assertEqual(set(lock["references"]), set(ROUTED_REFERENCES))
         self.assertIn(
@@ -311,6 +337,7 @@ class ReleaseMetadataTests(unittest.TestCase):
         for key, (label, path) in ROUTED_REFERENCES.items():
             with self.subTest(reference=key):
                 entry = lock["references"][key]
+                self.assertEqual(entry["version"], version)
                 self.assertEqual(entry["path"], path)
                 self.assertTrue((REPOSITORY_ROOT / path).is_file())
                 self.assertIn(label, readme)

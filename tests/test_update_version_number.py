@@ -101,7 +101,7 @@ class UpdateVersionNumberTests(unittest.TestCase):
                 )
                 for path in MANIFESTS
             ),
-            11,
+            12,
         )
 
     def test_missing_manifest_fails_before_writing_other_manifests(self):
