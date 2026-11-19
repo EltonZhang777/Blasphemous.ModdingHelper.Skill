@@ -67,6 +67,50 @@ DEPENDENCY_GUIDANCE = (
     SKILL_ROOT / "references" / "sub-skills" / "referencing-modding-api.md",
 )
 
+TOOLS_ITEMS_CATEGORIES = {
+    "Penance Related": frozenset(
+        {
+            "BloodPenitenceBeadEffect.cs",
+            "GuiltPenitenceBeadEffect.cs",
+        }
+    ),
+    "Prayer Attack": frozenset(
+        {
+            "PenitentAreaAttack.cs",
+            "PenitentCrawlerOrbsEffect.cs",
+            "PenitentDivineLightEffect.cs",
+            "PenitentFlamePillarsEffect.cs",
+            "PenitentGuardianEffect.cs",
+            "PenitentLightBeamEffect.cs",
+            "PenitentMultishotEffect.cs",
+            "PenitentTeleportToPriedieu.cs",
+            "PR203ElmFireLoopEffect.cs",
+            "StuntPrayerEffect.cs",
+        }
+    ),
+    "Relic/Quest Item Effects": frozenset(
+        {
+            "ChaliceEffect.cs",
+            "DirtyNailRelicEffect.cs",
+            "FamiliarSpawnEffect.cs",
+            "IncorruptHandBell.cs",
+            "IncorruptHandConfig.cs",
+            "SilverLungRelicEffect.cs",
+        }
+    ),
+    "General Effect Tools": frozenset(
+        {
+            "Invulnerability.cs",
+            "ItemAudio.cs",
+            "ItemFlag.cs",
+            "ItemGhostTrail.cs",
+            "ItemTemporalEffect.cs",
+            "ObjectEffect_ChangeItem.cs",
+        }
+    ),
+}
+TOOLS_ITEMS_CLASSES = frozenset().union(*TOOLS_ITEMS_CATEGORIES.values())
+
 APPROVED_CANONICAL_OWNERS = frozenset(
     {
         "SKILL.md",
@@ -775,6 +819,55 @@ class DocumentationConsistencyTests(unittest.TestCase):
         self.assertEqual(items_links[0][1], "core.md#achievementsmanagercs")
         self.assertIn("achievement-system", heading_anchors(items))
         self.assertIn("achievementsmanagercs", heading_anchors(core))
+
+    def test_tools_items_effect_table_is_the_sole_complete_inventory(self):
+        items = SKILL_ROOT / "references" / "source-code-navigation" / "items.md"
+        inventory = markdown_section(
+            items,
+            "#### Special Item Effects (Tools/Items/)",
+        )
+        inventory_classes = []
+        for line in inventory.splitlines():
+            cells = [cell.strip() for cell in line.strip().strip("|").split("|")]
+            if len(cells) == 3 and cells[0].endswith(".cs"):
+                inventory_classes.append(cells[0])
+
+        self.assertEqual(len(inventory_classes), 24)
+        self.assertEqual(set(inventory_classes), TOOLS_ITEMS_CLASSES)
+        self.assertEqual(len(inventory_classes), len(set(inventory_classes)))
+        for category, expected_classes in TOOLS_ITEMS_CATEGORIES.items():
+            category_match = re.search(
+                rf"\*\*{re.escape(category)}:\*\*\s*(.*?)(?=\n\*\*|\Z)",
+                inventory,
+                re.DOTALL,
+            )
+            self.assertIsNotNone(category_match, category)
+            category_classes = set(
+                re.findall(
+                    r"^\|\s*([A-Za-z0-9_]+\.cs)\s*\|",
+                    category_match.group(1),
+                    re.MULTILINE,
+                )
+            )
+            self.assertEqual(category_classes, expected_classes, category)
+
+        pointer = markdown_section(items, "## Special Item Tools")
+        self.assertFalse(set(re.findall(r"[A-Za-z0-9_]+\.cs", pointer)))
+        pointer_names = set(re.findall(r"[A-Za-z0-9_]+", pointer))
+        class_names = {class_name.removesuffix(".cs") for class_name in TOOLS_ITEMS_CLASSES}
+        self.assertFalse(pointer_names & class_names)
+        links = [
+            (text, target)
+            for text, target in MARKDOWN_LINK_WITH_TEXT.findall(pointer)
+            if target == "#special-item-effects-toolsitems"
+        ]
+        self.assertEqual(len(links), 1)
+        self.assertIn("Special Item Effects", links[0][0])
+        self.assertIn("special-item-effects-toolsitems", heading_anchors(items))
+
+        items_text = read(items)
+        for class_name in TOOLS_ITEMS_CLASSES:
+            self.assertEqual(items_text.count(class_name), 1, class_name)
 
     def test_unity_relations_route_direct_bindings_without_conflict(self):
         text = normalized(
