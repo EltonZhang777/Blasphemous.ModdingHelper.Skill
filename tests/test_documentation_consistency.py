@@ -824,13 +824,14 @@ class DocumentationConsistencyTests(unittest.TestCase):
             "the envelope section must state schema_version 1",
         )
 
-        canonical_link = (
-            "[Version-1 document envelope]"
-            "(MAIN.md#version-1-document-envelope)"
-        )
         for filename in UNITY_ENVELOPE_LINK_TOPICS:
-            topic_text = read(UNITY_NAVIGATION_ROOT / filename)
-            self.assertIn(canonical_link, topic_text)
+            topic = UNITY_NAVIGATION_ROOT / filename
+            self.assertIn(
+                (main.resolve(), "version-1-document-envelope"),
+                list(local_link_references(topic)),
+                f"{filename} must link to the canonical envelope",
+            )
+            topic_text = read(topic)
             for number, paragraph in enumerate(topic_text.split("\n\n"), 1):
                 self.assertFalse(
                     all(f"`{field}`" in paragraph for field in UNITY_ENVELOPE_FIELDS),
@@ -838,6 +839,15 @@ class DocumentationConsistencyTests(unittest.TestCase):
                 )
             for token in UNITY_ENVELOPE_REQUIRED_TOKENS[filename]:
                 self.assertIn(f"`{token}`", topic_text)
+
+        for topic in sorted(UNITY_NAVIGATION_ROOT.glob("*.md")):
+            if topic == main:
+                continue
+            for number, paragraph in enumerate(read(topic).split("\n\n"), 1):
+                self.assertFalse(
+                    all(f"`{field}`" in paragraph for field in UNITY_ENVELOPE_FIELDS),
+                    f"{topic.name} paragraph {number} repeats the complete envelope",
+                )
 
     def test_routing_spec_lists_each_approved_route_owner(self):
         inventory = markdown_section(
