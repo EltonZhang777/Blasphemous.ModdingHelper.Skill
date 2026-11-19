@@ -26,6 +26,8 @@ Every Unity project-navigation query returns one JSON object. The public `schema
 
 The common top-level fields, in order, are `schema_version`, `command`, `status`, `project`, `query`, `results`, `limits`, `truncated`, `warnings`, and `error`. This roster defines common field ownership and ordering only; it does not add type, requiredness, or nullability rules. A query may add command-specific top-level fields around this common envelope.
 
+The roster order is documentation order only; it does not describe the serialized JSON key order.
+
 ## First query
 
 The first query is the read-only project summary:
