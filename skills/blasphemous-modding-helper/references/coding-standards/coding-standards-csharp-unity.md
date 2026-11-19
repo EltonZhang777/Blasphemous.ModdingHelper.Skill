@@ -2,11 +2,9 @@
 
 This reference is C# branch selected by [coding standards router](../sub-skills/coding-standards.md). Before applying a rule, the agent MUST read [Requirement levels](../requirement-levels-definitions.md). rules apply only after router's Mod-owned scope gate passes.
 
-## Scope and direct-copy handling
+## Branch applicability
 
-These standards MUST apply only to C# that Mod author can maintain in root of Caller Mod repository, including its source projects, `src/`, `Patches/`, and Mod-owned tests. They MUST NOT apply to decompiled game source, upstream Mods, dependency or vendor code, linked projects caller cannot change, generated output, build output, package caches, or other derived files.
-
-When task directly copies excluded code, agent MUST preserve that direct copy as-is. Mechanical namespace or path changes MAY be made when they are required for compilation. When code receives substantive new behavior or structural rewrite, new or changed code MUST follow these standards.
+This branch applies to Mod-owned C# tasks routed here. For Mod-owned scope, excluded-source handling, and direct-copy preservation, use the router's [Entry and scope requirements](../sub-skills/coding-standards.md#entry-and-scope-requirements).
 
 ## Compatibility and authority
 

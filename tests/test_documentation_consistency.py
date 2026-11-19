@@ -906,6 +906,89 @@ class DocumentationConsistencyTests(unittest.TestCase):
                         f"{relative}: boundary cell must use RFC 2119 wording",
                     )
 
+    def test_coding_standards_branches_defer_shared_ownership_to_router(self):
+        router = SKILL_ROOT / "references" / "sub-skills" / "coding-standards.md"
+        csharp = (
+            SKILL_ROOT
+            / "references"
+            / "coding-standards"
+            / "coding-standards-csharp-unity.md"
+        )
+        harmony = (
+            SKILL_ROOT
+            / "references"
+            / "coding-standards"
+            / "coding-standards-harmony-patching.md"
+        )
+        modding_api = (
+            SKILL_ROOT
+            / "references"
+            / "coding-standards"
+            / "coding-standards-moddingAPI.md"
+        )
+        scope_link = (
+            "../sub-skills/coding-standards.md#entry-and-scope-requirements"
+        )
+        game_api_link = (
+            "../sub-skills/coding-standards.md#mod-owned-game-api-access"
+        )
+
+        router_text = normalized(router)
+        for phrase in (
+            "preserve direct copy as-is",
+            "mechanical namespace or path changes may be made",
+            "use of the original game api must follow access levels in the original source",
+            "non-public members must be accessed using harmony",
+        ):
+            self.assertIn(phrase, router_text)
+
+        game_api_owners = [
+            document
+            for document in SKILL_ROOT.rglob("*.md")
+            if "## Mod-owned game API access" in read(document)
+        ]
+        self.assertEqual(game_api_owners, [router])
+
+        for document in (csharp, harmony, modding_api):
+            links = MARKDOWN_LINK.findall(read(document))
+            self.assertEqual(links.count(scope_link), 1, document)
+
+        for document in (csharp, harmony):
+            links = MARKDOWN_LINK.findall(read(document))
+            self.assertEqual(links.count(game_api_link), 1, document)
+            branch_text = normalized(document)
+            for repeated_rule in (
+                "direct copy as-is",
+                "mechanical namespace or path changes may be made",
+                "decompiled game source, upstream mods, dependency or vendor code",
+                "use of the original game api must follow access levels in the original source",
+                "non-public members must be accessed using harmony",
+            ):
+                self.assertNotIn(repeated_rule, branch_text, document)
+
+        csharp_text = normalized(csharp)
+        self.assertIn(
+            "this branch applies to mod-owned c# tasks routed here",
+            csharp_text,
+        )
+
+        harmony_text = normalized(harmony)
+        self.assertIn(
+            "this branch applies to harmony code mod author can maintain",
+            harmony_text,
+        )
+        self.assertIn(
+            "router selects the [C# and runtime Unity branch]"
+            "(coding-standards-csharp-unity.md) as its prerequisite",
+            read(harmony),
+        )
+
+        modding_api_text = normalized(modding_api)
+        self.assertIn(
+            "these rules must apply only to mod-owned c# in caller mod repository",
+            modding_api_text,
+        )
+
     def test_unity_relations_route_direct_bindings_without_conflict(self):
         text = normalized(
             SKILL_ROOT
