@@ -29,7 +29,6 @@ COMMON_REPORT_FIELDS = (
     "next action",
 )
 BRANCH_OWNED_REPORT_EXCEPTIONS = {
-    "references/sub-skills/moddingapi-persistence-save-format.md",
     "references/sub-skills/save-analysis.md",
 }
 COMPLETION_REPORT_BRANCHES = (
@@ -110,14 +109,14 @@ ROUTING_CONTRACTS = (
         "## Request routing",
         "## Shared entry gate",
         (
-            ("natural-language identify", "Localization lookup", "MUST NOT require configuration"),
+            ("natural-language identify", "Localization lookup", "documented configuration exception"),
             ("Find or explain decompiled game source", "Source analyzer", "source-path gate"),
             ("Inspect exported Unity project topology, assets, GUIDs, script assets, flattened Prefabs, Unity version, or scene-set summary", "Unity project navigation", "MUST keep exported asset evidence separate from C# behavior"),
             ("Diagnose BepInEx or Unity logs", "Log analyzer", "MUST resolve required log sources"),
-            ("Test a Mod; build/deploy/launch a profile", "Mod-test entry", "classify the request"),
+            ("Test a Mod; build/deploy/launch a profile", "Mod-test entry", "documented Automated xUnit configuration exception"),
             ("Generate, modify, review, or refactor Mod-owned C#", "Coding standards", "ownership boundary"),
             ("Need ModdingAPI documentation", "Referencing ModdingAPI", "local or release-aware reference"),
-            ("Analyze one explicit Blasphemous 1 save file or directory read-only", "Save analysis", "MUST require one explicit input path"),
+            ("Analyze one explicit Blasphemous 1 save file or directory read-only", "Save analysis", "configuration-free input and read-only boundary"),
         ),
     ),
     (
@@ -307,22 +306,35 @@ def normalized(path):
     return " ".join(read(path).split()).casefold()
 
 
-def common_report_fields_in_window(document):
-    text = " ".join(document.split()).casefold()
-    occurrences = re.finditer(
-        r"\b(?:status|completion evidence|blocked reason|next action)\b",
-        text,
+def has_owner_relation(clause, owner, subject):
+    clause = " ".join(clause.casefold().split())
+    owner = re.escape(owner.casefold())
+    subject = re.escape(subject.casefold())
+    owner_target = "here" if owner == "here" else rf"by\s+(?:the\s+)?{owner}"
+    return bool(
+        re.search(
+            rf"\b{owner}\b\s+owns?\s+(?:the\s+)?{subject}\b",
+            clause,
+        )
+        or re.search(
+            rf"\b{subject}\b\s+(?:is|are)\s+owned\s+{owner_target}\b",
+            clause,
+        )
     )
-    for occurrence in occurrences:
-        window = text[occurrence.start():occurrence.start() + 600]
-        present = {
+
+
+def common_report_fields_in_paragraph(document):
+    present = set()
+    for line in document.splitlines():
+        line = " ".join(line.split()).casefold()
+        line_fields = {
             field
             for field in COMMON_REPORT_FIELDS
-            if re.search(rf"\b{re.escape(field)}\b", window)
+            if re.search(rf"\b{re.escape(field)}\b", line)
         }
-        if len(present) == len(COMMON_REPORT_FIELDS):
-            return present
-    return set()
+        if len(line_fields) > len(present):
+            present = line_fields
+    return present
 
 
 def markdown_section(path, heading):
@@ -439,6 +451,22 @@ class DocumentationConsistencyTests(unittest.TestCase):
         self.assertIn("may add status categories", contract)
         self.assertIn("blocked` or `failed`, the report must give its exact", contract)
         self.assertIn("save analysis remains a documented exception", contract)
+        self.assertEqual(
+            len(common_report_fields_in_paragraph(
+                "status, completion evidence, blocked reason"
+            )),
+            3,
+        )
+        self.assertEqual(
+            len(common_report_fields_in_paragraph(
+                "next action, blocked reason, completion evidence, status"
+            )),
+            4,
+        )
+        self.assertEqual(
+            len(common_report_fields_in_paragraph("status\nnext action")),
+            1,
+        )
 
         for relative in COMPLETION_REPORT_BRANCHES:
             document = SKILL_ROOT / relative
@@ -449,8 +477,8 @@ class DocumentationConsistencyTests(unittest.TestCase):
                 relative,
             )
             self.assertLess(
-                len(common_report_fields_in_window(raw)),
-                len(COMMON_REPORT_FIELDS),
+                len(common_report_fields_in_paragraph(raw)),
+                3,
                 relative,
             )
 
@@ -461,8 +489,8 @@ class DocumentationConsistencyTests(unittest.TestCase):
             if relative in BRANCH_OWNED_REPORT_EXCEPTIONS:
                 continue
             self.assertLess(
-                len(common_report_fields_in_window(read(document))),
-                len(COMMON_REPORT_FIELDS),
+                len(common_report_fields_in_paragraph(read(document))),
+                3,
                 relative,
             )
 
@@ -484,31 +512,56 @@ class DocumentationConsistencyTests(unittest.TestCase):
         self.assertTrue(shared_exceptions)
         self.assertTrue(
             any(
-                "owned here" in sentence and "not owned here" not in sentence
+                has_owner_relation(
+                    sentence,
+                    "here",
+                    "localization lookup branch, save analysis, and "
+                    "tracked-session stop exception scopes",
+                )
                 for sentence in shared_exceptions
             )
         )
         xunit_exception = "caller-owned automated xunit exception"
         self.assertTrue(
             any(
-                "not " not in sentence
-                and (
-                    ("mod-test entry" in sentence and "owns" in sentence)
-                    or ("owned by" in sentence and "mod-test entry" in sentence)
-                )
-                and xunit_exception in sentence
+                has_owner_relation(sentence, "mod-test entry", xunit_exception)
                 for sentence in sentences
             )
         )
+        self.assertTrue(
+            has_owner_relation(
+                "The caller-owned Automated xUnit exception is owned by "
+                "the Mod-test entry.",
+                "Mod-test entry",
+                xunit_exception,
+            )
+        )
+        for reversed_claim in (
+            "The Mod-test entry does not own the caller-owned Automated "
+            "xUnit exception.",
+            "The Mod-test entry says Invocation preflight owns the "
+            "caller-owned Automated xUnit exception.",
+            "The caller-owned Automated xUnit exception is owned by "
+            "Invocation preflight, not the Mod-test entry.",
+        ):
+            self.assertFalse(
+                has_owner_relation(
+                    reversed_claim,
+                    "Mod-test entry",
+                    xunit_exception,
+                ),
+                reversed_claim,
+            )
 
         mod_test = normalized(SKILL_ROOT / MOD_TEST_DOCUMENT)
         mod_test_sentences = re.split(r"(?<=[.!?;])\s+", mod_test)
         self.assertTrue(
             any(
-                "not " not in sentence
-                and "this entry" in sentence
-                and "owns" in sentence
-                and "caller-owned automated xunit configuration exception" in sentence
+                has_owner_relation(
+                    sentence,
+                    "this entry",
+                    "caller-owned automated xunit configuration exception",
+                )
                 for sentence in mod_test_sentences
             )
         )
