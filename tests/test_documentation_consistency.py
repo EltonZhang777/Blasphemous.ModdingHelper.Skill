@@ -21,6 +21,15 @@ DELEGATION_ROUTES = (
     ("references/sub-skills/localization-lookup.md", "## Read-only lookup delegation"),
 )
 MOD_TEST_DOCUMENT = "references/sub-skills/blasphemous-modding-test.md"
+CODING_STANDARDS_ROUTER = (
+    SKILL_ROOT / "references" / "sub-skills" / "coding-standards.md"
+)
+CSHARP_UNITY_STANDARDS = (
+    SKILL_ROOT
+    / "references"
+    / "coding-standards"
+    / "coding-standards-csharp-unity.md"
+)
 COMPLETION_CONTRACT = SKILL_ROOT / "references" / "config" / "invocation-preflight.md"
 COMMON_REPORT_FIELDS = (
     "status",
@@ -340,6 +349,14 @@ def local_links(document):
         if not target or target.startswith(("http://", "https://", "mailto:")):
             continue
         yield (document.parent / target).resolve()
+
+
+def documents_containing(text):
+    return [
+        document
+        for document in SKILL_ROOT.rglob("*.md")
+        if text in read(document)
+    ]
 
 
 class DocumentationConsistencyTests(unittest.TestCase):
@@ -907,13 +924,8 @@ class DocumentationConsistencyTests(unittest.TestCase):
                     )
 
     def test_coding_standards_branches_defer_shared_ownership_to_router(self):
-        router = SKILL_ROOT / "references" / "sub-skills" / "coding-standards.md"
-        csharp = (
-            SKILL_ROOT
-            / "references"
-            / "coding-standards"
-            / "coding-standards-csharp-unity.md"
-        )
+        router = CODING_STANDARDS_ROUTER
+        csharp = CSHARP_UNITY_STANDARDS
         harmony = (
             SKILL_ROOT
             / "references"
@@ -942,11 +954,7 @@ class DocumentationConsistencyTests(unittest.TestCase):
         ):
             self.assertIn(phrase, router_text)
 
-        game_api_owners = [
-            document
-            for document in SKILL_ROOT.rglob("*.md")
-            if "## Mod-owned game API access" in read(document)
-        ]
+        game_api_owners = documents_containing("## Mod-owned game API access")
         self.assertEqual(game_api_owners, [router])
 
         for document in (csharp, harmony, modding_api):
@@ -987,6 +995,42 @@ class DocumentationConsistencyTests(unittest.TestCase):
         self.assertIn(
             "these rules must apply only to mod-owned c# in caller mod repository",
             modding_api_text,
+        )
+
+    def test_unity_coding_baseline_has_one_normative_owner(self):
+        baseline = "2017.4.40f1"
+        router = CODING_STANDARDS_ROUTER
+        csharp = CSHARP_UNITY_STANDARDS
+        topology = (
+            SKILL_ROOT
+            / "references"
+            / "unity-project-navigation"
+            / "topology.md"
+        )
+
+        owners = documents_containing(baseline)
+        self.assertEqual(owners, [router])
+        self.assertIn(f"Unity `{baseline}`", read(router))
+
+        baseline_link = (
+            "../sub-skills/coding-standards.md#coding-specifications"
+        )
+        for document in (csharp, topology):
+            content = read(document)
+            self.assertNotIn(baseline, content, document)
+            self.assertEqual(
+                MARKDOWN_LINK.findall(content).count(baseline_link),
+                1,
+                document,
+            )
+
+        self.assertIn(
+            "caller's actual compiler target",
+            normalized(csharp),
+        )
+        self.assertIn(
+            "project.unity_major_compatible",
+            read(topology),
         )
 
     def test_unity_relations_route_direct_bindings_without_conflict(self):

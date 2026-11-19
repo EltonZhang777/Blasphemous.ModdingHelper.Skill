@@ -10,7 +10,7 @@ This branch applies to Mod-owned C# tasks routed here. For Mod-owned scope, excl
 
 The canonical guidance for Mod-owned game API access is in the [Mod-owned game API access reminder](../sub-skills/coding-standards.md#mod-owned-game-api-access).
 
-Caller's actual compiler target, project references, and referenced game or ModdingAPI assemblies MUST determine whether syntax, BCL APIs, Unity APIs, and member signatures are legal. Unity `2017.4.40f1` baseline and this reference provide defaults; they MUST NOT override verified project or API constraint.
+Caller's actual compiler target, project references, and referenced game or ModdingAPI assemblies MUST determine whether syntax, BCL APIs, Unity APIs, and member signatures are legal. The Coding-standards router's [Unity coding baseline](../sub-skills/coding-standards.md#coding-specifications) and this reference provide defaults; they MUST NOT override verified project or API constraint.
 
 Agent MUST inspect narrowest authoritative source for compatibility question:
 

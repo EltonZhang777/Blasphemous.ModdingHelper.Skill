@@ -18,7 +18,7 @@ The version-1 envelope reports:
 
 - `project.root`: the project-relative marker `.`. The caller supplies the actual root; public output does not repeat its absolute location.
 - `project.unity_version`: the value from `ProjectSettings/ProjectVersion.txt`, or `null`.
-- `project.unity_major_compatible`: whether the detected major version matches the Unity `2017.4.40f1` baseline, or `null` when unknown.
+- `project.unity_major_compatible`: whether the detected major version matches the [Unity coding baseline](../sub-skills/coding-standards.md#coding-specifications), or `null` when unknown.
 - `project.included_roots`: physical `Assets` and optional `Packages` roots that were scanned.
 - `results[0].file_counts`: total files plus `.unity`, `.prefab`, `.asset`, `.cs`, `.meta`, and `other` counts.
 - `results[0].scene_counts`: total scenes, complete five-layer sets, incomplete sets, and standalone scenes.
