@@ -8,7 +8,7 @@ The workflow must preserve both log sources after the user confirms that the Tes
 
 ## Rationale
 
-The workflow needs stable evidence for a user-confirmed Test session without turning every Current log read into a persistent archive. The existing dynamic-baseline rule therefore has one narrow, accepted exception for completed Test-session data. The decision, operational behavior, and safety boundary are already established; this repository specification records why the exception exists and what it must achieve, while the installed Real-profile reference owns how to perform it.
+The workflow needs stable evidence for a user-confirmed Test session without turning every Current log read into a persistent archive. The existing no-complete-copy rule in [ADR 0005](../adr/0005-dynamic-log-baseline-classification.md) therefore has one narrow, accepted exception for completed Test-session data. The decision, operational behavior, and safety boundary are already established; this repository specification records why the exception exists and what it must achieve, while the installed Real-profile reference owns how to perform it.
 
 ## Requirements
 

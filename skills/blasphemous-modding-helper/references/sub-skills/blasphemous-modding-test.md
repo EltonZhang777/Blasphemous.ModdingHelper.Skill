@@ -15,8 +15,8 @@ The following terms are distinct and MUST be used consistently in route and comp
 
 | Term | Meaning and boundary |
 | --- | --- |
-| `Current log` | Live configured BepInEx/Unity sources read for diagnosis with explicit `--current`; it is not completed-session evidence. |
-| `Test log snapshot` | Complete, session-bound BepInEx/Unity evidence captured for one Test session with explicit `--snapshot`; it never falls back to a live log. |
+| `Current log` | Live configured BepInEx/Unity sources selected for diagnosis through the explicit Current log source mode; it is not completed-session evidence. |
+| `Test log snapshot` | Complete, session-bound BepInEx/Unity evidence selected for one completed Test session through the explicit snapshot source mode; it never falls back to a live log. |
 | `Player-performed in-game verification` | Player-operated observation of in-game behavior, kept separate from Computer Use automated in-game test evidence, CLI, startup, test-runner output, and profile operations. |
 | `Computer Use automated in-game test` | Automated in-game evidence produced through Computer Use, kept separate from Player-performed in-game verification, Automated xUnit output, and Real-profile operations. |
 | `Automated xUnit test` | Deterministic caller-Mod test run through the standard xUnit/.NET runner without a real profile or game process. |

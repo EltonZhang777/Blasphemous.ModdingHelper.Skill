@@ -21,6 +21,7 @@ DELEGATION_ROUTES = (
     ("references/sub-skills/localization-lookup.md", "## Read-only lookup delegation"),
 )
 MOD_TEST_DOCUMENT = "references/sub-skills/blasphemous-modding-test.md"
+LOG_ANALYZER = SKILL_ROOT / "references" / "sub-skills" / "log-analyzer.md"
 SNAPSHOT_SPEC = REPOSITORY_ROOT / "docs" / "specs" / "manual-test-log-snapshots.md"
 SNAPSHOT_ADR = (
     REPOSITORY_ROOT
@@ -325,20 +326,16 @@ class DocumentationConsistencyTests(unittest.TestCase):
             r"\bPlayer-performed\s+verification\b",
             flags=re.IGNORECASE,
         )
-        tracked = subprocess.run(
-            ["git", "ls-files", "--", "*.md"],
-            cwd=REPOSITORY_ROOT,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            check=True,
-        ).stdout.splitlines()
         documents = [
-            REPOSITORY_ROOT / path
-            for path in tracked
-            if path != "GLOSSARY.md" and not path.startswith("docs/handoff/")
+            document
+            for document in REPOSITORY_ROOT.rglob("*.md")
+            if document.relative_to(REPOSITORY_ROOT).as_posix() != "GLOSSARY.md"
+            and not document.relative_to(REPOSITORY_ROOT)
+            .as_posix()
+            .startswith("docs/handoff/")
         ]
         documents.append(REPOSITORY_ROOT / "skills-lock.json")
+        documents.append(REPOSITORY_ROOT / "tests" / "test_modding_api_acceptance.py")
 
         for document in documents:
             text = read(document)
@@ -510,8 +507,8 @@ class DocumentationConsistencyTests(unittest.TestCase):
             "any delegated log evidence work",
             "modding_profile_path",
             "unity_log_dir",
-            "explicit `--current` for live diagnosis",
-            "`--snapshot` for a completed test session",
+            "the explicit current log source mode for live diagnosis",
+            "the completed-session snapshot source mode for a test session",
             "bepinex-first analysis",
             "must not switch or silently fall back",
             "exact source/path, gap",
@@ -693,9 +690,9 @@ class DocumentationConsistencyTests(unittest.TestCase):
             "Real-profile test",
         ):
             self.assertIn(term, shared)
-        self.assertIn("--current", shared)
+        self.assertIn("explicit Current log source mode", shared)
         self.assertIn("not completed-session evidence", shared)
-        self.assertIn("--snapshot", shared)
+        self.assertIn("explicit snapshot source mode", shared)
         self.assertIn("never falls back to a live log", shared)
         self.assertIn("mod_loaded", shared)
         self.assertIn("not gameplay proof", shared)

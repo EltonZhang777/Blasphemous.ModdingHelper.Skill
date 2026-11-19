@@ -36,7 +36,7 @@ def build_parser() -> argparse.ArgumentParser:
         epilog=(
             "Migrated Skill behavior runs through Python entry points. "
             "The Node.js installer is tested separately; live GitHub, Steam, "
-            "game, and Manual verification remain opt-in."
+            "game, and Player-performed in-game verification remain opt-in."
         ),
     )
     parser.add_argument(

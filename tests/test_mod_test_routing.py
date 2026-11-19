@@ -15,6 +15,7 @@ AUTOMATED = REFERENCES / "blasphemous-modding-test-automated-xunit.md"
 REAL_PROFILE = REFERENCES / "blasphemous-modding-test-real-profile.md"
 COORDINATION = REFERENCES / "blasphemous-modding-test-in-game-coordination.md"
 PLAYER = REFERENCES / "blasphemous-modding-test-player-verification.md"
+LOG_ANALYZER = REFERENCES / "log-analyzer.md"
 DELEGATION_REFERENCES = SKILL_ROOT / "references" / "subagent-delegation"
 GENERAL_DELEGATION = DELEGATION_REFERENCES / "subagent-delegation-general-guidelines.md"
 XUNIT_DELEGATION = DELEGATION_REFERENCES / "xunit-testing-delegation.md"
@@ -288,18 +289,30 @@ class ModTestRoutingDocumentationTests(unittest.TestCase):
         self.assertIn("compatibility-layer policy", verification)
 
     def test_cli_help_and_parser_tests_are_the_only_argument_grammar_owners(self):
-        for document in (REAL_PROFILE, VERIFICATION, MOD_TEST_SPEC):
+        owners = (REAL_PROFILE, VERIFICATION, MOD_TEST_SPEC)
+        for document in owners:
             text = read(document)
             self.assertIn("`--help`", text, document)
             self.assertIn("root and subcommand `--help`", text.casefold(), document)
             self.assertIn("parser tests", text.casefold(), document)
             self.assertIn("sole owners of flags and argument grammar", text.casefold(), document)
+
+        for document in (*owners, SHARED, LOG_ANALYZER):
+            text = read(document)
             self.assertNotIn("<TEST_CLI>", text, document)
             self.assertNotIn("Common options are accepted", text, document)
             self.assertNotIn("| Option | Meaning |", text, document)
             self.assertNotIn("Invocation template", text, document)
             self.assertNotIn("```powershell", text.casefold(), document)
             self.assertNotIn("```bash", text.casefold(), document)
+            self.assertIsNone(
+                re.search(
+                    r"(?<![\w-])--(?:current|snapshot|full|force|"
+                    r"stop-decision|force-stop-decision)\b",
+                    text.casefold(),
+                ),
+                document,
+            )
 
     def test_real_profile_contract_covers_gate_prerequisites_and_states(self):
         text = read(REAL_PROFILE).casefold()

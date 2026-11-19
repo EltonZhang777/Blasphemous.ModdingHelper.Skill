@@ -18,7 +18,7 @@ Before log analysis, agent MUST complete [Invocation preflight](../config/invoca
 
 ## Read-only evidence delegation
 
-Any delegated log evidence work MUST follow the shared [Read-only evidence delegation](../subagent-delegation/read-only-evidence-delegation.md) authority. The main agent MUST complete [Invocation preflight](../config/invocation-preflight.md), bound the permitted log sources and session, and select one evidence mode before delegating: explicit `--current` for live diagnosis or `--snapshot` for a completed Test session. For current evidence, the main agent MUST resolve `modding_profile_path` and the configured `unity_log_dir` whenever Unity evidence is in scope; for snapshot evidence, it MUST identify the Test session and its snapshot. The child MUST use only the supplied paths and mode, preserve BepInEx-first analysis and the diagnostic ownership and provenance rules below, and MUST NOT switch or silently fall back between current logs and a Test snapshot. Missing, unreadable, or incomplete evidence MUST be returned with the exact source/path, gap, and applicable recovery action for the main agent. The shared authority's child boundaries apply, including its restrictions on configuration changes, log writes, worktree creation, and user decisions.
+Any delegated log evidence work MUST follow the shared [Read-only evidence delegation](../subagent-delegation/read-only-evidence-delegation.md) authority. The main agent MUST complete [Invocation preflight](../config/invocation-preflight.md), bound the permitted log sources and session, and select one evidence mode before delegating: the explicit Current log source mode for live diagnosis or the completed-session snapshot source mode for a Test session. For current evidence, the main agent MUST resolve `modding_profile_path` and the configured `unity_log_dir` whenever Unity evidence is in scope; for snapshot evidence, it MUST identify the Test session and its snapshot. The child MUST use only the supplied paths and mode, preserve BepInEx-first analysis and the diagnostic ownership and provenance rules below, and MUST NOT switch or silently fall back between current logs and a Test snapshot. Missing, unreadable, or incomplete evidence MUST be returned with the exact source/path, gap, and applicable recovery action for the main agent. The shared authority's child boundaries apply, including its restrictions on configuration changes, log writes, worktree creation, and user decisions.
 
 ## Analysis Approach
 
@@ -33,7 +33,7 @@ When mod-test CLI reports missing Unity log directory or log:
 
 1. Agent MUST ask user for directory that contains current Unity log.
 2. Agent MUST add `unity_log_dir: PATH` to active `config.yml`, or pass `--unity-log-dir PATH` for one-run override. active file is scope selected by [Invocation preflight](../config/invocation-preflight.md).
-3. Agent MUST re-run `logs SESSION_ID --current` or explicit startup-evidence wait.
+3. Agent MUST rerun the `logs` operation through the help-exposed Current log source mode, or explicit startup-evidence wait.
 
 This step is complete only when CLI resolves Unity log or warning remains visible with exact missing path and configuration file to update. CLI reads existing BepInEx and Unity logs in place; it does not create persistent log copies.
 
@@ -54,21 +54,13 @@ The launcher captures only pre-session file metadata (including size, digest, an
 
 ## Test-session analysis source
 
-For a completed Test session, agent MUST analyze the session-bound **Test log snapshot**:
-
-```text
-<TEST_CLI> logs SESSION_ID --snapshot
-```
+For a completed Test session, agent MUST analyze the session-bound **Test log snapshot** through the help-exposed completed-session source mode.
 
 The operation MUST identify the requested session, require a complete BepInEx and Unity snapshot, and report every affected source plus the recovery action when the snapshot is missing or incomplete. It MUST NOT silently read a later live profile log in that mode. Snapshot analysis MUST label the evidence source and expose the snapshot capture condition, process state, stop decision, and the stop result. A snapshot captured while the process was running remains valid session evidence but is not described as post-stop final output. A later recapture after process exit updates the same session snapshot and is the snapshot used by subsequent analysis.
 
-For live diagnosis, agent MUST explicitly request **Current log** evidence:
+For live diagnosis, agent MUST explicitly request **Current log** evidence through the help-exposed Current log source mode.
 
-```text
-<TEST_CLI> logs SESSION_ID --current
-```
-
-Current analysis continues to resolve `modding_profile_path` and `unity_log_dir` from the active configuration and keeps the existing bounded diagnostic ownership rules. `--current` is required; the CLI has no implicit current-log alias.
+Current analysis continues to resolve `modding_profile_path` and `unity_log_dir` from the active configuration and keeps the existing bounded diagnostic ownership rules. The explicit source mode is required; the CLI has no implicit current-log alias.
 
 ## Completion criteria
 

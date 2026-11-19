@@ -1,6 +1,6 @@
 # Blasphemous mod test acceptance record
 
-**Historical snapshot status:** Document reviewed on 2026-11-19 at HEAD 69031cb0a8a230594aa542b9ccc6ff893849adb3. This record preserves the evidence surface for issue #19 as a historical document review, not as fresh execution evidence.
+**Historical snapshot status:** Document reviewed on 2026-11-19 at HEAD 69031cb0a8a230594aa542b9ccc6ff893849adb3. That review identifies the source record's provenance; the later documentation edits in this branch were not executed or revalidated at that HEAD. This record preserves the evidence surface for issue #19 as a historical document review, not as fresh execution evidence.
 
 **Current gate status:** The current automated gate has not been revalidated at the document-review HEAD. No fresh local suite, real game, or Modding profile was run for this documentation change. The existing deferred Real-profile status remains below.
 
