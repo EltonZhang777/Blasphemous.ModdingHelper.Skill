@@ -11,8 +11,8 @@ Python CLI automates filesystem, build, process, and log operations. It does not
 ## Entry conditions
 
 1. Agent MUST complete [Invocation preflight](../config/invocation-preflight.md) before using the workflow. This sub-skill adds one profile-specific requirement: the active `config.yml` MUST define `modding_profile_path`; the agent MUST use the [config schema](../config/preferences-schema.md) and [first-time setup](../config/first-time-setup.md) when that field is missing or invalid.
-2. Agent MUST resolve a native Python 3.9+ interpreter before invoking the CLI. `PYTHON3` below means that resolved executable; it is not an arbitrary shell command. On Windows, agent MUST use the configured Python installation rather than assuming `python` or `py` is on `PATH`.
-3. The Python CLI is the only Skill entry point and MUST run on a native Windows, Linux, or macOS host. Bash or PowerShell may host the Python process, but they are not separate implementations. The CLI MUST reject Git Bash, Cygwin, WSL, Proton, Wine, and unsupported operating systems. Paths MUST remain quoted when they contain spaces.
+2. Agent MUST resolve a native Python 3.9+ interpreter before invoking the CLI. The resolved executable is reused throughout this branch and is not an arbitrary shell command. On Windows, agent MUST use the configured Python installation rather than assuming `python` or `py` is on `PATH`.
+3. The Python CLI is the only Skill entry point. Its support axis is native Windows, Linux, or macOS. Bash or PowerShell may host the Python process, but neither host is a platform or support combination. This branch owns the compatibility-layer policy: the CLI MUST reject Git Bash, Cygwin, WSL, Proton, Wine, and unsupported operating systems. Paths MUST remain quoted when they contain spaces.
 4. Agent MUST confirm that selected profile is disposable or mirror game installation. CLI operates on that profile's `Modding` root and launches its local game executable.
 
 Done when: agent can name active configuration file, project, profile, Python interpreter, and supported native host before any profile mutation is attempted.
@@ -23,27 +23,9 @@ Delegated Real-profile work MUST follow the shared [General subagent delegation 
 
 ## CLI entry point
 
-This branch inherits the command-context contract from [Invocation preflight](../config/invocation-preflight.md). CLI MUST run from caller's Mod repository; caller does not need repository checkout containing `skills/blasphemous-modding-helper`.
+This branch inherits command context and host invocation from [Invocation preflight](../config/invocation-preflight.md). The Python entry point is the installed Skill's `scripts/blasphemous_modding_test.py`; CLI MUST run from the caller's Mod repository. Caller does not need a repository checkout containing `skills/blasphemous-modding-helper`.
 
-The CLI entry point is the Python file below. `$PYTHON3` is the interpreter resolved by preflight:
-
-```text
-"$PYTHON3" "$SKILL_ROOT/scripts/blasphemous_modding_test.py"
-```
-
-PowerShell host invocation shape:
-
-```powershell
-& $PYTHON3 (Join-Path $SkillRoot 'scripts\blasphemous_modding_test.py') <command> [options]
-```
-
-Bash host invocation shape:
-
-```bash
-"$PYTHON3" "$SKILL_ROOT/scripts/blasphemous_modding_test.py" <command> [options]
-```
-
-Argument shapes below abbreviate the resolved Python invocation above as `<TEST_CLI>`. Agent MUST expand that placeholder with the Python executable and installed Skill-root path; it MUST NOT replace it with a legacy shell/JavaScript implementation or a checkout-relative script path.
+Root and subcommand `--help` output and the CLI parser tests are the sole owners of flags and argument grammar. This branch documents only command names and order, approvals, lifecycle safety, and evidence semantics; it MUST NOT reproduce option tables or host-specific command templates.
 
 CLI has six commands: `run`, `stop`, `clean`, `logs`, `snapshot`, and read-only `status`. session identifier printed by `run` is 32-character lowercase hexadecimal value and is required by `stop`, `clean`, `logs`, and `snapshot`.
 
@@ -53,53 +35,27 @@ The CLI emits user-facing stdout and stderr as UTF-8, including profile, project
 
 ### Agent-safe help and canonical flow
 
-Agents SHOULD inspect `<TEST_CLI> --help` first, then `<TEST_CLI> <command> --help` before invoking a command. Each subcommand help lists only that command's accepted options, explains context and per-invocation overrides where applicable, and includes a command-specific example. `stop` is the exception to normal context resolution: it accepts only `SESSION_ID` and optional `--force`.
+Agent SHOULD inspect root and subcommand `--help` before invoking a command. Each subcommand help lists only its accepted options, explains applicable context overrides, and provides a command-specific example. `stop` is the exception to normal context resolution: it operates only on recorded session identity and accepts no project, profile, launcher, log, build, artifact, or cleanup override.
 
-Canonical flow for a normal build, startup evidence, tracked stop, safe cleanup, and read-only status:
+The canonical lifecycle order is `run`, `logs` when explicitly selected live Current log diagnosis is required, `snapshot` after a clear completion result, `stop` only when the tracked game remains running, newest-first `clean`, and read-only `status` for session discovery. A Test log snapshot is analyzed with `logs` after `snapshot`; there is no implicit source mode.
 
-```text
-<TEST_CLI> run --project <PROJECT.csproj> --profile <PROFILE> --startup-timeout 60
-<TEST_CLI> logs SESSION_ID --current
-<TEST_CLI> snapshot SESSION_ID
-<TEST_CLI> stop SESSION_ID
-<TEST_CLI> clean SESSION_ID
-<TEST_CLI> status
-```
-
-The snapshot command comes before the optional stop. If it reports a pending approval, repeat it with the requested decision flag; stop the tracked session after capture only when the game remains running. If graceful stop does not finish, retry only the same tracked session with `<TEST_CLI> stop SESSION_ID --force`. `stop` does not accept project, profile, launcher, log-directory, artifact, build, or cleanup options.
-
-Common options are accepted by `run`, `clean`, `logs`, `snapshot`, and `status`:
-
-| Option | Meaning |
-| --- | --- |
-| `--project PATH` | Select one `.csproj`; without it, `run` requires exactly one `.csproj` in the current directory. `clean`, `logs`, and `status` use it only to resolve ambiguity. |
-| `--profile PATH` | Override `modding_profile_path` for this invocation. The configuration file is still required by commands that load context. |
-| `--launcher PATH` | Select a concrete launcher file for this invocation. It is a path, not a shell command. An explicit launcher emits a warning, especially when it is outside the profile. |
-| `--unity-log-dir PATH` | Override `unity_log_dir` for this invocation without editing `config.yml`. |
+`snapshot` comes before the optional stop. If it reports pending approval, ask the user and repeat only with the decision exposed by command help. If ordinary stop does not finish, request separate explicit force approval; force remains limited to the same tracked session.
 
 ### `run`: build, deploy, launch, and optionally wait
 
-```text
-<TEST_CLI> run [common options]
-    [--configuration Debug|Release]
-    [--artifact PATH]
-    [--dry-run]
-    [--startup-timeout SECONDS]
-```
-
-`run` uses the selected project and profile context, with explicit common options overriding saved configuration for this invocation. `--artifact` switches to deploy-only selection; `--dry-run` validates and prints the plan without deployment or launch.
+`run` uses the selected project and profile context. It normally builds and deploys; an explicitly selected artifact switches to deploy-only behavior; a dry-run validates and prints the plan without deployment or launch; an optional startup wait polls until the target is loaded or the wait expires. Command help owns the exact invocations.
 
 Expected behavior, in order:
 
 1. CLI MUST validate native environment, configuration, project selection, and profile.
-2. With no `--artifact`, CLI MUST run equivalent of `dotnet build <project.csproj> --configuration <configuration>`. `Debug` is default. Agent MUST use `--configuration Release` only when user explicitly requests release build; Debug may contain test statements and test code blocks.
+2. Without an explicit artifact, CLI MUST run an equivalent configured `dotnet build`. `Debug` is the default. Agent MUST select Release only when the user explicitly requests a release build; Debug may contain test statements and test code blocks.
 3. CLI MUST read project's declared `<TargetName>` and validate complete package under `publish/<TargetName>`.
 4. CLI MUST refuse conflicting game instance before deployment. CLI MUST copy every safe file below package root to matching relative path below profile's `Modding` root, creating only missing subdirectories.
 5. CLI MUST record deployment manifest and print deployment session identifier.
 6. CLI MUST launch selected profile-local executable with profile as its working directory and track exact process identity and child tree. CLI MUST NOT use Steam URI.
-7. CLI MUST print `launched` immediately when no timeout is requested. With `--startup-timeout SECONDS`, CLI MUST poll current log evidence until target mod is found or timeout expires, then perform one final evidence read at the timeout boundary.
+7. CLI MUST print `launched` immediately when no startup wait is requested. With an explicit startup wait, CLI MUST poll current log evidence until the target mod is found or the wait expires, then perform one final evidence read at the timeout boundary.
 
-`--dry-run` performs environment, project, profile, build/artifact, and package validation and prints file plan. It does not copy profile files or launch process. When no `--artifact` is provided, build still runs because build output is part of plan; use explicit artifact for no-build inspection.
+A dry run performs environment, project, profile, build/artifact, and package validation and prints the file plan. It does not copy profile files or launch a process. When no explicit artifact is provided, the build still runs because build output is part of the plan; select an explicit artifact for no-build inspection.
 
 Completion criterion: successful non-dry run prints session identifier, deployment state, launch state, and process ID; timed-out run prints timeout evidence and leaves process and session available for diagnosis.
 
@@ -107,9 +63,9 @@ Completion criterion: successful non-dry run prints session identifier, deployme
 
 Project selection is deterministic:
 
-- `--project PATH` MUST name existing `.csproj`.
-- Without `--project`, `run` accepts exactly one `.csproj` in current directory.
-- Zero projects or multiple projects require explicit `--project` and are usage/configuration failures.
+- An explicit project selection MUST name an existing `.csproj`.
+- Without an explicit selection, `run` accepts exactly one `.csproj` in the current directory.
+- Zero projects or multiple projects require explicit selection and are usage/configuration failures.
 
 Solution selection is deterministic:
 
@@ -127,7 +83,7 @@ Normal build artifact is package directory under `publish` directory selected by
 
 E.g. when project declares `TargetName` as `CustomBackgrounds`, every file under `publish/CustomBackgrounds/` is part of deployment: plugin assemblies, data dependencies, localization, images, JSON, and other resources. package-relative directory structure is preserved. CLI does not select one DLL or discard files by extension.
 
-Agent SHOULD use `--artifact PATH` only when exact input is already known:
+Agent SHOULD select an explicit artifact only when the exact input is already known:
 
 - Directory is treated as package root and is not rebuilt.
 - `.zip` is extracted into temporary state, validated, and then deployed; it never writes directly into profile during extraction.
@@ -155,17 +111,13 @@ Selected profile MUST also contain non-empty launcher. Known launchers are selec
 | Linux | `<profile>/Blasphemous.x86_64`, then `<profile>/Blasphemous` |
 | macOS | `<profile>/Blasphemous.app/Contents/MacOS/Blasphemous`, then `<profile>/Blasphemous` |
 
-`--launcher PATH` accepts one concrete existing file, checks executability where host requires it, and passes it directly to process API. It does not accept arbitrary shell syntax, pipelines, arguments, or command string. explicit path may be outside profile, but CLI emits warning; treat that as user-visible safety exception. game is started with `shell=False` and profile as its working directory.
+An explicit launcher selection accepts one concrete existing file, checks executability where the host requires it, and passes it directly to the process API. It does not accept arbitrary shell syntax, pipelines, arguments, or a command string. An explicit path may be outside the profile, but the CLI emits a warning; treat that as a user-visible safety exception. The game is started with `shell=False` and the profile as its working directory.
 
 Completion criterion: preflight has identified exact profile, `Modding` root, BepInEx root, and launcher, and any launcher override warning is visible to agent and user.
 
 ### `stop`: stop one tracked session
 
-```text
-<TEST_CLI> stop SESSION_ID [--force]
-```
-
-`stop` operates only on process identity recorded in that session manifest and its captured child tree. It never selects process by name and never attaches to unrelated game. Without `--force`, request normal stop; `--force` is limited to same tracked tree when graceful termination does not finish.
+`stop` operates only on process identity recorded in that session manifest and its captured child tree. It never selects a process by name and never attaches to an unrelated game. A normal stop is requested first; the help-exposed force mode is limited to the same tracked tree when graceful termination does not finish.
 
 Command is idempotent:
 
@@ -177,17 +129,13 @@ Completion criterion: tracked process is stopped or confirmed gone, and no unrel
 
 ### `logs`: read Current log or Test log snapshot
 
-```text
-<TEST_CLI> logs SESSION_ID [common options] [--full] (--current|--snapshot)
-```
+`logs` uses the selected profile and log-directory context; context overrides exposed by command help apply only to that invocation. Exactly one source mode is required: current/live reads the configured sources for **Current log** evidence, and completed-session mode reads the complete **Test log snapshot** associated with the Test session. There is no implicit source mode.
 
-`logs` uses the selected profile and log-directory context. `--project`, `--profile`, `--launcher`, and `--unity-log-dir` override saved values for this invocation; `--full` controls output size. Exactly one source flag is required: `--current` explicitly reads the configured live sources, called **Current log** evidence. `--snapshot` reads the complete **Test log snapshot** associated with the completed Test session. There is no implicit source mode.
+Test-session snapshot analysis never falls back to live sources: a missing or incomplete snapshot reports the affected source and tells the agent to rerun `snapshot` after recovery. Snapshot analysis prints the snapshot capture condition, process state, stop decision, and stop result, including a visible non-final condition for captures made while the game remained running.
 
-`--snapshot` analyzes the complete Test-session snapshot associated with `SESSION_ID`. It never falls back to live sources: a missing or incomplete snapshot reports the affected source and tells the agent to rerun `snapshot` after recovery. Snapshot analysis prints the snapshot capture condition, process state, stop decision, and stop result, including a visible non-final condition for captures made while the game remained running.
+Before invoking `snapshot`, apply the shared Player-performed in-game verification completion and session identity rules. A clear player result MUST be bound to exactly one session ID; an ambiguous result or session remains pending until the agent asks the user to identify it.
 
-Before invoking `snapshot`, apply the shared Player-performed in-game verification completion and session identity rules. A clear player result MUST be bound to exactly one `SESSION_ID`; an ambiguous result or session remains pending until the agent asks the user to identify it.
-
-CLI reads existing logs in place and stores only bounded evidence metadata in temporary session manifest. It does not create persistent log report or copy log contents. Default output is last 200 lines per source; `--full` prints complete current file. Evidence hits retain source label, concrete path, line number, match reason, kind, bounded text, and available `mod_id`/`mod_name` independently of the output tail, so early startup hits remain reportable without unbounded output.
+CLI reads existing logs in place and stores only bounded evidence metadata in the temporary session manifest. It does not create a persistent log report or copy log contents. Default output is the last 200 lines per source; an explicit full-output mode prints the complete current file. Evidence hits retain source label, concrete path, line number, match reason, kind, bounded text, and available `mod_id`/`mod_name` independently of the output tail, so early startup hits remain reportable without unbounded output.
 
 Sources are:
 
@@ -197,7 +145,7 @@ Unity:   <unity_log_dir>/output_log.txt       (Windows)
 Unity:   <unity_log_dir>/Player.log           (native Linux/macOS, then output_log.txt)
 ```
 
-`unity_log_dir` is optional in schema but REQUIRED to locate Unity log. On Windows, usual directory is `%USERPROFILE%/AppData/LocalLow/TheGameKitchen/Blasphemous`; agent MUST configure that directory explicitly when it is not already in `config.yml`. If directory or file is missing, CLI MUST print warning, agent MUST ask user for correct directory, and agent MUST save `unity_log_dir: PATH` in active `config.yml` after user supplies it. one-run `--unity-log-dir PATH` override is available while confirming value.
+`unity_log_dir` is optional in schema but REQUIRED to locate Unity log. On Windows, usual directory is `%USERPROFILE%/AppData/LocalLow/TheGameKitchen/Blasphemous`; agent MUST configure that directory explicitly when it is not already in `config.yml`. If directory or file is missing, CLI MUST print warning, agent MUST ask user for correct directory, and agent MUST save `unity_log_dir: PATH` in active `config.yml` after user supplies it. A one-run context override exposed by command help is available while confirming the value.
 
 `LogOutput.log` contains current BepInEx run and overwrites previous run; there is no BepInEx history or polling log to recover. The launcher records pre-session metadata, so an unchanged existing log is marked `stale` and ignored for this session unless its content changes after launch. If the changed log retains the exact pre-session byte prefix ending at a complete line boundary, structured diagnostics in that prefix may receive the `baseline` provenance label; rewritten or unproven content does not. Missing or unreadable BepInEx log is hard logs/readiness failure. Missing Unity log is warning and requires user handoff above.
 
@@ -212,7 +160,7 @@ Startup states are deliberately narrower than gameplay results:
 | `launched` | The selected profile-local launcher produced a safely tracked process, but current BepInEx readiness is not established. |
 | `ready` | The current BepInEx log contains an exact chainloader completion record: `Chainloader startup complete`, `Chainloader start-up complete`, `Chainloader initialized`, or `Chainloader initialised`. |
 | `mod_loaded` | `ready` plus current structured ModdingAPI or Mod Loader registration, or standard BepInEx loading evidence, matching a derived runtime alias exactly. |
-| `timeout` | `--startup-timeout` expired before `mod_loaded`; the session and process remain for diagnosis. |
+| `timeout` | The explicit startup wait expired before `mod_loaded`; the session and process remain for diagnosis. |
 
 Completion criterion: agent reports state, current/stale/missing status of both sources, relevant warnings, and bounded or full log output requested by user.
 
@@ -232,25 +180,15 @@ Every Real-profile test or verification report MUST include `status`, `completio
 
 ### `snapshot`: preserve completed-session logs
 
-```text
-<TEST_CLI> snapshot SESSION_ID [common options]
-<TEST_CLI> snapshot SESSION_ID --stop-decision approve|decline
-<TEST_CLI> snapshot SESSION_ID --force-stop-decision approve|decline
-```
+`snapshot` copies the complete BepInEx and configured Unity log bytes into the session's temporary `snapshots/` directory. It never changes the live log files, writes into the caller Mod repository or game profile, or infers an approval from silence. If the tracked process is already exited, capture is immediate. If it is still running, the first invocation returns `pending` without copying logs; ask the user for ordinary stop approval, then repeat with the help-exposed approve or decline decision.
 
-`snapshot` copies the complete BepInEx and configured Unity log bytes into the session's temporary `snapshots/` directory. It never changes the live log files, writes into the caller Mod repository or game profile, or infers an approval from silence. If the tracked process is already exited, capture is immediate. If it is still running, the first invocation returns `pending` without copying logs; ask the user for ordinary stop approval, then repeat with `--stop-decision approve` or `--stop-decision decline`.
-
-An approved ordinary stop reuses the tracked-process stop behavior and captures only after the process tree is confirmed exited. If ordinary stop fails, the operation remains `pending` and requires separate `--force-stop-decision approve` or `--force-stop-decision decline`; force approval is never inferred. An explicit refusal at either prompt, or a failed approved force stop, captures the current logs and records the running-process condition, stop decision, stop result, and any stop error. An unanswered prompt does not capture.
+An approved ordinary stop reuses the tracked-process stop behavior and captures only after the process tree is confirmed exited. If ordinary stop fails, the operation remains `pending` and requires a separate force-stop decision exposed by command help; force approval is never inferred. An explicit refusal at either prompt, or a failed approved force stop, captures the current logs and records the running-process condition, stop decision, stop result, and any stop error. An unanswered prompt does not capture.
 
 The manifest records per-source status, source and target paths, byte counts, SHA-256 digests, the capture condition, and process/stop metadata. A missing or failed source is reported independently and leaves any previously successful same-source copy in place; the overall snapshot is incomplete until both sources are copied. Snapshot files remain session data through archive and safe clean; original log paths and cleanup behavior are unchanged.
 
 ### `status`: read-only session view
 
-```text
-<TEST_CLI> status [common options]
-```
-
-`status` resolves context only to select the profile and display sessions. Its output is read-only; context options override saved values for this invocation, and no build, deployment, launch, log read, or cleanup option is accepted.
+`status` resolves context only to select the profile and display sessions. Its output is read-only; context overrides apply only to that invocation, and no build, deployment, launch, log read, or cleanup action is accepted.
 
 `status` prints selected context and sessions newest first. Each entry reports its role (`active`, `archived`, or `cleaned`), deployment history, cleanup completion, a read-only process observation, and evidence state. The deployment label is marked `current` only for the active session; archived or cleaned deployments are marked `history`. Cleanup is marked `complete` only when the manifest records `cleanup_state: cleaned`. A tracked process that has already exited may therefore appear as `process=exited (observation)` while its manifest remains unchanged; status never rewrites process state.
 
@@ -258,19 +196,14 @@ Completion criterion: agent can discover newest session and all older rollback s
 
 ### `clean`: newest-first safe rollback
 
-```text
-<TEST_CLI> clean SESSION_ID [common options]
-    [--remove-new-files]
-```
-
-`clean` resolves the session's profile context before rollback. `--project`, `--profile`, `--launcher`, and `--unity-log-dir` override saved values for this invocation; `--remove-new-files` is the only cleanup-specific mutation approval.
+`clean` resolves the session's profile context before rollback. Context overrides exposed by command help apply only to that invocation; explicit new-file removal is the only cleanup-specific mutation approval.
 
 Agent MUST stop session first, then clean it. CLI also refuses to clean while tracked game process is still running. Cleanup uses newest-first session stack:
 
 1. Clean newest cleanable session before any older session.
 2. Older session with newer active or archived rollback point is rejected; agent MUST NOT bypass this order.
 3. Overwritten files are restored only when their current hash still equals hash deployed by this session. file changed during testing is protected and causes safe clean to report conflict without silently overwriting it.
-4. Files first created by this session are retained by default, even after process stops. `--remove-new-files` explicitly approves removal only when file is still unchanged; changed, linked, or non-regular paths remain protected.
+4. Files first created by this session are retained by default, even after process stops. An explicit help-exposed removal approval applies only when the file is still unchanged; changed, linked, or non-regular paths remain protected.
 5. Session manifests remain in temporary state after cleanup, so repeated cleanup is idempotent and `status` can show result.
 6. `clean` prints one `Cleanup files:` entry for every completed package file using `action package-relative/path: reason`. Actions are `restored`, `removed`, or `retained`; protection conflicts use `protected package-relative/path: reason`. The same outcomes are persisted as `cleanup_outcomes` in the session manifest.
 
@@ -284,9 +217,9 @@ Shared [Invocation preflight](../config/invocation-preflight.md) owns configurat
 
 The shared gate result is the input to this branch: consume `PREFERENCES_SCOPE`, `PREFERENCES_FILE`, and the validation status before loading profile context; this branch MUST NOT rediscover configuration independently. The installed Skill root and caller Mod repository are explicit command context, and the selected Python 3.9+ interpreter is reused for every CLI operation.
 
-Explicit CLI options override selected configuration for that invocation: `--profile`, `--project`, `--launcher`, and `--unity-log-dir`. CLI does not rewrite configuration; after missing-log handoff, agent writes user-supplied Unity log directory into active file.
+Context overrides exposed by command help replace selected configuration for that invocation. CLI does not rewrite configuration; after missing-log handoff, agent writes user-supplied Unity log directory into active file.
 
-`stop SESSION_ID` is this workflow's implementation of tracked-session recovery exception and uses only recorded session state plus host process check. `run`, `clean`, `logs`, and `status` require normal Invocation preflight and profile gate.
+The tracked-session stop exception uses only recorded session state plus a host process check. `run`, `clean`, `logs`, and `status` require normal Invocation preflight and profile gate.
 
 The session/process boundary is strict: each `SESSION_ID` binds one lifecycle, profile, deployment manifest, and tracked process tree. A command with another session ID cannot cross session identity, attach to its process, or use its rollback state.
 
@@ -294,7 +227,7 @@ The session/process boundary is strict: each `SESSION_ID` binds one lifecycle, p
 
 The CLI's Real-profile workflow handles build, package, deployment, launch, log collection, process tracking, stop, and safe cleanup. Its output and startup logs are operational or startup evidence, not in-game evidence. Agent MUST NOT claim that `mod_loaded` proves game behavior.
 
-After startup evidence is available, the coordinator hands off to the selected [Player-performed in-game verification guide](blasphemous-modding-test-player-verification.md) or [Computer Use guide](blasphemous-modding-test-computer-use.md). Keep its in-game evidence separate from CLI state and session snapshots. Use `logs SESSION_ID --current` only when the user explicitly requests live diagnosis. No gameplay transcript or generated test report is required by this workflow. Use the existing [log analyzer](log-analyzer.md) for interpretation after test evidence is collected.
+After startup evidence is available, the coordinator hands off to the selected [Player-performed in-game verification guide](blasphemous-modding-test-player-verification.md) or [Computer Use guide](blasphemous-modding-test-computer-use.md). Keep its in-game evidence separate from CLI state and session snapshots. Use the Current log mode only when the user explicitly requests live diagnosis. No gameplay transcript or generated test report is required by this workflow. Use the existing [log analyzer](log-analyzer.md) for interpretation after test evidence is collected.
 
 ## Stable failures and recovery
 
@@ -306,10 +239,10 @@ CLI prints `Error [category]` and returns stable categories. Route recovery by e
 | `2` | usage/configuration | Invalid arguments, ambiguous project, unsupported host/OS, or compatibility layer. | Correct the invocation and use the resolved Python entry point on a native Windows, Linux, or macOS host. |
 | `10` | profile/configuration | Missing/invalid configuration, missing profile directories, missing BepInEx core, or missing/invalid launcher preflight. | Complete first-time setup, verify `modding_profile_path`, `Modding`, `BepInEx/core/BepInEx.dll`, and launcher; use explicit path overrides only for the intended invocation. |
 | `20` | build | `dotnet build` could not start, parse the project, or returned a failure. | Read the build output, fix the project/dependencies, and rerun. No old package is silently substituted. |
-| `30` | package artifact | Missing/empty package, unsafe directory/archive entry, missing `<TargetName>`, or explicit artifact is not a directory/zip. | Inspect `publish/<TargetName>`, pass the exact package directory with `--artifact`, or explicitly use a validated recovery zip. |
+| `30` | package artifact | Missing/empty package, unsafe directory/archive entry, missing `<TargetName>`, or explicit artifact is not a directory/zip. | Inspect `publish/<TargetName>`, select the exact package directory through help-exposed artifact input, or explicitly use a validated recovery zip. |
 | `40` | deployment | Destination preflight, copy, hash verification, or transaction rollback failed. | The agent MUST NOT manually delete profile files. If rollback succeeded, retry after fixing the cause. If rollback failed, retain the printed session ID, inspect the manifest/status, and resolve protected files with the user before any further deployment. |
 | `50` | launch | A matching game is already running, launcher start failed, or process identity could not be safely tracked. | Stop only the known session if applicable, verify the profile-local launcher, then rerun. Never attach to or kill an untracked process. |
-| `60` | logs/readiness | Current BepInEx log missing/unreadable or startup timeout. | Keep the session alive; run `logs SESSION_ID --current`, configure `unity_log_dir`, inspect current BepInEx output, then return to the shared [Mod-test entry](blasphemous-modding-test.md) and use [In-game test coordination](blasphemous-modding-test-in-game-coordination.md) before gameplay verification. Stop and clean when diagnosis is complete. |
+| `60` | logs/readiness | Current BepInEx log missing/unreadable or startup timeout. | Keep the session alive; read the Current log, configure `unity_log_dir`, inspect current BepInEx output, then return to the shared [Mod-test entry](blasphemous-modding-test.md) and use [In-game test coordination](blasphemous-modding-test-in-game-coordination.md) before gameplay verification. Stop and clean when diagnosis is complete. |
 | `70` | stop/clean | Unknown session/process state, running tracked process, newer session, changed file, or invalid rollback manifest. | Use `status`, stop the tracked process, clean newest-first, and preserve changed files. Retry only after the reported guard is resolved. |
 
 Deployment failures are transactional: partial copy is rolled back automatically when possible. failed rollback is hard stop with session identifier; it is not permission to remove whole `Modding` root. failure to archive previous sessions also attempts to roll back new deployment and reports whether that recovery succeeded.
@@ -318,17 +251,17 @@ Deployment failures are transactional: partial copy is rolled back automatically
 
 Agent MUST use this checklist for complete implementation or Real-profile operations:
 
-- [ ] Agent can invoke `run`, `stop`, `clean`, `logs`, and `status` with the documented argument contract through the same Python entry point on native Windows, Linux, and macOS.
-- [ ] Project selection is explicit when ambiguous; default builds use Debug; Release requires explicit option.
+- [ ] Agent can invoke `run`, `logs`, `snapshot`, `stop`, `clean`, and `status` with the help-owned argument contract through the same Python entry point on native Windows, Linux, and macOS.
+- [ ] Project selection is explicit when ambiguous; default builds use Debug; Release requires an explicit user request.
 - [ ] build package resolves to `publish/<TargetName>` and every file below that package root is planned and deployed with its relative path preserved.
 - [ ] explicit directory artifact works without build; explicit zip is temporary, path-validated, and never selected implicitly.
 - [ ] Profile preflight rejects incomplete profile, uses profile-local known launcher by default, and warns on explicit launcher override.
 - [ ] CLI never uses Steam URI, arbitrary shell command, process-name kill, or broad profile deletion.
 - [ ] successful run records session and process identity; repeated runs archive older sessions and print warning.
 - [ ] `stop` is limited to tracked process tree and is idempotent for exited or missing session state.
-- [ ] `clean` is newest-first, restores only hash-compatible overwritten files, retains new files by default, and requires `--remove-new-files` for unchanged new-file removal.
-- [ ] Current BepInEx and configured Unity logs produce bounded output by default and full output only with `--full`; missing Unity configuration produces visible handoff warning.
-- [ ] `logs` requires explicit `--current` or `--snapshot`; completed-session analysis never uses an implicit live-log mode.
+- [ ] `clean` is newest-first, restores only hash-compatible overwritten files, retains new files by default, and requires explicit approval for unchanged new-file removal.
+- [ ] Current BepInEx and configured Unity logs produce bounded output by default and full output only through an explicit full-output mode; missing Unity configuration produces visible handoff warning.
+- [ ] `logs` requires an explicit Current log or Test log snapshot source mode; completed-session analysis never uses an implicit live-log mode.
 - [ ] A snapshot is requested only after a clear completion result is bound to one session; ambiguous results or session identity remain unresolved.
 - [ ] Automated startup evidence is reported as `launched`, `ready`, `mod_loaded`, or `timeout`; in-game verification follows the guide selected by [In-game test coordination](blasphemous-modding-test-in-game-coordination.md).
 - [ ] Missing profile, build, artifact, launcher, log, timeout, deployment, and rollback conditions map to stable failure categories and recovery steps above.

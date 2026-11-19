@@ -646,7 +646,6 @@ class DocumentationConsistencyTests(unittest.TestCase):
         for relative in (
             "references/config/first-time-setup.md",
             "references/config/python-runtime.md",
-            "references/sub-skills/blasphemous-modding-test-real-profile.md",
             "references/sub-skills/referencing-modding-api.md",
         ):
             text = read(SKILL_ROOT / relative)
@@ -654,6 +653,16 @@ class DocumentationConsistencyTests(unittest.TestCase):
             self.assertIn("$SKILL_ROOT", text, relative)
             self.assertIn("& $PYTHON3", text, relative)
             self.assertIn("$SkillRoot", text, relative)
+
+        real_profile = read(
+            SKILL_ROOT / "references/sub-skills/blasphemous-modding-test-real-profile.md"
+        )
+        self.assertIn(
+            "[Invocation preflight](../config/invocation-preflight.md)",
+            real_profile,
+        )
+        self.assertNotIn('"$PYTHON3"', real_profile)
+        self.assertNotIn("& $PYTHON3", real_profile)
 
     def test_evidence_terms_keep_sources_and_gameplay_boundaries_distinct(self):
         shared = " ".join(

@@ -20,7 +20,7 @@ The workflow stores temporary session state for process ownership, deployment ma
 2. As an AI agent, I want a documented CLI contract, so that I can use the same operations on every supported platform.
 3. As a Windows user, I want the workflow to run through the supported Python runtime, so that I can test a mod without installing a second automation stack.
 4. As a Linux or macOS user, I want the same Python workflow to run on the native host, so that I can use the native game profile and launcher behavior.
-5. As a user on an unsupported shell or compatibility layer, I want an explicit unsupported-environment result, so that the workflow does not pretend to provide safe automation.
+5. As a user on an unsupported native operating system or compatibility layer, I want an explicit unsupported-environment result, so that the workflow does not pretend to provide safe automation.
 6. As a mod developer, I want the CLI to use the only project file in the current directory by default, so that common projects need no repeated path input.
 7. As a mod developer, I want multiple project files to require an explicit project selection, so that the CLI never builds an arbitrary project.
 8. As a mod developer, I want to override the project selection explicitly, so that monorepos and non-standard working directories remain usable.
@@ -107,7 +107,7 @@ The workflow stores temporary session state for process ownership, deployment ma
 - Current logs are read from their existing system locations. Default current-log output is bounded; full output is explicit. A user-confirmed completed Test session may additionally create its two-source snapshot in session data; no persistent log report or repository archive is created.
 - User-facing CLI output is UTF-8, and subprocess text is decoded explicitly with safe replacement for undecodable bytes. Unicode and space-containing path values remain intact across the lifecycle; replacement applies only to undecodable subprocess or log text.
 - The CLI returns stable categories: success, usage/configuration, profile/configuration, build, package, deployment/rollback, launch, log/readiness, and stop/clean.
-- Root and subcommand help are part of the agent-facing CLI contract. Each subcommand lists only its accepted options, explains applicable context overrides, and provides a canonical example; `stop` accepts only `SESSION_ID` and optional `--force`.
+- Root and subcommand `--help` output and parser tests are the sole owners of flags and argument grammar. Each subcommand lists only its accepted options, explains applicable context overrides, and provides a canonical example.
 - The sub-skill is the authority for the user-facing flow, manual gameplay boundary, acceptance criteria, and troubleshooting. The top-level skill links to it once.
 - This specification defines behavior only. It does not implement the CLI, modify a game profile, build a mod, or automate gameplay.
 
@@ -131,7 +131,7 @@ The workflow stores temporary session state for process ownership, deployment ma
 - MCP-based or scripted gameplay control.
 - Automated verification of visual, input, combat, menu, save, or other in-game behavior.
 - Automatic Steam URI launch or automatic discovery of Steam installations.
-- Automatic support for WSL, Git Bash, Proton, or other compatibility layers outside the native Windows and Bash contract.
+- Automatic support for compatibility layers outside the native Windows, Linux, and macOS OS axis. The Real-profile branch owns the compatibility-layer policy.
 - Unprompted log copies, generated test reports, or log archival in the mod repository.
 - Deleting or resetting the entire Modding root.
 - Removing newly deployed files without explicit user approval.

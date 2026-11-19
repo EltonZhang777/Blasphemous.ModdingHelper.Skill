@@ -21,6 +21,8 @@ XUNIT_DELEGATION = DELEGATION_REFERENCES / "xunit-testing-delegation.md"
 REAL_PROFILE_DELEGATION = DELEGATION_REFERENCES / "real-profile-testing-delegation.md"
 READ_ONLY_DELEGATION = DELEGATION_REFERENCES / "read-only-evidence-delegation.md"
 ROUTING_SPEC = REPOSITORY_ROOT / "docs" / "specs" / "modding-test-routing.md"
+MOD_TEST_SPEC = REPOSITORY_ROOT / "docs" / "specs" / "blasphemous-modding-test.md"
+VERIFICATION = REPOSITORY_ROOT / "docs" / "verification" / "blasphemous-modding-test.md"
 DOCUMENTS = (
     SHARED,
     AUTOMATED,
@@ -239,9 +241,9 @@ class ModTestRoutingDocumentationTests(unittest.TestCase):
         shared = read(SHARED).casefold()
 
         for phrase in (
-            "<test_cli> run",
-            "stop session_id",
-            "clean session_id",
+            "`run`",
+            "tracked-session stop exception",
+            "cleanup uses newest-first session stack",
             "status",
             "profile-local",
             "process tree",
@@ -253,6 +255,51 @@ class ModTestRoutingDocumentationTests(unittest.TestCase):
         ):
             self.assertIn(phrase, real)
         self.assertNotIn("<test_cli> run", shared)
+
+        canonical = real[real.index("canonical lifecycle order"):]
+        ordered = ("`run`", "`logs`", "`snapshot`", "`stop`", "`clean`", "`status`")
+        positions = [canonical.index(command) for command in ordered]
+        self.assertEqual(positions, sorted(positions))
+
+    def test_test_docs_keep_compatibility_policy_with_the_real_profile_owner(self):
+        real = read(REAL_PROFILE)
+        verification = read(VERIFICATION)
+        spec = read(MOD_TEST_SPEC)
+
+        self.assertIn("native Windows, Linux, or macOS", real)
+        self.assertIn("Bash or PowerShell may host the Python process", real)
+        self.assertIn("neither host is a platform or support combination", real)
+        for compatibility_layer in ("Git Bash", "Cygwin", "WSL", "Proton", "Wine"):
+            self.assertIn(compatibility_layer, real)
+
+        for document, text in (
+            (VERIFICATION, verification),
+            (MOD_TEST_SPEC, spec),
+        ):
+            text = text.casefold()
+            self.assertNotIn("native windows and bash contract", text, document)
+            prose = "\n".join(
+                line for line in text.splitlines() if "`test_" not in line
+            )
+            for compatibility_layer in ("git bash", "cygwin", "wsl", "proton", "wine"):
+                self.assertNotIn(compatibility_layer, prose, document)
+
+        self.assertIn("native Windows, Linux, and macOS", verification)
+        self.assertIn("compatibility-layer policy", verification)
+
+    def test_cli_help_and_parser_tests_are_the_only_argument_grammar_owners(self):
+        for document in (REAL_PROFILE, VERIFICATION, MOD_TEST_SPEC):
+            text = read(document)
+            self.assertIn("`--help`", text, document)
+            self.assertIn("root and subcommand `--help`", text.casefold(), document)
+            self.assertIn("parser tests", text.casefold(), document)
+            self.assertIn("sole owners of flags and argument grammar", text.casefold(), document)
+            self.assertNotIn("<TEST_CLI>", text, document)
+            self.assertNotIn("Common options are accepted", text, document)
+            self.assertNotIn("| Option | Meaning |", text, document)
+            self.assertNotIn("Invocation template", text, document)
+            self.assertNotIn("```powershell", text.casefold(), document)
+            self.assertNotIn("```bash", text.casefold(), document)
 
     def test_real_profile_contract_covers_gate_prerequisites_and_states(self):
         text = read(REAL_PROFILE).casefold()
