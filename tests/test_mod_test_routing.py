@@ -308,7 +308,7 @@ class ModTestRoutingDocumentationTests(unittest.TestCase):
             self.assertIsNone(
                 re.search(
                     r"(?<![\w-])--(?:current|snapshot|full|force|"
-                    r"stop-decision|force-stop-decision)\b",
+                    r"stop-decision|force-stop-decision|unity-log-dir)\b",
                     text.casefold(),
                 ),
                 document,

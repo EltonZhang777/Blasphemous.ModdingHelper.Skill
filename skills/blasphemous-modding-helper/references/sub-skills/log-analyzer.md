@@ -32,7 +32,7 @@ Any delegated log evidence work MUST follow the shared [Read-only evidence deleg
 When mod-test CLI reports missing Unity log directory or log:
 
 1. Agent MUST ask user for directory that contains current Unity log.
-2. Agent MUST add `unity_log_dir: PATH` to active `config.yml`, or pass `--unity-log-dir PATH` for one-run override. active file is scope selected by [Invocation preflight](../config/invocation-preflight.md).
+2. Agent MUST add `unity_log_dir: PATH` to active `config.yml`, or request the help-exposed one-run context override. active file is scope selected by [Invocation preflight](../config/invocation-preflight.md).
 3. Agent MUST rerun the `logs` operation through the help-exposed Current log source mode, or explicit startup-evidence wait.
 
 This step is complete only when CLI resolves Unity log or warning remains visible with exact missing path and configuration file to update. CLI reads existing BepInEx and Unity logs in place; it does not create persistent log copies.

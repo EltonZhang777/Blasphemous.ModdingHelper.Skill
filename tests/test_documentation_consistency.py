@@ -326,13 +326,29 @@ class DocumentationConsistencyTests(unittest.TestCase):
             r"\bPlayer-performed\s+verification\b",
             flags=re.IGNORECASE,
         )
+        tracked = subprocess.run(
+            (
+                "git",
+                "ls-files",
+                "--cached",
+                "--others",
+                "--exclude-standard",
+                "-z",
+                "--",
+                "*.md",
+            ),
+            cwd=REPOSITORY_ROOT,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            check=True,
+        ).stdout.split("\0")
         documents = [
-            document
-            for document in REPOSITORY_ROOT.rglob("*.md")
-            if document.relative_to(REPOSITORY_ROOT).as_posix() != "GLOSSARY.md"
-            and not document.relative_to(REPOSITORY_ROOT)
-            .as_posix()
-            .startswith("docs/handoff/")
+            REPOSITORY_ROOT / path
+            for path in tracked
+            if path
+            and path != "GLOSSARY.md"
+            and not path.startswith("docs/handoff/")
         ]
         documents.append(REPOSITORY_ROOT / "skills-lock.json")
         documents.append(REPOSITORY_ROOT / "tests" / "test_modding_api_acceptance.py")
