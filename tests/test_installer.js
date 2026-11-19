@@ -265,13 +265,13 @@ function testCustomPathRejectsAncestorLinks() {
     assert.equal(result.status, 2, `Ancestor link destination was accepted.\n${output}`);
     assert.match(output, /custom path rejected|symbolic link|junction/i);
     assert.equal(fs.existsSync(path.join(redirectedRoot, "child", "SKILL.md")), false);
+    console.log("Custom-path ancestor-link safety test passed.");
   } finally {
     fs.rmSync(fixtureRoot, { recursive: true, force: true });
   }
 }
 
 testCustomPathRejectsAncestorLinks();
-console.log("Custom-path ancestor-link safety test passed.");
 
 function testCustomPathDoesNotReplaceAnotherSkill() {
   const fixtureRoot = fs.mkdtempSync(path.join(os.tmpdir(), "blasphemous-custom-replacement-test-"));

@@ -240,6 +240,8 @@ class ReleaseMetadataTests(unittest.TestCase):
         package = json.loads(
             (REPOSITORY_ROOT / "package.json").read_text(encoding="utf-8")
         )
+        self.assertIn("Agent Skill", package["description"])
+        self.assertNotRegex(package["description"], r"(?i)\bdetect(?:s|ion)?\b")
         for retained in (
             ".claude-plugin/",
             ".codex-plugin/",
