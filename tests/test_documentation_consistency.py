@@ -30,6 +30,23 @@ DELEGATION_ROUTES = (
     ("references/sub-skills/localization-lookup.md", "## Read-only lookup delegation"),
 )
 MOD_TEST_DOCUMENT = "references/sub-skills/blasphemous-modding-test.md"
+LOG_ANALYZER = SKILL_ROOT / "references" / "sub-skills" / "log-analyzer.md"
+SNAPSHOT_SPEC = REPOSITORY_ROOT / "docs" / "specs" / "manual-test-log-snapshots.md"
+SNAPSHOT_ADR = (
+    REPOSITORY_ROOT
+    / "docs"
+    / "adr"
+    / "0009-user-confirmed-test-log-snapshots.md"
+)
+SNAPSHOT_OPERATIONAL = (
+    SKILL_ROOT
+    / "references"
+    / "sub-skills"
+    / "blasphemous-modding-test-real-profile.md"
+)
+MOD_TEST_VERIFICATION = (
+    REPOSITORY_ROOT / "docs" / "verification" / "blasphemous-modding-test.md"
+)
 CODING_STANDARDS_ROUTER = (
     SKILL_ROOT / "references" / "sub-skills" / "coding-standards.md"
 )
@@ -448,6 +465,49 @@ def documents_containing(text):
 
 
 class DocumentationConsistencyTests(unittest.TestCase):
+    def test_current_docs_and_metadata_use_one_player_verification_name(self):
+        legacy = re.compile(r"\bManual\s+verification\b", flags=re.IGNORECASE)
+        obsolete_heading = re.compile(
+            r"\bManual\s+completion\b",
+            flags=re.IGNORECASE,
+        )
+        shortened = re.compile(
+            r"\bPlayer-performed\s+verification\b",
+            flags=re.IGNORECASE,
+        )
+        tracked = subprocess.run(
+            (
+                "git",
+                "ls-files",
+                "--cached",
+                "--others",
+                "--exclude-standard",
+                "-z",
+                "--",
+                "*.md",
+            ),
+            cwd=REPOSITORY_ROOT,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            check=True,
+        ).stdout.split("\0")
+        documents = [
+            REPOSITORY_ROOT / path
+            for path in tracked
+            if path
+            and path != "GLOSSARY.md"
+            and not path.startswith("docs/handoff/")
+        ]
+        documents.append(REPOSITORY_ROOT / "skills-lock.json")
+        documents.append(REPOSITORY_ROOT / "tests" / "test_modding_api_acceptance.py")
+
+        for document in documents:
+            text = read(document)
+            self.assertIsNone(legacy.search(text), document)
+            self.assertIsNone(obsolete_heading.search(text), document)
+            self.assertIsNone(shortened.search(text), document)
+
     def test_dependency_guidance_links_to_shared_inventory(self):
         inventory = (
             SKILL_ROOT / "references" / "config" / "invocation-preflight.md"
@@ -747,8 +807,8 @@ class DocumentationConsistencyTests(unittest.TestCase):
             "any delegated log evidence work",
             "modding_profile_path",
             "unity_log_dir",
-            "explicit `--current` for live diagnosis",
-            "`--snapshot` for a completed test session",
+            "the explicit current log source mode for live diagnosis",
+            "the completed-session snapshot source mode for a test session",
             "bepinex-first analysis",
             "must not switch or silently fall back",
             "exact source/path, gap",
@@ -924,7 +984,6 @@ class DocumentationConsistencyTests(unittest.TestCase):
         for relative in (
             "references/config/first-time-setup.md",
             "references/config/python-runtime.md",
-            "references/sub-skills/blasphemous-modding-test-real-profile.md",
             "references/sub-skills/referencing-modding-api.md",
         ):
             text = read(SKILL_ROOT / relative)
@@ -932,6 +991,16 @@ class DocumentationConsistencyTests(unittest.TestCase):
             self.assertIn("$SKILL_ROOT", text, relative)
             self.assertIn("& $PYTHON3", text, relative)
             self.assertIn("$SkillRoot", text, relative)
+
+        real_profile = read(
+            SKILL_ROOT / "references/sub-skills/blasphemous-modding-test-real-profile.md"
+        )
+        self.assertIn(
+            "[Invocation preflight](../config/invocation-preflight.md)",
+            real_profile,
+        )
+        self.assertNotIn('"$PYTHON3"', real_profile)
+        self.assertNotIn("& $PYTHON3", real_profile)
 
     def test_evidence_terms_keep_sources_and_gameplay_boundaries_distinct(self):
         shared = " ".join(
@@ -946,9 +1015,9 @@ class DocumentationConsistencyTests(unittest.TestCase):
             "Real-profile test",
         ):
             self.assertIn(term, shared)
-        self.assertIn("--current", shared)
+        self.assertIn("explicit Current log source mode", shared)
         self.assertIn("not completed-session evidence", shared)
-        self.assertIn("--snapshot", shared)
+        self.assertIn("explicit snapshot source mode", shared)
         self.assertIn("never falls back to a live log", shared)
         self.assertIn("mod_loaded", shared)
         self.assertIn("not gameplay proof", shared)
@@ -968,6 +1037,72 @@ class DocumentationConsistencyTests(unittest.TestCase):
         self.assertIn("xUnit is not gameplay proof", xunit)
         self.assertIn("Player-performed in-game verification", xunit)
         self.assertIn("Computer Use automated in-game test", xunit)
+
+    def test_snapshot_contract_layers_and_verification_freshness_stay_distinct(self):
+        adr = read(SNAPSHOT_ADR)
+        spec = read(SNAPSHOT_SPEC)
+        spec_normalized = normalized(SNAPSHOT_SPEC)
+        operational = normalized(SNAPSHOT_OPERATIONAL)
+        verification = normalized(MOD_TEST_VERIFICATION)
+
+        self.assertRegex(adr, r"(?m)^status: accepted$")
+        self.assertIn("ADR 0009", spec)
+        self.assertIn(SNAPSHOT_ADR.resolve(), set(local_links(SNAPSHOT_SPEC)))
+        self.assertIn(
+            SNAPSHOT_OPERATIONAL.resolve(),
+            set(local_links(SNAPSHOT_SPEC)),
+        )
+        self.assertNotIn("focused adr", spec_normalized)
+        self.assertNotIn("before implementation", spec_normalized)
+        for heading in (
+            "## Problem Statement",
+            "## Rationale",
+            "## Requirements",
+            "## Acceptance Outcomes",
+            "## References",
+        ):
+            self.assertIn(heading, spec)
+        for removed_heading in (
+            "## User Stories",
+            "## Implementation Decisions",
+            "## Testing Decisions",
+            "## Out of Scope",
+            "## Further Notes",
+        ):
+            self.assertNotIn(removed_heading, spec)
+        for mechanical_detail in (
+            "sha-256",
+            "source-specific",
+            "manifest records",
+            "current-capture mode",
+            "normal stop fails",
+        ):
+            self.assertNotIn(mechanical_detail, spec_normalized)
+
+        for phrase in (
+            "apply the shared player-performed in-game verification completion and session identity rules",
+            "a clear player result must be bound to exactly one session id",
+            "ordinary stop approval",
+            "separate force-stop decision",
+            "`snapshot` copies the complete bepinex and configured unity log bytes",
+            "never changes the live log files",
+            "temporary `snapshots/` directory",
+            "snapshot files remain session data through archive and safe clean",
+            "never falls back to live sources",
+        ):
+            self.assertIn(phrase, operational)
+
+        for phrase in (
+            "historical snapshot status:",
+            "document reviewed on 2026-11-19 at head 69031cb0a8a230594aa542b9ccc6ff893849adb3",
+            "current gate status:",
+            "the current automated gate has not been revalidated at the document-review head",
+            "no fresh local suite, real game, or modding profile was run",
+            "must not be read as having run at the review head",
+            "exact head was not recorded",
+            "real profile gate deferred:",
+        ):
+            self.assertIn(phrase, verification)
 
     def test_reached_workflows_keep_completion_and_recovery_cues(self):
         for relative in ROUTE_DOCUMENTS:
