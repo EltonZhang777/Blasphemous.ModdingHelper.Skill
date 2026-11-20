@@ -2,9 +2,28 @@ import re
 import unittest
 from pathlib import Path
 
+from test_documentation_consistency import (
+    canonical_route_tables,
+    markdown_table_cells,
+)
+
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 MAIN_SKILL = REPOSITORY_ROOT / "skills" / "blasphemous-modding-helper" / "SKILL.md"
+SOURCE_NAVIGATION = (
+    MAIN_SKILL.parent / "references" / "source-code-navigation" / "MAIN.md"
+)
+
+
+def navigation_routes():
+    table = canonical_route_tables(
+        SOURCE_NAVIGATION.read_text(encoding="utf-8")
+    )[0][1]
+    return [
+        cells
+        for line in table.splitlines()[2:]
+        if (cells := markdown_table_cells(line))
+    ]
 
 
 class SkillRouteMapTests(unittest.TestCase):
@@ -148,6 +167,37 @@ class SkillRouteMapTests(unittest.TestCase):
             "verified every cited",
         ):
             self.assertIn(phrase, normalized)
+
+    def test_achievement_requests_have_one_source_navigation_destination(self):
+        routes = navigation_routes()
+        self.assertEqual(len(routes), 10)
+        signals = (
+            ("bare achievements", "[items.md](items.md)"),
+            ("framework/achievements/*", "[items.md](items.md)"),
+            (
+                "framework/achievements/* persistence",
+                "[items.md](items.md)",
+            ),
+            ("achievementsmanager", "[core.md](core.md)"),
+            ("lifecycle, persistence, wiring, and runtime flow", "[core.md](core.md)"),
+            (
+                "achievementsmanager achievement entities",
+                "[core.md](core.md)",
+            ),
+            ("achievement ui widgets runtime flow", "[ui.md](ui.md)"),
+            (
+                "achievement playmaker actions runtime flow",
+                "[tools.md](tools.md)",
+            ),
+        )
+        for signal, expected in signals:
+            with self.subTest(signal=signal):
+                destinations = {
+                    destination
+                    for request_signal, destination, _ in routes
+                    if signal in request_signal.casefold()
+                }
+                self.assertEqual(destinations, {expected})
 
     def test_top_level_relative_links_resolve(self):
         text = MAIN_SKILL.read_text(encoding="utf-8")

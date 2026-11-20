@@ -81,8 +81,8 @@ jobs:
 
     - name: Smoke-test Installer (dry run)
       run: |
-        node bin/install.js --dry-run --only trae-cn
-        node bin/install.js --dry-run --only claude-code
+        SKILL_DESTINATION="$(mktemp -d)/blasphemous-modding-helper"
+        node bin/install.js --dry-run --path "$SKILL_DESTINATION"
         node bin/install.js --help
 
     - name: Package Release

@@ -113,7 +113,7 @@ The entries below record the declared post-install package and dependencies that
 
 ### Installation-time requirement
 
-Node.js `>=18` is required only to run the package installer, including `bin/install.js`. If it is unavailable, the agent MUST follow the [manual install flow](https://github.com/EltonZhang777/Blasphemous.ModdingHelper.Skill/blob/main/README.md#manual-install). Node.js is not a post-install Skill runtime requirement.
+Node.js `>=18` is required only to run the package installer, including `bin/install.js`. If it is unavailable, the agent MUST follow the [manual install flow](https://github.com/EltonZhang777/Blasphemous.ModdingHelper.Skill/blob/main/README.md#install-from-the-release-archive). Node.js is not a post-install Skill runtime requirement.
 
 The `ilspycmd` global-tool installation above is existing decompiler behavior; this inventory adds no installer or runtime behavior.
 

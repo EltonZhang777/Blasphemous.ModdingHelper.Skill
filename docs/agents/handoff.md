@@ -4,7 +4,7 @@
 
 ## Status rule
 
-Every handoff starts with exactly one status:
+The first non-empty line of every handoff MUST be exactly one status:
 
 ```text
 Status: active
@@ -34,9 +34,9 @@ Use repository-relative links from `docs/handoff/`. Commands MUST name the repos
 ## Minimal template
 
 ```markdown
-# Handoff: <subject>
-
 Status: active
+
+# Handoff: <subject>
 
 ## Owner
 
