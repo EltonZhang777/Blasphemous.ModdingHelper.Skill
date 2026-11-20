@@ -72,7 +72,7 @@ Current analysis continues to resolve `modding_profile_path` and `unity_log_dir`
 
 ## Completion criteria
 
-Agent MUST mark log analysis complete only when the report satisfies the shared [completion-report contract](../config/invocation-preflight.md#completion-criteria) and contains all of these:
+Agent MUST mark log analysis complete only when the report satisfies the shared [completion-report contract](../config/invocation-preflight.md#common-completion-report-fields) and contains all of these:
 
 1. Active configuration file and every log source inspected, or exact missing path and required configuration-update handoff.
 2. Expected pattern, relevant log evidence, and conclusion tied to that evidence. If BepInEx log is sufficient, agent MUST state that Unity-log read was not required; otherwise, Unity-log result MUST be included.

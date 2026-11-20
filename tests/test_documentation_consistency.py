@@ -47,7 +47,6 @@ COMMON_REPORT_FIELDS = (
     "next action",
 )
 BRANCH_OWNED_REPORT_EXCEPTIONS = {
-    "references/sub-skills/moddingapi-persistence-save-format.md",
     "references/sub-skills/save-analysis.md",
 }
 COMPLETION_REPORT_BRANCHES = (
@@ -62,6 +61,9 @@ COMPLETION_REPORT_BRANCHES = (
     "references/sub-skills/blasphemous-modding-test.md",
     "references/sub-skills/blasphemous-modding-test-automated-xunit.md",
     "references/sub-skills/blasphemous-modding-test-real-profile.md",
+    "references/sub-skills/blasphemous-modding-test-in-game-coordination.md",
+    "references/sub-skills/blasphemous-modding-test-player-verification.md",
+    "references/sub-skills/blasphemous-modding-test-computer-use.md",
     REAL_PROFILE_DELEGATION_REFERENCE,
     XUNIT_DELEGATION_REFERENCE,
 )
@@ -172,14 +174,14 @@ ROUTING_CONTRACTS = (
         "## Request routing",
         "## Shared entry gate",
         (
-            ("natural-language identify", "Localization lookup", "MUST NOT require configuration"),
+            ("natural-language identify", "Localization lookup", "documented configuration exception"),
             ("Find or explain decompiled game source", "Source analyzer", "source-path gate"),
             ("Inspect exported Unity project topology, assets, GUIDs, script assets, flattened Prefabs, Unity version, or scene-set summary", "Unity project navigation", "MUST keep exported asset evidence separate from C# behavior"),
             ("Diagnose BepInEx or Unity logs", "Log analyzer", "MUST resolve required log sources"),
             ("Test a Mod; build/deploy/launch a profile", "Mod-test entry", "Mod-test entry's classification"),
             ("Generate, modify, review, or refactor Mod-owned C#", "Coding standards", "ownership boundary"),
             ("Need ModdingAPI documentation", "Referencing ModdingAPI", "local or release-aware reference"),
-            ("Analyze one explicit Blasphemous 1 save file or directory read-only", "Save analysis", "MUST require one explicit input path"),
+            ("Analyze one explicit Blasphemous 1 save file or directory read-only", "Save analysis", "configuration exception"),
         ),
     ),
     (
@@ -188,7 +190,7 @@ ROUTING_CONTRACTS = (
         "## Command context",
         (
             ("Localization lookup", "bundled index", "MUST NOT run scripts"),
-            ("Operational branches", "shared preflight", "complete this preflight before specialized work"),
+            ("Gate-bound operational branches", "shared preflight", "complete this preflight before specialized work"),
             ("Unity project navigation", "shared preflight", "MUST require a valid `unity_project_path` only for this route"),
             ("First-time setup and Python validation", "Python Runtime → First-Time Setup", "MUST complete [Python Runtime]"),
             ("Configuration result", "selected config", "MUST consume"),
@@ -555,7 +557,7 @@ class DocumentationConsistencyTests(unittest.TestCase):
             raw = read(document)
             self.assertRegex(
                 raw,
-                r"\]\([^)]*invocation-preflight\.md#completion-criteria\)",
+                r"\]\([^)]*invocation-preflight\.md#common-completion-report-fields\)",
                 relative,
             )
             self.assertLess(

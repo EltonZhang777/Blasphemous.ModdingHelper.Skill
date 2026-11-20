@@ -97,4 +97,4 @@ This route is complete only when:
 4. Every warning, ambiguity, truncation, timeout, missing identity, or blocked behavior result is explicit.
 5. Behavior evidence remains attributed to the configured source analyzer.
 
-Every result MUST satisfy the shared [completion-report contract](../config/invocation-preflight.md#completion-criteria) and report the selected navigation evidence and next source, asset, or recovery action.
+Every result MUST satisfy the shared [completion-report contract](../config/invocation-preflight.md#common-completion-report-fields) and report the selected navigation evidence and next source, asset, or recovery action.
