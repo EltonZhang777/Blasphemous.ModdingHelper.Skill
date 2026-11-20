@@ -26,4 +26,4 @@ The agent MUST report only observed results. For every planned operation, the ag
 
 ## Completion criterion
 
-The report identifies the authorized plan, visible game window selection or ambiguity, time cap, Test session, expected and observed results, any unobserved interval, status, and next action. It makes no process/window identity guarantee and keeps Computer Use evidence separate from Player-performed, startup, logs, profile-lifecycle, and xUnit evidence.
+The report MUST follow the shared [completion-report contract](../config/invocation-preflight.md#common-completion-report-fields) and identify the authorized plan, visible game window selection or ambiguity, time cap, Test session, expected and observed results, and any unobserved interval. It makes no process/window identity guarantee and keeps Computer Use evidence separate from Player-performed, startup, logs, profile-lifecycle, and xUnit evidence.

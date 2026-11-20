@@ -99,7 +99,7 @@ class ModTestRoutingDocumentationTests(unittest.TestCase):
             "for a `both` result, the parent must assign the automated xunit phase to one child first",
             "then assign the real-profile phase to a separate child after the xunit handoff",
             "each child must report only its own phase",
-            "keeping status, evidence, blocked reason, and next action independent",
+            "keeping each phase's shared-contract report fields independent",
             "if a child for a selected test phase is unavailable",
             "must not run the assigned tests as a fallback",
         ):
@@ -184,8 +184,7 @@ class ModTestRoutingDocumentationTests(unittest.TestCase):
             "all required phases complete",
             "ambiguous requests execute no",
             "per-phase command",
-            "blocked reason",
-            "next action",
+            "shared completion-report contract",
         ):
             self.assertIn(phrase, text)
 
@@ -194,6 +193,7 @@ class ModTestRoutingDocumentationTests(unittest.TestCase):
 
         for phrase in (
             "xunit",
+            "report status is exactly `passed`, `failed`, or `blocked`",
             "normal .net test runner",
             "<modreponame>.tests",
             "main mod project",

@@ -40,4 +40,4 @@ The coordinator is not an evidence source. Reports MUST identify the selected me
 
 ## Completion criterion
 
-The method is chosen before setup, the common Real-profile preparation runs once, and exactly one selected evidence guide receives the in-game phase. The report names each operation's expected and observed result, the selected method, session, status, and next action.
+The method is chosen before setup, the common Real-profile preparation runs once, and exactly one selected evidence guide receives the in-game phase. The report follows the shared [completion-report contract](../config/invocation-preflight.md#common-completion-report-fields) and names each operation's expected and observed result and the selected method and session.

@@ -10,6 +10,15 @@ SKILL_ROOT = REPOSITORY_ROOT / "skills" / "blasphemous-modding-helper"
 MAIN_SKILL = SKILL_ROOT / "SKILL.md"
 RFC_AUDIT = REPOSITORY_ROOT / "ci" / "audit_rfc2119.py"
 MARKDOWN_LINK = re.compile(r"\]\(([^)]+)\)")
+MARKDOWN_LINK_WITH_TEXT = re.compile(r"\[([^\]]+)\]\(([^)]+)\)")
+MARKDOWN_HEADING = re.compile(r"^#{2,6}\s+(.+?)\s*$", re.MULTILINE)
+ADR_PREFIX = re.compile(r"^(\d{4})-")
+HANDOFF_STATUS = re.compile(r"^Status: (?:active|historical snapshot)$")
+USER_HOME_PATH = re.compile(
+    r"(?:[A-Za-z]:[\\/]+Users[\\/]+[^\\/\s`<>]+|"
+    r"(?<![A-Za-z0-9:/])/(?:home|Users)/[^/\s`<>]+)",
+    re.IGNORECASE,
+)
 DELEGATION_REFERENCE = "references/subagent-delegation/read-only-evidence-delegation.md"
 GENERAL_DELEGATION_REFERENCE = "references/subagent-delegation/subagent-delegation-general-guidelines.md"
 XUNIT_DELEGATION_REFERENCE = "references/subagent-delegation/xunit-testing-delegation.md"
@@ -37,6 +46,43 @@ SNAPSHOT_OPERATIONAL = (
 )
 MOD_TEST_VERIFICATION = (
     REPOSITORY_ROOT / "docs" / "verification" / "blasphemous-modding-test.md"
+)
+CODING_STANDARDS_ROUTER = (
+    SKILL_ROOT / "references" / "sub-skills" / "coding-standards.md"
+)
+CSHARP_UNITY_STANDARDS = (
+    SKILL_ROOT
+    / "references"
+    / "coding-standards"
+    / "coding-standards-csharp-unity.md"
+)
+COMPLETION_CONTRACT = SKILL_ROOT / "references" / "config" / "invocation-preflight.md"
+COMMON_REPORT_FIELDS = (
+    "status",
+    "completion evidence",
+    "blocked reason",
+    "next action",
+)
+BRANCH_OWNED_REPORT_EXCEPTIONS = {
+    "references/sub-skills/save-analysis.md",
+}
+COMPLETION_REPORT_BRANCHES = (
+    "references/config/first-time-setup.md",
+    "references/config/python-runtime.md",
+    "references/sub-skills/source-analyzer.md",
+    "references/sub-skills/log-analyzer.md",
+    "references/sub-skills/localization-lookup.md",
+    "references/sub-skills/coding-standards.md",
+    "references/sub-skills/referencing-modding-api.md",
+    "references/sub-skills/unity-project-navigation.md",
+    "references/sub-skills/blasphemous-modding-test.md",
+    "references/sub-skills/blasphemous-modding-test-automated-xunit.md",
+    "references/sub-skills/blasphemous-modding-test-real-profile.md",
+    "references/sub-skills/blasphemous-modding-test-in-game-coordination.md",
+    "references/sub-skills/blasphemous-modding-test-player-verification.md",
+    "references/sub-skills/blasphemous-modding-test-computer-use.md",
+    REAL_PROFILE_DELEGATION_REFERENCE,
+    XUNIT_DELEGATION_REFERENCE,
 )
 NORMATIVE_HOST_DEPENDENCY = re.compile(
     r"\b(?:MUST|SHOULD|SHALL)\s+(?:use|require|depend on|run on|invoke|select)\b"
@@ -82,6 +128,50 @@ DEPENDENCY_GUIDANCE = (
     SKILL_ROOT / "references" / "sub-skills" / "referencing-modding-api.md",
 )
 
+TOOLS_ITEMS_CATEGORIES = {
+    "Penance Related": frozenset(
+        {
+            "BloodPenitenceBeadEffect.cs",
+            "GuiltPenitenceBeadEffect.cs",
+        }
+    ),
+    "Prayer Attack": frozenset(
+        {
+            "PenitentAreaAttack.cs",
+            "PenitentCrawlerOrbsEffect.cs",
+            "PenitentDivineLightEffect.cs",
+            "PenitentFlamePillarsEffect.cs",
+            "PenitentGuardianEffect.cs",
+            "PenitentLightBeamEffect.cs",
+            "PenitentMultishotEffect.cs",
+            "PenitentTeleportToPriedieu.cs",
+            "PR203ElmFireLoopEffect.cs",
+            "StuntPrayerEffect.cs",
+        }
+    ),
+    "Relic/Quest Item Effects": frozenset(
+        {
+            "ChaliceEffect.cs",
+            "DirtyNailRelicEffect.cs",
+            "FamiliarSpawnEffect.cs",
+            "IncorruptHandBell.cs",
+            "IncorruptHandConfig.cs",
+            "SilverLungRelicEffect.cs",
+        }
+    ),
+    "General Effect Tools": frozenset(
+        {
+            "Invulnerability.cs",
+            "ItemAudio.cs",
+            "ItemFlag.cs",
+            "ItemGhostTrail.cs",
+            "ItemTemporalEffect.cs",
+            "ObjectEffect_ChangeItem.cs",
+        }
+    ),
+}
+TOOLS_ITEMS_CLASSES = frozenset().union(*TOOLS_ITEMS_CATEGORIES.values())
+
 APPROVED_CANONICAL_OWNERS = frozenset(
     {
         "SKILL.md",
@@ -101,14 +191,14 @@ ROUTING_CONTRACTS = (
         "## Request routing",
         "## Shared entry gate",
         (
-            ("natural-language identify", "Localization lookup", "MUST NOT require configuration"),
+            ("natural-language identify", "Localization lookup", "documented configuration exception"),
             ("Find or explain decompiled game source", "Source analyzer", "source-path gate"),
             ("Inspect exported Unity project topology, assets, GUIDs, script assets, flattened Prefabs, Unity version, or scene-set summary", "Unity project navigation", "MUST keep exported asset evidence separate from C# behavior"),
             ("Diagnose BepInEx or Unity logs", "Log analyzer", "MUST resolve required log sources"),
-            ("Test a Mod; build/deploy/launch a profile", "Mod-test entry", "classify the request"),
+            ("Test a Mod; build/deploy/launch a profile", "Mod-test entry", "Mod-test entry's classification"),
             ("Generate, modify, review, or refactor Mod-owned C#", "Coding standards", "ownership boundary"),
             ("Need ModdingAPI documentation", "Referencing ModdingAPI", "local or release-aware reference"),
-            ("Analyze one explicit Blasphemous 1 save file or directory read-only", "Save analysis", "MUST require one explicit input path"),
+            ("Analyze one explicit Blasphemous 1 save file or directory read-only", "Save analysis", "configuration exception"),
         ),
     ),
     (
@@ -117,7 +207,7 @@ ROUTING_CONTRACTS = (
         "## Command context",
         (
             ("Localization lookup", "bundled index", "MUST NOT run scripts"),
-            ("Operational branches", "shared preflight", "complete this preflight before specialized work"),
+            ("Gate-bound operational branches", "shared preflight", "complete this preflight before specialized work"),
             ("Unity project navigation", "shared preflight", "MUST require a valid `unity_project_path` only for this route"),
             ("First-time setup and Python validation", "Python Runtime → First-Time Setup", "MUST complete [Python Runtime]"),
             ("Configuration result", "selected config", "MUST consume"),
@@ -132,7 +222,7 @@ ROUTING_CONTRACTS = (
         "## Route map",
         "## Coding specifications",
         (
-            ("New Mod-owned file or directory placement", "Project architecture guidelines", "established structure MUST take precedence"),
+            ("New Mod-owned file or directory placement", "Project architecture guidelines", "MUST apply the guide's placement result contract"),
             ("Mod-owned C# conventions", "C# and runtime Unity standards", "caller compiler and referenced assemblies MUST govern compatibility"),
             ("ModdingAPI APIs", "ModdingAPI standards", "caller's referenced assembly MUST govern API facts"),
             ("Harmony targets", "Harmony patching standards", "manual `Harmony.Patch` MUST follow its approval gate"),
@@ -298,6 +388,24 @@ def normalized(path):
     return " ".join(read(path).split()).casefold()
 
 
+def common_report_fields_in_window(document):
+    text = " ".join(document.split()).casefold()
+    occurrences = re.finditer(
+        r"\b(?:status|completion evidence|blocked reason|next action)\b",
+        text,
+    )
+    for occurrence in occurrences:
+        window = text[occurrence.start():occurrence.start() + 600]
+        present = {
+            field
+            for field in COMMON_REPORT_FIELDS
+            if re.search(rf"\b{re.escape(field)}\b", window)
+        }
+        if len(present) == len(COMMON_REPORT_FIELDS):
+            return present
+    return set()
+
+
 def markdown_section(path, heading):
     document = read(path)
     start = document.find(heading)
@@ -307,12 +415,53 @@ def markdown_section(path, heading):
     return document[start:] if end < 0 else document[start:end]
 
 
+def heading_anchors(document):
+    anchors = set()
+    for heading in MARKDOWN_HEADING.findall(read(document)):
+        anchor = re.sub(r"[^\w\s-]", "", heading.casefold())
+        anchors.add(re.sub(r"\s+", "-", anchor.strip()))
+    return anchors
+
+
 def local_links(document):
     for raw_target in MARKDOWN_LINK.findall(read(document)):
         target = raw_target.split("#", 1)[0].strip()
         if not target or target.startswith(("http://", "https://", "mailto:")):
             continue
         yield (document.parent / target).resolve()
+
+
+def local_link_fragments(document):
+    for raw_target in MARKDOWN_LINK.findall(read(document)):
+        path, separator, fragment = raw_target.partition("#")
+        if path.startswith(("http://", "https://", "mailto:")):
+            continue
+        target = (
+            document
+            if not path
+            else (document.parent / path.strip()).resolve()
+        )
+        yield target, fragment.strip() if separator else ""
+
+
+def markdown_heading_slugs(document):
+    slugs = set()
+    for line in read(document).splitlines():
+        if not line.startswith("#"):
+            continue
+        heading = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", line.lstrip("#").strip())
+        heading = heading.replace("`", "")
+        slug = re.sub(r"[^\w\- ]", "", heading.casefold(), flags=re.UNICODE)
+        slugs.add(re.sub(r"\s+", "-", slug.strip()))
+    return slugs
+
+
+def documents_containing(text):
+    return [
+        document
+        for document in SKILL_ROOT.rglob("*.md")
+        if text in read(document)
+    ]
 
 
 class DocumentationConsistencyTests(unittest.TestCase):
@@ -393,6 +542,13 @@ class DocumentationConsistencyTests(unittest.TestCase):
                 self.assertTrue(target.is_file(), f"{document}: {target}")
                 if target.suffix.lower() == ".md":
                     pending.append(target)
+            for target, fragment in local_link_fragments(document):
+                if fragment and target.suffix.lower() == ".md":
+                    self.assertIn(
+                        fragment.casefold(),
+                        markdown_heading_slugs(target),
+                        f"{document}: {target}#{fragment}",
+                    )
 
         self.assertIn(MAIN_SKILL, reached)
         for relative in ROUTE_DOCUMENTS:
@@ -404,6 +560,134 @@ class DocumentationConsistencyTests(unittest.TestCase):
         for relative, _ in DELEGATION_ROUTES:
             document = SKILL_ROOT / relative
             self.assertIn(shared, set(local_links(document)), relative)
+
+    def test_entry_router_delegates_shared_ownership(self):
+        entry_links = set(local_links(MAIN_SKILL))
+        for owner in (
+            SKILL_ROOT / "references" / "config" / "invocation-preflight.md",
+            SKILL_ROOT / MOD_TEST_DOCUMENT,
+            SKILL_ROOT / "references" / "sub-skills" / "coding-standards.md",
+        ):
+            self.assertIn(owner.resolve(), entry_links, owner)
+
+        entry = read(MAIN_SKILL)
+        ownership = entry.split("| Analyze one explicit Blasphemous 1 save", 1)[1]
+        ownership = ownership.split("\n\n", 1)[1].split("\n\n", 1)[0]
+        clauses = [
+            " ".join(clause.split())
+            for clause in re.split(r"(?<=[.!?;])\s+", ownership)
+        ]
+        preflight_clause = next(
+            clause for clause in clauses if "invocation-preflight.md" in clause
+        ).casefold()
+        mod_test_clause = next(
+            clause
+            for clause in clauses
+            if "blasphemous-modding-test.md" in clause
+        ).casefold()
+        self.assertIn("its own documented configuration exceptions", preflight_clause)
+        self.assertNotIn("automated xunit", preflight_clause)
+        self.assertIn(
+            "automated xunit configuration exception",
+            mod_test_clause,
+        )
+        self.assertNotIn("invocation-preflight.md", mod_test_clause)
+
+        preflight = normalized(
+            SKILL_ROOT / "references" / "config" / "invocation-preflight.md"
+        )
+        self.assertIn("common completion-report fields", preflight)
+        self.assertIn("documented automated xunit exception", preflight)
+
+        mod_test = normalized(SKILL_ROOT / MOD_TEST_DOCUMENT)
+        self.assertIn("automated xunit branch", mod_test)
+        self.assertIn("do not wait for that gate", mod_test)
+
+    def test_completion_report_fields_have_one_owner(self):
+        contract = normalized(COMPLETION_CONTRACT)
+        for field in COMMON_REPORT_FIELDS:
+            self.assertIn(f"`{field}`", contract)
+        self.assertIn("common completion-report fields", contract)
+        self.assertIn("may add status categories", contract)
+        self.assertIn("blocked` or `failed`, the report must give its exact", contract)
+        self.assertIn("save analysis remains a documented exception", contract)
+
+        for relative in COMPLETION_REPORT_BRANCHES:
+            document = SKILL_ROOT / relative
+            raw = read(document)
+            self.assertRegex(
+                raw,
+                r"\]\([^)]*invocation-preflight\.md#common-completion-report-fields\)",
+                relative,
+            )
+            self.assertLess(
+                len(common_report_fields_in_window(raw)),
+                len(COMMON_REPORT_FIELDS),
+                relative,
+            )
+
+        for document in sorted(SKILL_ROOT.rglob("*.md")):
+            if document.resolve() == COMPLETION_CONTRACT.resolve():
+                continue
+            relative = document.relative_to(SKILL_ROOT).as_posix()
+            if relative in BRANCH_OWNED_REPORT_EXCEPTIONS:
+                continue
+            self.assertLess(
+                len(common_report_fields_in_window(read(document))),
+                len(COMMON_REPORT_FIELDS),
+                relative,
+            )
+
+    def test_configuration_exception_owners_are_explicit(self):
+        preflight = normalized(COMPLETION_CONTRACT)
+        sentences = re.split(r"(?<=[.!?;])\s+", preflight)
+        shared_exceptions = [
+            sentence
+            for sentence in sentences
+            if all(
+                phrase in sentence
+                for phrase in (
+                    "localization lookup branch",
+                    "save analysis",
+                    "tracked-session stop exception",
+                )
+            )
+        ]
+        self.assertTrue(shared_exceptions)
+        self.assertTrue(
+            any(
+                "owned here" in sentence and "not owned here" not in sentence
+                for sentence in shared_exceptions
+            )
+        )
+        xunit_exception = "caller-owned automated xunit exception"
+        self.assertTrue(
+            any(
+                "not " not in sentence
+                and (
+                    ("mod-test entry" in sentence and "owns" in sentence)
+                    or ("owned by" in sentence and "mod-test entry" in sentence)
+                )
+                and xunit_exception in sentence
+                for sentence in sentences
+            )
+        )
+
+        mod_test = normalized(SKILL_ROOT / MOD_TEST_DOCUMENT)
+        mod_test_sentences = re.split(r"(?<=[.!?;])\s+", mod_test)
+        self.assertTrue(
+            any(
+                "not " not in sentence
+                and "this entry" in sentence
+                and "owns" in sentence
+                and "caller-owned automated xunit configuration exception" in sentence
+                for sentence in mod_test_sentences
+            )
+        )
+        self.assertIn(
+            "caller-owned automated xunit request does not invoke skill scripts",
+            mod_test,
+        )
 
     def test_subagent_guidance_is_reachable_from_shared_and_phase_owners(self):
         general = SKILL_ROOT / GENERAL_DELEGATION_REFERENCE
@@ -605,21 +889,46 @@ class DocumentationConsistencyTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("RFC 2119 candidate audit: PASS", result.stdout)
 
-    def test_configuration_free_routes_are_excluded_from_operational_path_workflow(self):
-        workflow = " ".join(
-            markdown_section(MAIN_SKILL, "## Workflow").split()
-        ).casefold()
-
-        for phrase in (
-            "for an operational branch, agent must use tools to gather information required by task",
-            "a configuration-free branch must use only the local input or bundled evidence required by its route and must not read configuration, a modding profile, game installation, or source context.",
-            "for an operational branch, agent has located every path task needs (source code, modding profile, and logs) in `config.yml` or navigation documents",
-            "for a configuration-free branch, agent has confirmed the route-specific local input or bundled evidence and read-only context.",
-            "for an operational branch, agent must follow the path-failure recovery contract in the shared entry gate.",
-            "a configuration-free branch must report its route-specific input or evidence failure and must not enter configuration recovery.",
-            "or a configuration-free branch has reported its route-specific failure and next action.",
+    def test_documented_route_exceptions_refer_to_their_owners(self):
+        workflow = read(MAIN_SKILL)
+        for heading in (
+            "### Step 1: Complete shared entry gate",
+            "### Step 3: Use Tools to Gather Information",
+            "### Step 5: Path Failure Recovery",
         ):
-            self.assertIn(phrase, workflow)
+            section = workflow.split(heading, 1)[1].split("\n### ", 1)[0]
+            normalized_section = " ".join(section.split()).casefold()
+            self.assertIn("configuration exception", normalized_section)
+            self.assertIn("route owner", normalized_section)
+
+        step_one = workflow.split(
+            "### Step 1: Complete shared entry gate",
+            1,
+        )[1].split("\n### ", 1)[0]
+        self.assertIn(
+            "classify the request through the Request routing section",
+            " ".join(step_one.split()),
+        )
+        self.assertLess(
+            step_one.index("classify the request through the Request routing section"),
+            step_one.index("complete that gate"),
+        )
+
+        preflight = normalized(
+            SKILL_ROOT / "references" / "config" / "invocation-preflight.md"
+        )
+        self.assertIn("documented configuration exceptions", preflight)
+        self.assertIn("tracked-session stop exception", preflight)
+        self.assertIn("every operational route subject to this shared gate", preflight)
+        self.assertIn("caller-owned automated xunit route", preflight)
+        self.assertNotIn(
+            "except the documented localization lookup and save analysis exceptions",
+            preflight,
+        )
+
+        mod_test = normalized(SKILL_ROOT / MOD_TEST_DOCUMENT)
+        self.assertIn("automated xunit", mod_test)
+        self.assertIn("do not wait for that gate", mod_test)
 
     def test_setup_order_conditional_inputs_and_retry_preservation_are_explicit(self):
         setup = read(SKILL_ROOT / "references" / "config" / "first-time-setup.md")
@@ -795,20 +1104,11 @@ class DocumentationConsistencyTests(unittest.TestCase):
         ):
             self.assertIn(phrase, verification)
 
-    def test_reached_workflows_expose_completion_evidence_and_next_action(self):
+    def test_reached_workflows_keep_completion_and_recovery_cues(self):
         for relative in ROUTE_DOCUMENTS:
             text = " ".join(read(SKILL_ROOT / relative).split())
             self.assertRegex(text, r"(?i)(completion criterion|completion criteria|done when)", relative)
             self.assertRegex(text, r"(?i)next (action|step|source|code|implementation|verification|maintenance|setup)", relative)
-
-        for relative in (
-            "references/config/first-time-setup.md",
-            "references/config/python-runtime.md",
-            "references/config/invocation-preflight.md",
-        ):
-            text = " ".join(read(SKILL_ROOT / relative).split())
-            self.assertIn("completion evidence", text, relative)
-            self.assertIn("next action", text, relative)
 
     def test_canonical_routing_tables_have_one_owner_per_document(self):
         contract_owners = frozenset(contract[0] for contract in ROUTING_CONTRACTS)
@@ -872,6 +1172,200 @@ class DocumentationConsistencyTests(unittest.TestCase):
                         f"{relative}: boundary cell must use RFC 2119 wording",
                     )
 
+    def test_coding_standards_branches_defer_shared_ownership_to_router(self):
+        router = CODING_STANDARDS_ROUTER
+        csharp = CSHARP_UNITY_STANDARDS
+        harmony = (
+            SKILL_ROOT
+            / "references"
+            / "coding-standards"
+            / "coding-standards-harmony-patching.md"
+        )
+        modding_api = (
+            SKILL_ROOT
+            / "references"
+            / "coding-standards"
+            / "coding-standards-moddingAPI.md"
+        )
+        scope_link = (
+            "../sub-skills/coding-standards.md#entry-and-scope-requirements"
+        )
+        game_api_link = (
+            "../sub-skills/coding-standards.md#mod-owned-game-api-access"
+        )
+
+        router_text = normalized(router)
+        self.assertIn("## Entry and scope requirements", read(router))
+        for phrase in (
+            "preserve direct copy as-is",
+            "mechanical namespace or path changes may be made",
+            "use of the original game api must follow access levels in the original source",
+            "non-public members must be accessed using harmony",
+        ):
+            self.assertIn(phrase, router_text)
+
+        game_api_owners = documents_containing("## Mod-owned game API access")
+        self.assertEqual(game_api_owners, [router])
+
+        for document in (csharp, harmony, modding_api):
+            links = MARKDOWN_LINK.findall(read(document))
+            self.assertEqual(links.count(scope_link), 1, document)
+            branch_text = normalized(document)
+            for repeated_rule in (
+                "direct copy as-is",
+                "mechanical namespace or path changes may be made",
+                "decompiled game source, upstream mods, dependency or vendor code",
+                "use of the original game api must follow access levels in the original source",
+                "non-public members must be accessed using harmony",
+            ):
+                self.assertNotIn(repeated_rule, branch_text, document)
+
+        for document in (csharp, harmony):
+            links = MARKDOWN_LINK.findall(read(document))
+            self.assertEqual(links.count(game_api_link), 1, document)
+
+        csharp_text = normalized(csharp)
+        self.assertIn(
+            "this branch applies to mod-owned c# tasks routed here",
+            csharp_text,
+        )
+
+        harmony_text = normalized(harmony)
+        self.assertIn(
+            "this branch applies to harmony code mod author can maintain",
+            harmony_text,
+        )
+        self.assertIn(
+            "router selects the [C# and runtime Unity branch]"
+            "(coding-standards-csharp-unity.md) as its prerequisite",
+            read(harmony),
+        )
+
+        modding_api_text = normalized(modding_api)
+        self.assertIn(
+            "these rules must apply only to mod-owned c# in caller mod repository",
+            modding_api_text,
+        )
+
+    def test_unity_coding_baseline_has_one_normative_owner(self):
+        baseline = "2017.4.40f1"
+        router = CODING_STANDARDS_ROUTER
+        csharp = CSHARP_UNITY_STANDARDS
+        topology = (
+            SKILL_ROOT
+            / "references"
+            / "unity-project-navigation"
+            / "topology.md"
+        )
+
+        owners = documents_containing(baseline)
+        self.assertEqual(owners, [router])
+        self.assertIn(f"Unity `{baseline}`", read(router))
+
+        baseline_link = (
+            "../sub-skills/coding-standards.md#coding-specifications"
+        )
+        for document in (csharp, topology):
+            content = read(document)
+            self.assertNotIn(baseline, content, document)
+            self.assertEqual(
+                MARKDOWN_LINK.findall(content).count(baseline_link),
+                1,
+                document,
+            )
+
+        topology_text = normalized(topology)
+        baseline_major = baseline.split(".", 1)[0]
+        self.assertNotIn(baseline_major, topology_text)
+        self.assertIn(
+            "caller's actual compiler target",
+            normalized(csharp),
+        )
+        self.assertIn(
+            "project.unity_major_compatible",
+            read(topology),
+        )
+    def test_achievement_manager_and_entity_sections_link_both_boundaries(self):
+        navigation = SKILL_ROOT / "references" / "source-code-navigation"
+        core = navigation / "core.md"
+        items = navigation / "items.md"
+        core_manager_section = markdown_section(
+            core,
+            "### AchievementsManager.cs",
+        ).split("\n### ", 1)[0]
+        items_achievement_section = markdown_section(items, "## Achievement System")
+
+        core_links = [
+            (text, target)
+            for text, target in MARKDOWN_LINK_WITH_TEXT.findall(core_manager_section)
+            if target.startswith("items.md#")
+        ]
+        items_links = [
+            (text, target)
+            for text, target in MARKDOWN_LINK_WITH_TEXT.findall(items_achievement_section)
+            if target.startswith("core.md#")
+        ]
+
+        self.assertEqual(len(core_links), 1)
+        self.assertEqual(len(items_links), 1)
+        self.assertIn("items", core_links[0][0].casefold())
+        self.assertIn("achievement", core_links[0][0].casefold())
+        self.assertIn("core", items_links[0][0].casefold())
+        self.assertIn("achievementsmanager", items_links[0][0].casefold())
+        self.assertEqual(core_links[0][1], "items.md#achievement-system")
+        self.assertEqual(items_links[0][1], "core.md#achievementsmanagercs")
+        self.assertIn("achievement-system", heading_anchors(items))
+        self.assertIn("achievementsmanagercs", heading_anchors(core))
+
+    def test_tools_items_effect_table_is_the_sole_complete_inventory(self):
+        items = SKILL_ROOT / "references" / "source-code-navigation" / "items.md"
+        inventory = markdown_section(
+            items,
+            "#### Special Item Effects (Tools/Items/)",
+        )
+        inventory_classes = []
+        for line in inventory.splitlines():
+            cells = [cell.strip() for cell in line.strip().strip("|").split("|")]
+            if len(cells) == 3 and cells[0].endswith(".cs"):
+                inventory_classes.append(cells[0])
+
+        self.assertEqual(len(inventory_classes), 24)
+        self.assertEqual(set(inventory_classes), TOOLS_ITEMS_CLASSES)
+        self.assertEqual(len(inventory_classes), len(set(inventory_classes)))
+        for category, expected_classes in TOOLS_ITEMS_CATEGORIES.items():
+            category_match = re.search(
+                rf"\*\*{re.escape(category)}:\*\*\s*(.*?)(?=\n\*\*|\Z)",
+                inventory,
+                re.DOTALL,
+            )
+            self.assertIsNotNone(category_match, category)
+            category_classes = set(
+                re.findall(
+                    r"^\|\s*([A-Za-z0-9_]+\.cs)\s*\|",
+                    category_match.group(1),
+                    re.MULTILINE,
+                )
+            )
+            self.assertEqual(category_classes, expected_classes, category)
+
+        pointer = markdown_section(items, "## Special Item Tools")
+        self.assertFalse(set(re.findall(r"[A-Za-z0-9_]+\.cs", pointer)))
+        pointer_names = set(re.findall(r"[A-Za-z0-9_]+", pointer))
+        class_names = {class_name.removesuffix(".cs") for class_name in TOOLS_ITEMS_CLASSES}
+        self.assertFalse(pointer_names & class_names)
+        links = [
+            (text, target)
+            for text, target in MARKDOWN_LINK_WITH_TEXT.findall(pointer)
+            if target == "#special-item-effects-toolsitems"
+        ]
+        self.assertEqual(len(links), 1)
+        self.assertIn("Special Item Effects", links[0][0])
+        self.assertIn("special-item-effects-toolsitems", heading_anchors(items))
+
+        items_text = read(items)
+        for class_name in TOOLS_ITEMS_CLASSES:
+            self.assertEqual(items_text.count(class_name), 1, class_name)
+
     def test_unity_relations_route_direct_bindings_without_conflict(self):
         text = normalized(
             SKILL_ROOT
@@ -885,6 +1379,63 @@ class DocumentationConsistencyTests(unittest.TestCase):
             "other traversal must use `references` for direction, object scope, limits, timeout",
             text,
         )
+
+    def test_governance_records_are_consistent(self):
+        adr_identifiers = {}
+        for document in sorted((REPOSITORY_ROOT / "docs" / "adr").glob("*.md")):
+            match = ADR_PREFIX.match(document.name)
+            self.assertIsNotNone(match, document)
+            if match:
+                adr_identifiers.setdefault(match.group(1), []).append(document.name)
+        self.assertEqual(
+            {identifier: names for identifier, names in adr_identifiers.items() if len(names) > 1},
+            {},
+        )
+
+        tracked = subprocess.run(
+            [
+                "git",
+                "ls-files",
+                "-z",
+                "--cached",
+                "--others",
+                "--exclude-standard",
+                "--",
+                "AGENTS.md",
+                "docs/agents",
+                "docs/adr",
+                "docs/specs",
+            ],
+            cwd=REPOSITORY_ROOT,
+            capture_output=True,
+            check=True,
+        ).stdout.decode("utf-8")
+        for relative in filter(None, tracked.split("\0")):
+            document = REPOSITORY_ROOT / relative
+            if relative.endswith(".md") and document.is_file():
+                self.assertNotRegex(read(document), USER_HOME_PATH, relative)
+
+        handoff = read(REPOSITORY_ROOT / "docs" / "agents" / "handoff.md")
+        template = handoff.split("## Minimal template", 1)[1].split("```markdown", 1)[1].split("```", 1)[0]
+        template_lines = [line.strip() for line in template.splitlines() if line.strip()]
+        self.assertEqual(
+            [line for line in template_lines if HANDOFF_STATUS.fullmatch(line)],
+            ["Status: active"],
+        )
+        self.assertEqual(template_lines[0], "Status: active")
+
+        tracker = normalized(REPOSITORY_ROOT / "docs" / "agents" / "issue-tracker.md")
+        self.assertIn(
+            "github issues own active normative requirements and acceptance criteria",
+            tracker,
+        )
+        self.assertIn(
+            "local specification records are non-authoritative drafts or supporting records",
+            tracker,
+        )
+        repository_guidance = normalized(REPOSITORY_ROOT / "AGENTS.md")
+        self.assertIn("issue, triage, or specification-authority work", repository_guidance)
+        self.assertIn("docs/agents/issue-tracker.md", repository_guidance)
 
 
 if __name__ == "__main__":

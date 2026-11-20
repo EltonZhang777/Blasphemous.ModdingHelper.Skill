@@ -4,7 +4,7 @@ This reference is ModdingAPI branch selected by [coding standards router](../sub
 
 ## Scope and authority
 
-These rules MUST apply only to Mod-owned C# in Caller Mod repository. Decompiled game source, upstream Mods, dependency or vendor code, generated output, and direct copies remain under router's exclusion and preservation rules.
+These rules MUST apply only to Mod-owned C# in Caller Mod repository. For excluded-source, direct-copy, and preservation decisions, use the router's [Entry and scope requirements](../sub-skills/coding-standards.md#entry-and-scope-requirements).
 
 Caller's actual referenced ModdingAPI assembly MUST be first authority for signatures, exposed members, overloads, access, and runtime behavior. authority order is:
 

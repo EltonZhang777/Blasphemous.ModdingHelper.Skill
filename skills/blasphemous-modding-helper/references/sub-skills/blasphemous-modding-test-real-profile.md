@@ -174,7 +174,7 @@ Reports keep build, artifact, deployment, launch, startup, and process evidence 
 - `pending-manual`: startup evidence exists, but the selected Player-performed in-game verification is still pending.
 - `pending-computer-use`: startup evidence exists, but the selected Computer Use evidence phase is still in progress or awaiting its assigned result; the report names the current handoff and next action.
 
-Every Real-profile test or verification report MUST include `status`, `completion evidence`, the blocked or failed reason when applicable, and `next action`. Completion evidence MUST identify the Test session and keep Current log, Test log snapshot, startup evidence, Player-performed in-game verification, and Computer Use evidence separate.
+Every Real-profile test or verification report MUST satisfy the shared [completion-report contract](../config/invocation-preflight.md#common-completion-report-fields). Report evidence MUST identify the Test session and keep Current log, Test log snapshot, startup evidence, Player-performed in-game verification, and Computer Use evidence separate.
 
 `mod_loaded` remains startup evidence only and never changes into gameplay success without a separate result from the selected Player-performed or Computer Use evidence method.
 
