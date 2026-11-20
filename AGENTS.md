@@ -33,7 +33,7 @@ Use the narrowest authoritative file for each change:
 - **Source navigation:** read `skills/blasphemous-modding-helper/references/source-code-navigation/MAIN.md` before searching class details.
 - **Installer or CI:** read `bin/install.js --help`, `tests/test_installer.js`, `tests/test_install_wrappers.js`, and `.github/workflows/build.yml`; use dry-run checks for local provider inspection.
 - **Decompiler or first-time setup:** read `skills/blasphemous-modding-helper/references/config/first-time-setup.md` before execution. `decompile_source.py` removes the configured Steam DLLs to trigger validation; confirm the exact game path and required Steam, .NET, and `ilspycmd` tools first.
-- **Issue or triage work:** read `docs/agents/issue-tracker.md` and `docs/agents/triage-labels.md`.
+- **Issue, triage, or specification-authority work:** read `docs/agents/issue-tracker.md` and `docs/agents/triage-labels.md`.
 - **Domain or ADR work:** read `docs/agents/domain.md` and relevant files under `docs/adr/`.
 - **Handoff work:** read `docs/agents/handoff.md` before reading `docs/handoff/`; local handoffs are evidence, not current authority.
 

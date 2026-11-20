@@ -26,7 +26,7 @@ For Mod-owned code only:
 
 | Signal / condition | Destination | Boundary / next action |
 | --- | --- | --- |
-| New Mod-owned file or directory placement when the Caller Mod repository has no established boundaries, or an explicit request to organize or place new files or directories | [Project architecture guidelines](project-architecture-guidelines.md) | Agent MUST activate this guide only when either condition holds; established structure MUST take precedence. Agent MUST NOT move existing files and MUST report the boundary and proposed directory/namespace. |
+| New Mod-owned file or directory placement when the Caller Mod repository has no established directory, namespace, module, or feature boundaries, or an explicit request to organize or place new files or directories | [Project architecture guidelines](project-architecture-guidelines.md) | Agent MUST route to the guide when this signal matches and MUST apply the guide's placement result contract. |
 | Mod-owned C# conventions, compiler compatibility, or runtime Unity callbacks | [C# and runtime Unity standards](../coding-standards/coding-standards-csharp-unity.md) | Agent MUST load this branch for every applicable Mod-owned C# task; caller compiler and referenced assemblies MUST govern compatibility. |
 | ModdingAPI APIs, lifecycle, services, persistence, commands, or logging | [ModdingAPI standards](../coding-standards/coding-standards-moddingAPI.md) | Agent MUST route framework documentation/source through Referencing ModdingAPI; caller's referenced assembly MUST govern API facts. |
 | Harmony targets, Patch files/classes, injections, or manual patching | [Harmony patching standards](../coding-standards/coding-standards-harmony-patching.md) | Applicable C# tasks MUST also load the C# branch; ModdingAPI remains the single authority for framework discovery, and manual `Harmony.Patch` MUST follow its approval gate. |
@@ -70,11 +70,4 @@ Agent MUST report the selected coding branch, ownership and scope decision, stan
 
 ## Route project architecture requests
 
-For a request about placing a new Mod-owned file or directory, the router MUST activate [Project architecture guidelines](project-architecture-guidelines.md) when either condition holds:
-
-- The Caller Mod repository has no established directory, namespace, module, or feature boundaries.
-- The user explicitly asks how to organize or place new files or directories.
-
-For an ordinary request in a project with established or feature-oriented structure, the router MUST NOT impose the default role categories. An explicit organization request still activates the guide, but the existing structure takes precedence.
-
-The architecture guide is soft guidance for new files. It MUST NOT move, rename, or restructure existing files, and it MUST NOT replace the detailed C#, ModdingAPI, or Harmony references selected elsewhere in this router. The route result MUST explain whether it activated, which existing-structure boundary applied, and which primary responsibility determined the placement.
+Activation is owned by the [Route map](#route-map). Placement results are owned by the [Project architecture guidelines](project-architecture-guidelines.md). This compatibility heading carries no activation or placement rules.

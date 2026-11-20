@@ -21,6 +21,10 @@ GUIDE = (
     / "sub-skills"
     / "project-architecture-guidelines.md"
 )
+ARCHITECTURE_ACTIVATION_CUES = (
+    "no established directory, namespace, module, or feature boundaries",
+    "explicit request to organize or place new files or directories",
+)
 
 
 def table_rows(text, heading):
@@ -37,6 +41,10 @@ def table_rows(text, heading):
             break
         rows.append([cell.strip() for cell in line.strip("|").split("|")])
     return rows
+
+
+def markdown_section(text, heading):
+    return text.split(heading, 1)[1].split("\n## ", 1)[0]
 
 
 class ProjectArchitectureDocumentationTests(unittest.TestCase):
@@ -60,11 +68,9 @@ class ProjectArchitectureDocumentationTests(unittest.TestCase):
         router = ROUTER.read_text(encoding="utf-8").casefold()
         guide = GUIDE.read_text(encoding="utf-8").casefold()
 
-        for phrase in (
-            "no established directory, namespace, module, or feature boundaries",
-            "explicitly asks how to organize or place new files or directories",
-            "ordinary request in a project with established or feature-oriented structure",
-            "must not impose the default role categories",
+        for phrase in (*ARCHITECTURE_ACTIVATION_CUES,
+            "route to the guide when this signal matches",
+            "apply the guide's placement result contract",
         ):
             self.assertIn(phrase, router)
         for phrase in (
@@ -79,6 +85,82 @@ class ProjectArchitectureDocumentationTests(unittest.TestCase):
             "suggested namespace",
         ):
             self.assertIn(phrase, guide)
+
+    def test_architecture_activation_has_one_owner_and_a_compatibility_pointer(self):
+        router = ROUTER.read_text(encoding="utf-8")
+        guide = GUIDE.read_text(encoding="utf-8")
+        route_rows = table_rows(router, "## Route map")
+        architecture_row = next(
+            row
+            for row in route_rows
+            if "project-architecture-guidelines.md" in row[1]
+        )
+        signal = architecture_row[0].casefold()
+        boundary = architecture_row[2].casefold()
+
+        for phrase in ARCHITECTURE_ACTIVATION_CUES:
+            self.assertIn(phrase, signal)
+        self.assertNotIn("established structure must take precedence", boundary)
+        self.assertIn("apply", boundary)
+        self.assertIn("result contract", boundary)
+
+        compatibility = markdown_section(
+            router,
+            "## Route project architecture requests",
+        ).casefold()
+        self.assertIn("[route map](#route-map)", compatibility)
+        self.assertIn(
+            "[project architecture guidelines](project-architecture-guidelines.md)",
+            compatibility,
+        )
+        for repeated_rule in (
+            *ARCHITECTURE_ACTIVATION_CUES,
+            "established structure must take precedence",
+            "activation status",
+            "primary responsibility",
+        ):
+            self.assertNotIn(repeated_rule, compatibility)
+
+        route_decision = markdown_section(guide, "## Route decision").casefold()
+        self.assertIn(
+            "[route map](../sub-skills/coding-standards.md#route-map)",
+            route_decision,
+        )
+        self.assertNotIn("no established directory", route_decision)
+        self.assertNotIn("explicitly asks how to organize", route_decision)
+        guide_text = guide.casefold()
+        for repeated_activation_condition in (
+            *ARCHITECTURE_ACTIVATION_CUES,
+            "without established boundaries",
+        ):
+            self.assertNotIn(repeated_activation_condition, guide_text)
+
+        result_rows = {
+            row[0].casefold(): row[1].casefold()
+            for row in table_rows(guide, "## Route decision")
+        }
+        for field in ("activation status", "activation reason"):
+            self.assertIn(
+                "[route map](../sub-skills/coding-standards.md#route-map)",
+                result_rows[field],
+            )
+        for label in (
+            "`no established boundaries`",
+            "`explicit placement request`",
+            "`established architecture`",
+        ):
+            self.assertIn(label, result_rows["activation reason"])
+        for mapping in (
+            "with `activated`",
+            "with `inactive`",
+        ):
+            self.assertIn(mapping, result_rows["activation reason"])
+        self.assertNotIn("request signal that activated", result_rows["activation reason"])
+
+        precedence = markdown_section(guide, "## Scope and precedence").casefold()
+        self.assertIn("when the guide is active", precedence)
+        self.assertIn("must take precedence", precedence)
+        self.assertIn("must not move, rename, or restructure", precedence)
 
     def test_guide_covers_categories_and_primary_responsibility(self):
         guide = GUIDE.read_text(encoding="utf-8")
@@ -120,7 +202,6 @@ class ProjectArchitectureDocumentationTests(unittest.TestCase):
             "extension methods and support types tightly coupled",
             "mod console command classes and command-specific behavior",
             "established feature-oriented structure takes precedence",
-            "must not move, rename, or restructure existing files",
             "generic utils, helpers, or managers buckets",
             "documented gap",
             "does not redefine naming, compiler compatibility, lifecycle behavior, patch target resolution, or patch discovery",
@@ -134,7 +215,6 @@ class ProjectArchitectureDocumentationTests(unittest.TestCase):
             "must not move, rename, or restructure existing files",
             "harmonypatches",
             "harmony bridge that raises an event remains here",
-            "generic utils, helpers, or managers buckets",
             "traverseutils.cs",
             "must not be copied as an architecture requirement",
         ):

@@ -2,9 +2,28 @@ import re
 import unittest
 from pathlib import Path
 
+from test_documentation_consistency import (
+    canonical_route_tables,
+    markdown_table_cells,
+)
+
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 MAIN_SKILL = REPOSITORY_ROOT / "skills" / "blasphemous-modding-helper" / "SKILL.md"
+SOURCE_NAVIGATION = (
+    MAIN_SKILL.parent / "references" / "source-code-navigation" / "MAIN.md"
+)
+
+
+def navigation_routes():
+    table = canonical_route_tables(
+        SOURCE_NAVIGATION.read_text(encoding="utf-8")
+    )[0][1]
+    return [
+        cells
+        for line in table.splitlines()[2:]
+        if (cells := markdown_table_cells(line))
+    ]
 
 
 class SkillRouteMapTests(unittest.TestCase):
@@ -20,7 +39,7 @@ class SkillRouteMapTests(unittest.TestCase):
         normalized_opening = " ".join(opening.split())
         normalized_text = " ".join(text.split())
 
-        self.assertLess(len(description.strip()), 599)
+        self.assertLess(len(description.strip()), 400)
         self.assertNotIn("Blasphemous 2 is not supported", normalized_description)
         for cue in (
             "Blasphemous 1",
@@ -130,6 +149,7 @@ class SkillRouteMapTests(unittest.TestCase):
         ][2]
         for classification in ("Real-profile", "xUnit", "both", "ambiguous"):
             self.assertIn(classification, mod_test_boundary)
+        self.assertIn("Mod-test entry's classification", mod_test_boundary)
 
     def test_coding_standards_heading_points_to_its_route_owner(self):
         text = MAIN_SKILL.read_text(encoding="utf-8")
@@ -137,7 +157,11 @@ class SkillRouteMapTests(unittest.TestCase):
         normalized = " ".join(section.split())
 
         self.assertIn("coding-standards.md", section)
-        self.assertIn("C#", normalized)
+        self.assertIn("Coding-standards sub-skill", normalized)
+        self.assertEqual(normalized.count("Mod-owned C#"), 1)
+        self.assertNotIn("Unity `2017.4.40f1`", section)
+        self.assertNotIn("Harmony patching standards", section)
+        self.assertNotIn("Referencing ModdingAPI", section)
         self.assertEqual(
             len([line for line in section.splitlines() if line.strip()]),
             1,
@@ -152,6 +176,9 @@ class SkillRouteMapTests(unittest.TestCase):
         normalized = " ".join(section.split())
 
         for phrase in (
+            "owner-defined completion criteria",
+            "without claiming completion",
+            "verified every cited",
             "completion criteria",
             "claiming completion",
             "blocked or failed",
@@ -217,6 +244,37 @@ class SkillRouteMapTests(unittest.TestCase):
                 for sentence in all_sentences
             )
         )
+
+    def test_achievement_requests_have_one_source_navigation_destination(self):
+        routes = navigation_routes()
+        self.assertEqual(len(routes), 10)
+        signals = (
+            ("bare achievements", "[items.md](items.md)"),
+            ("framework/achievements/*", "[items.md](items.md)"),
+            (
+                "framework/achievements/* persistence",
+                "[items.md](items.md)",
+            ),
+            ("achievementsmanager", "[core.md](core.md)"),
+            ("lifecycle, persistence, wiring, and runtime flow", "[core.md](core.md)"),
+            (
+                "achievementsmanager achievement entities",
+                "[core.md](core.md)",
+            ),
+            ("achievement ui widgets runtime flow", "[ui.md](ui.md)"),
+            (
+                "achievement playmaker actions runtime flow",
+                "[tools.md](tools.md)",
+            ),
+        )
+        for signal, expected in signals:
+            with self.subTest(signal=signal):
+                destinations = {
+                    destination
+                    for request_signal, destination, _ in routes
+                    if signal in request_signal.casefold()
+                }
+                self.assertEqual(destinations, {expected})
 
     def test_top_level_relative_links_resolve(self):
         text = MAIN_SKILL.read_text(encoding="utf-8")

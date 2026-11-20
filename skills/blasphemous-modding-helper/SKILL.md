@@ -23,7 +23,7 @@ After reading [Requirement levels](references/requirement-levels-definitions.md)
 | Find or explain decompiled game source, mechanics, classes, or dependencies | [Source analyzer](references/sub-skills/source-analyzer.md) | Agent MUST complete the shared entry gate and the source-path gate. Agent MUST report the selected source tree, verified code evidence, and next analysis action. |
 | Inspect exported Unity project topology, assets, GUIDs, script assets, flattened Prefabs, Unity version, or scene-set summary | [Unity project navigation](references/sub-skills/unity-project-navigation.md) | Agent MUST complete the shared entry gate and require a valid `unity_project_path` only for this route. Agent MUST keep exported asset evidence separate from C# behavior evidence, MUST NOT parse or infer behavior from Unity script files, and MUST route behavior questions to the source analyzer. |
 | Diagnose BepInEx or Unity logs, startup evidence, or runtime diagnostics | [Log analyzer](references/sub-skills/log-analyzer.md) | Agent MUST complete the shared entry gate and MUST resolve required log sources. Agent MUST report evidence mode, paths, status, and next recovery or verification action. |
-| Test a Mod; build/deploy/launch a profile; inspect startup; stop, clean, or verify in-game behavior through Player-performed actions or Computer Use | [Mod-test entry](references/sub-skills/blasphemous-modding-test.md) | Agent MUST classify the request as `Real-profile`, `xUnit`, `both`, or `ambiguous`, then MUST follow the selected branch owner. Agent MUST follow the Mod-test entry's documented Automated xUnit configuration exception. For `both`, Agent MUST keep independent phase reports. |
+| Test a Mod; build/deploy/launch a profile; inspect startup; stop, clean, or verify in-game behavior through Player-performed actions or Computer Use | [Mod-test entry](references/sub-skills/blasphemous-modding-test.md) | Agent MUST follow the Mod-test entry's classification as `Real-profile`, `xUnit`, `both`, or `ambiguous`, then MUST follow the selected branch owner. Agent MUST use the Mod-test entry's documented Automated xUnit configuration exception, so Caller-owned xUnit does not wait for the Real-profile configuration gate. For `both`, Agent MUST keep independent phase reports. |
 | Generate, modify, review, or refactor Mod-owned C# or project structure | [Coding standards](references/sub-skills/coding-standards.md) | Agent MUST complete the shared entry gate and selected coding branch. Agent MUST report the ownership boundary and next implementation or verification action. |
 | Need ModdingAPI documentation, source guidance, or framework conventions | [Referencing ModdingAPI](references/sub-skills/referencing-modding-api.md) | Agent MUST complete the command-context gate and MUST resolve one local or release-aware reference. Agent MUST report the selected reference/topic and next source or code action. |
 | Analyze one explicit Blasphemous 1 save file or directory read-only | [Save analysis](references/sub-skills/save-analysis.md) | Agent MUST follow the shared [Invocation preflight](references/config/invocation-preflight.md)'s documented configuration exception for Save analysis. |
@@ -46,7 +46,7 @@ Agent MUST follow workflow steps in order, unless otherwise explicitly specified
 
 ### Step 1: Complete shared entry gate
 
-Before applying a route-specific gate, Agent MUST use the Request routing table to identify every applicable route. For each operational route subject to the shared entry gate, Agent MUST complete that gate before executing the route. A route with an owner-documented exception MUST follow that exception and MUST NOT enter the shared configuration path.
+Agent MUST classify the request through the Request routing section first. Before applying a route-specific gate, Agent MUST use that table to identify every applicable route. For each operational route subject to the shared entry gate, Agent MUST complete that gate before selecting or executing the route. A route with an owner-documented configuration exception MUST follow that route owner's exception and MUST NOT enter the shared configuration path.
 
 **Done when**: the request is classified, and each selected route's required shared gate or owner-documented exception is satisfied.
 
@@ -66,7 +66,7 @@ For an operational branch, Agent MUST use tools to gather information required b
 - coding standards and its selected branch references;
 - Unity API and ModdingAPI references routed by relevant sub-skills.
 
-Tools' `.md` files SHOULD contain all path specifications required for task. Agent MUST NOT ask user for path again unless needed path information is absent there. A route with an owner-documented exception MUST follow only that exception boundary and MUST NOT enter the shared configuration path.
+Tools' `.md` files SHOULD contain all path specifications required for task. Agent MUST NOT ask user for path again unless needed path information is absent there. A route with an owner-documented configuration exception MUST follow only that route owner's exception boundary and MUST NOT enter the shared configuration path.
 
 **Done when**: for an operational branch, agent has located every path task needs (source code, modding profile, and logs) in `config.yml` or navigation documents, and has handed any missing or stale path to Step 5; or, for a route with an owner-documented exception, its required input and context are confirmed.
 
@@ -76,10 +76,10 @@ Agent MUST use gathered information to solve user question.
 
 If repeating the same approach yields no new evidence, Agent MUST pause, summarize what was checked and learned, identify remaining unknowns, then change approach or request the specific user action or information needed to proceed.
 
-**Done when**: every selected route's owner-defined completion criteria have been satisfied, or the Agent has reported its truthful incomplete status, blocked or failed reason when applicable, and next action without claiming completion; in either case, every cited path, artifact, and evidence value has been verified against its actual file or run output.
+**Done when**: every selected route's owner-defined completion criteria have been satisfied, or the Agent has reported its truthful incomplete status, blocked or failed reason when applicable, and next action without claiming completion; in either case, the Agent MUST have verified every cited path, artifact, and evidence value against its actual file or run output.
 
 ### Step 5: Path Failure Recovery
 
-For an operational branch, Agent MUST follow the path-failure recovery contract in the shared entry gate. A route with an owner-documented exception MUST follow the exception owner's failure handling and MUST NOT enter configuration recovery.
+For an operational branch, Agent MUST follow the path-failure recovery contract in the shared entry gate. A route with an owner-documented configuration exception MUST follow that route owner's failure handling and MUST NOT enter configuration recovery.
 
 **Done when**: the operational branch recovery contract has produced a validated configuration file, or agent has continued with current paths and reported specific failure and next action; or a route with an owner-documented exception has reported its specific failure and next action.
