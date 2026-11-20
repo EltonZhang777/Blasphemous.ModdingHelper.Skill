@@ -1,7 +1,7 @@
 # Blasphemous Modding Helper for AI Agents
 
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
-[![Plugin](https://img.shields.io/badge/Claude%20Code-plugin-blueviolet)](#-install)
+[![Agent Skill](https://img.shields.io/badge/Agent-Skill-blueviolet)](#-install)
 
 An AI agent skill that provides expert assistance with **Blasphemous mod development**. Helps you work with decompiled C# source code, analyze game mechanics, inspect save evidence read-only, debug logs, and create custom mods using the [ModdingAPI](https://github.com/BrandenEK/Blasphemous.ModdingAPI) framework.
 
@@ -9,61 +9,38 @@ An AI agent skill that provides expert assistance with **Blasphemous mod develop
 
 ## 🚀 Install
 
-### One command (auto-detects your agents)
+Choose one of the two supported installation routes.
+
+### Clone and install
+
+Clone the repository, then run the platform wrapper with the exact final Skill directory:
 
 ```bash
-# macOS / Linux / WSL
-curl -fsSL https://raw.githubusercontent.com/EltonZhang777/Blasphemous.ModdingHelper.Skill/main/install.sh | bash
-
-# Windows PowerShell
-irm https://raw.githubusercontent.com/EltonZhang777/Blasphemous.ModdingHelper.Skill/main/install.ps1 | iex
-```
-
-The installer detects AI coding agents on your machine and installs the skill for each one. If any selected agent installation or uninstallation fails, the installer exits with a nonzero status and does not report completion; inspect the provider diagnostic before retrying.
-
-### Per-agent install
-
-| Agent | Command |
-|-------|---------|
-| **Claude Code** | `/plugin marketplace add EltonZhang777/Blasphemous.ModdingHelper.Skill` then `/plugin install blasphemous-modding-helper@blasphemous-modding-helper-marketplace` |
-| **Gemini CLI** | `gemini extensions install https://github.com/EltonZhang777/Blasphemous.ModdingHelper.Skill` |
-| **Codex CLI (Skill)** | `npx -y skills add EltonZhang777/Blasphemous.ModdingHelper.Skill -a codex -g -y` |
-| **Codex CLI (plugin)** | `codex plugin marketplace add EltonZhang777/Blasphemous.ModdingHelper.Skill`, then `codex plugin add blasphemous-modding-helper@blasphemous-modding-helper-marketplace` |
-| **Cursor / Windsurf / Cline** | `npx -y skills add EltonZhang777/Blasphemous.ModdingHelper.Skill -a <agent> -g -y` |
-
-### Custom-path install
-
-Install into an arbitrary harness by passing its final Skill directory:
-
-```bash
-node bin/install.js --path ./custom-harness/blasphemous-modding-helper --dry-run
-bash install.sh --path "$PWD/custom-harness/blasphemous-modding-helper"
+git clone https://github.com/EltonZhang777/Blasphemous.ModdingHelper.Skill.git
+cd Blasphemous.ModdingHelper.Skill
+bash install.sh --path "<AGENT_SKILLS_DIR>/blasphemous-modding-helper"
 ```
 
 ```powershell
-pwsh .\install.ps1 --path "$PWD\custom-harness\blasphemous-modding-helper"
+git clone https://github.com/EltonZhang777/Blasphemous.ModdingHelper.Skill.git
+Set-Location Blasphemous.ModdingHelper.Skill
+.\install.ps1 --path "<AGENT_SKILLS_DIR>\blasphemous-modding-helper"
 ```
 
-PowerShell forwards installer flags directly; use `--dry-run`, `--only`, `--uninstall`, and `--path` as shown. Non-interactive runs do not wait for a keypress.
+`--path` is the exact final Skill directory; the installer does not append another directory name. Add `--dry-run` to preview the operation, or `--uninstall` to remove Skill-owned files from that directory. The destination must be outside this repository and must not pass through a symbolic link or junction. Installation preserves unrelated entries.
 
-The installer does not append another directory name. `--path` cannot be combined with `--all` or `--only`. Installation preserves unrelated entries; custom-path uninstall removes only Skill files and removes the directory only when it becomes empty.
+The clone-local wrappers require Node.js 18 or newer; they do not download an installer.
 
-The destination must be outside this repository and must not pass through a symbolic link or junction; unsafe source, repository, and replacement targets are rejected.
+### Install from the release archive
 
-Automatic provider installs use user-level scope and non-interactive flags. The delegated provider IDs for Codex and Hermes are `codex` and `hermes-agent`; legacy `codex-cli` and `hermes` values remain accepted by `--only` and normalize to those canonical IDs.
-
-### Manual install
-
-1. Download the skill from the [release page](https://github.com/EltonZhang777/Blasphemous.ModdingHelper.Skill/releases).
-2. Copy the contents of `skills/blasphemous-modding-helper/` to the provider's skill directory. For Codex CLI, use `$CODEX_HOME/skills/blasphemous-modding-helper/`; when `CODEX_HOME` is unset, the installer uses `~/.codex/skills/blasphemous-modding-helper/`.
+1. Download the archive from [GitHub Releases](https://github.com/EltonZhang777/Blasphemous.ModdingHelper.Skill/releases).
+2. Copy the bundled `skills/blasphemous-modding-helper/` directory to `<AGENT_SKILLS_DIR>/blasphemous-modding-helper/`.
 3. Keep `SKILL.md` at the installed directory root, with its `references/` and `scripts/` directories beside it; do not add another `skills/` level.
-4. Restart the tool if the skill doesn't show up.
+4. Restart or reload the Agent Skills host if the skill does not appear.
 
 ### Activation
 
-After installation, manually activate the skill:
-- **Claude Code**: skill is registered automatically; just ask a modding question
-- **Other agents**: use `/command` or mention the skill in context
+After either installation route, prompt naturally. The top-level skill selects the applicable workflow.
 
 ---
 
@@ -97,8 +74,10 @@ Prompt the AI in natural language with clear objectives.
 
 ## 📋 Requirements
 
-- Any AI coding tool that supports skills (Claude Code, Gemini CLI, Codex CLI, Cursor, etc.)
+- An Agent Skills-compatible host
 - Python 3.9 or newer for cross-platform Skill scripts
+- Node.js 18 or newer for the clone-local installer
+- PowerShell 5.1 or newer for the clone-local Windows installer
 - See [Dependencies](skills/blasphemous-modding-helper/references/config/invocation-preflight.md#dependencies) for the post-install package and conditional workflow dependencies
 - Use the [Mod Installer](https://github.com/BrandenEK/Blasphemous.Modding.Installer) to manage game profiles when needed
 
@@ -112,18 +91,14 @@ cd Blasphemous.ModdingHelper.Skill
 ```
 
 The repository uses:
-- **`.claude-plugin/plugin.json`** — Claude Code plugin manifest
-- **`.codex-plugin/plugin.json`** — Codex plugin manifest for the bundled Skill
-- **`.agents/plugins/marketplace.json`** — Codex repo marketplace entry for the native plugin route
 - **`skills/blasphemous-modding-helper/SKILL.md`** — Core skill definition
-- **`install.sh` / `install.ps1`** — Cross-platform unified installers
-- **`gemini-extension.json`** — Gemini CLI extension descriptor
+- **`bin/install.js`** — Explicit-path installer
+- **`install.sh` / `install.ps1`** — Clone-local platform wrappers
 - **`skills-lock.json`** — Skill version tracking
 
 ### Distribution note
 
-- **GitHub Release zip** contains only `skills/blasphemous-modding-helper/` — intended for manual installs.
-- **`npx github:EltonZhang777/Blasphemous.ModdingHelper.Skill`** (used by the curl-pipe paths of `install.sh` / `install.ps1`) runs the full repository, which also includes `bin/install.js` and the platform installers.
+The GitHub Release archive contains only `skills/blasphemous-modding-helper/` for manual installation.
 
 ---
 
