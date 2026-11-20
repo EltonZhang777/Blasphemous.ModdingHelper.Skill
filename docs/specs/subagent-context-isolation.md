@@ -81,7 +81,7 @@ The sub-agent reads the parent-provided scope in the shared workspace without cr
 - The primary test seam is the packaged Skill Markdown delegation contract spanning the top-level router, the shared delegation reference, and the four enabled branch references.
 - Documentation tests must verify that all four enabled branches link to one shared delegation authority, that the shared contract defines the trigger, parent/child boundary, handoff, fallback, and platform-neutral requirements, and that branch documents retain only branch-specific constraints.
 - Positive route checks must cover broad source reading, broad log reading, ModdingAPI reference reading, and full or ambiguous localization lookup.
-- Negative route checks must cover small targeted reads, configuration/setup decisions, reference lifecycle mutations, real-profile operations, Manual verification, code writes, and publication, ensuring they remain with the main agent or their existing owner.
+- Negative route checks must cover small targeted reads, configuration/setup decisions, reference lifecycle mutations, real-profile operations, Player-performed in-game verification, code writes, and publication, ensuring they remain with the main agent or their existing owner.
 - Source checks must verify preservation of the configured source-path requirement, source-navigation authority, and precise evidence expectation.
 - Log checks must verify preservation of explicit current versus snapshot evidence, no silent fallback, and no child configuration write.
 - ModdingAPI checks must verify resolved-reference identity, selected-topic routing, local/remote authority separation, and the prohibition on clone/update/checkout operations during ordinary lookup.
@@ -96,7 +96,7 @@ The sub-agent reads the parent-provided scope in the shared workspace without cr
 - Depending on or linking to a specific model, harness, IDE, shell, provider, or vendor-specific integration.
 - Delegating coding standards decisions, project-architecture decisions, code generation, code modification, or code publication.
 - Delegating configuration selection, first-time setup, path recovery, dependency installation, decompilation, or reference clone/update/checkout operations.
-- Delegating Automated xUnit execution, Real-profile build/deploy/launch/stop/clean/snapshot operations, process control, or Manual verification.
+- Delegating Automated xUnit execution, Real-profile build/deploy/launch/stop/clean/snapshot operations, process control, or Player-performed in-game verification.
 - Changing the existing source, log, ModdingAPI, localization, test, profile, or evidence semantics beyond adding the delegation boundary.
 - Adding a configuration field or numeric threshold for delegation size.
 - Creating a worktree, persistent log copy, generated source tree, or other caller-owned artifact for a child task.

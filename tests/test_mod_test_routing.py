@@ -8,17 +8,22 @@ SKILL_ROOT = (
     / "skills"
     / "blasphemous-modding-helper"
 )
+REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 REFERENCES = SKILL_ROOT / "references" / "sub-skills"
 SHARED = REFERENCES / "blasphemous-modding-test.md"
 AUTOMATED = REFERENCES / "blasphemous-modding-test-automated-xunit.md"
 REAL_PROFILE = REFERENCES / "blasphemous-modding-test-real-profile.md"
 COORDINATION = REFERENCES / "blasphemous-modding-test-in-game-coordination.md"
 PLAYER = REFERENCES / "blasphemous-modding-test-player-verification.md"
+LOG_ANALYZER = REFERENCES / "log-analyzer.md"
 DELEGATION_REFERENCES = SKILL_ROOT / "references" / "subagent-delegation"
 GENERAL_DELEGATION = DELEGATION_REFERENCES / "subagent-delegation-general-guidelines.md"
 XUNIT_DELEGATION = DELEGATION_REFERENCES / "xunit-testing-delegation.md"
 REAL_PROFILE_DELEGATION = DELEGATION_REFERENCES / "real-profile-testing-delegation.md"
 READ_ONLY_DELEGATION = DELEGATION_REFERENCES / "read-only-evidence-delegation.md"
+ROUTING_SPEC = REPOSITORY_ROOT / "docs" / "specs" / "modding-test-routing.md"
+MOD_TEST_SPEC = REPOSITORY_ROOT / "docs" / "specs" / "blasphemous-modding-test.md"
+VERIFICATION = REPOSITORY_ROOT / "docs" / "verification" / "blasphemous-modding-test.md"
 DOCUMENTS = (
     SHARED,
     AUTOMATED,
@@ -52,6 +57,11 @@ def links(text):
 
 
 class ModTestRoutingDocumentationTests(unittest.TestCase):
+    def test_player_verification_label_is_canonical_across_route_owners(self):
+        for document in (SHARED, REAL_PROFILE, COORDINATION, PLAYER, ROUTING_SPEC):
+            text = read(document)
+            self.assertIn("Player-performed in-game verification", text, document)
+
     def test_shared_entry_links_to_existing_branch_owners(self):
         shared = read(SHARED)
         expected = {
@@ -232,9 +242,9 @@ class ModTestRoutingDocumentationTests(unittest.TestCase):
         shared = read(SHARED).casefold()
 
         for phrase in (
-            "<test_cli> run",
-            "stop session_id",
-            "clean session_id",
+            "`run`",
+            "tracked-session stop exception",
+            "cleanup uses newest-first session stack",
             "status",
             "profile-local",
             "process tree",
@@ -246,6 +256,63 @@ class ModTestRoutingDocumentationTests(unittest.TestCase):
         ):
             self.assertIn(phrase, real)
         self.assertNotIn("<test_cli> run", shared)
+
+        canonical = real[real.index("canonical lifecycle order"):]
+        ordered = ("`run`", "`logs`", "`snapshot`", "`stop`", "`clean`", "`status`")
+        positions = [canonical.index(command) for command in ordered]
+        self.assertEqual(positions, sorted(positions))
+
+    def test_test_docs_keep_compatibility_policy_with_the_real_profile_owner(self):
+        real = read(REAL_PROFILE)
+        verification = read(VERIFICATION)
+        spec = read(MOD_TEST_SPEC)
+
+        self.assertIn("native Windows, Linux, or macOS", real)
+        self.assertIn("Bash or PowerShell may host the Python process", real)
+        self.assertIn("neither host is a platform or support combination", real)
+        for compatibility_layer in ("Git Bash", "Cygwin", "WSL", "Proton", "Wine"):
+            self.assertIn(compatibility_layer, real)
+
+        for document, text in (
+            (VERIFICATION, verification),
+            (MOD_TEST_SPEC, spec),
+        ):
+            text = text.casefold()
+            self.assertNotIn("native windows and bash contract", text, document)
+            prose = "\n".join(
+                line for line in text.splitlines() if "`test_" not in line
+            )
+            for compatibility_layer in ("git bash", "cygwin", "wsl", "proton", "wine"):
+                self.assertNotIn(compatibility_layer, prose, document)
+
+        self.assertIn("native Windows, Linux, and macOS", verification)
+        self.assertIn("compatibility-layer policy", verification)
+
+    def test_cli_help_and_parser_tests_are_the_only_argument_grammar_owners(self):
+        owners = (REAL_PROFILE, VERIFICATION, MOD_TEST_SPEC)
+        for document in owners:
+            text = read(document)
+            self.assertIn("`--help`", text, document)
+            self.assertIn("root and subcommand `--help`", text.casefold(), document)
+            self.assertIn("parser tests", text.casefold(), document)
+            self.assertIn("sole owners of flags and argument grammar", text.casefold(), document)
+
+        for document in (*owners, SHARED, LOG_ANALYZER):
+            text = read(document)
+            self.assertNotIn("<TEST_CLI>", text, document)
+            self.assertNotIn("Common options are accepted", text, document)
+            self.assertNotIn("| Option | Meaning |", text, document)
+            self.assertNotIn("Invocation template", text, document)
+            self.assertNotIn("```powershell", text.casefold(), document)
+            self.assertNotIn("```bash", text.casefold(), document)
+            self.assertIsNone(
+                re.search(
+                    r"(?<![\w-])--(?:current|snapshot|full|force|"
+                    r"stop-decision|force-stop-decision|unity-log-dir)\b",
+                    text.casefold(),
+                ),
+                document,
+            )
 
     def test_real_profile_contract_covers_gate_prerequisites_and_states(self):
         text = read(REAL_PROFILE).casefold()
@@ -288,7 +355,7 @@ class ModTestRoutingDocumentationTests(unittest.TestCase):
             player,
         )
         self.assertIn(
-            "selects player-performed verification and reaches the "
+            "selects player-performed in-game verification and reaches the "
             "[player-performed in-game verification handoff and turn boundary]",
             player.casefold(),
         )
