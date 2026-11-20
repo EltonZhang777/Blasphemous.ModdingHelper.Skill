@@ -33,9 +33,39 @@ class SkillRouteMapTests(unittest.TestCase):
         opening = text.split("## Request routing", 1)[0]
         normalized_description = " ".join(description.split())
         normalized_opening = " ".join(opening.split())
+        normalized_text = " ".join(text.split())
 
-        self.assertIn("Blasphemous 1 only", normalized_description)
-        self.assertIn("Blasphemous 2 is not supported", normalized_description)
+        self.assertLess(len(description.strip()), 400)
+        self.assertNotIn("Blasphemous 2 is not supported", normalized_description)
+        for cue in (
+            "Blasphemous 1",
+            "mod development",
+            "Mod testing",
+            "BepInEx/Unity diagnostics",
+            "decompiled source",
+            "save analysis",
+            "exported Unity project navigation",
+            "ModdingAPI",
+            "localization",
+        ):
+            self.assertIn(cue.casefold(), normalized_description.casefold())
+
+        self.assertEqual(
+            normalized_text.count("Blasphemous 1 only"),
+            1,
+        )
+        self.assertEqual(
+            normalized_text.count("Blasphemous 2 is not supported"),
+            1,
+        )
+        self.assertEqual(
+            normalized_opening.count("Blasphemous 2 is not supported"),
+            1,
+        )
+        self.assertLess(
+            normalized_text.rfind("Blasphemous 2"),
+            normalized_text.index("## Request routing"),
+        )
         self.assertIn("Blasphemous 2-only requests", normalized_opening)
         self.assertIn(
             "MUST briefly state that Blasphemous 2 is out of scope",
@@ -60,7 +90,17 @@ class SkillRouteMapTests(unittest.TestCase):
 
     def test_routes_have_one_existing_authority_and_explicit_boundaries(self):
         text = MAIN_SKILL.read_text(encoding="utf-8")
-        normalized = " ".join(text.split())
+        route_section = text.split("## Request routing", 1)[1].split(
+            "\n## ",
+            1,
+        )[0]
+        route_rows = []
+        for line in route_section.splitlines():
+            if not line.strip().startswith("|"):
+                continue
+            cells = tuple(cell.strip() for cell in line.strip().strip("|").split("|"))
+            if len(cells) == 3:
+                route_rows.append(cells)
         expected_routes = (
             "localization-lookup.md",
             "source-analyzer.md",
@@ -72,21 +112,59 @@ class SkillRouteMapTests(unittest.TestCase):
             "save-analysis.md",
         )
 
+        destinations = {}
+        for row in route_rows:
+            match = re.fullmatch(
+                r"\[[^\]]+\]\((references/sub-skills/[^)#]+\.md)\)",
+                row[1],
+            )
+            if match:
+                destinations[match.group(1)] = row
+
+        self.assertEqual(
+            set(destinations),
+            {
+                f"references/sub-skills/{route}"
+                for route in expected_routes
+            },
+        )
         for route in expected_routes:
-            self.assertIn(route, text)
             self.assertTrue(
                 (MAIN_SKILL.parent / "references" / "sub-skills" / route).is_file(),
                 route,
             )
+
+        mod_test_boundary = destinations[
+            "references/sub-skills/blasphemous-modding-test.md"
+        ][2]
+        for classification in ("Real-profile", "xUnit", "both", "ambiguous"):
+            self.assertIn(classification, mod_test_boundary)
+        self.assertIn("Mod-test entry's classification", mod_test_boundary)
+
+    def test_coding_standards_heading_points_to_its_route_owner(self):
+        text = MAIN_SKILL.read_text(encoding="utf-8")
+        section = text.split("## Coding standards", 1)[1].split("\n## ", 1)[0]
+        normalized = " ".join(section.split())
+
+        self.assertIn("coding-standards.md", section)
+        self.assertIn("Coding-standards sub-skill", normalized)
+        self.assertEqual(normalized.count("Mod-owned C#"), 1)
+        self.assertNotIn("Unity `2017.4.40f1`", section)
+        self.assertNotIn("Harmony patching standards", section)
+        self.assertNotIn("Referencing ModdingAPI", section)
+
+    def test_step_four_defines_checkable_completion(self):
+        text = MAIN_SKILL.read_text(encoding="utf-8")
+        section = text.split("### Step 4: Solve User Question", 1)[1].split(
+            "\n### ",
+            1,
+        )[0]
+        normalized = " ".join(section.split())
+
         for phrase in (
-            "configuration-free operational exception",
-            "Unity project navigation",
-            "Caller-owned xUnit does not wait",
-            "Real-profile",
-            "both",
-            "ambiguous",
-            "completion report",
-            "next document/action",
+            "owner-defined completion criteria",
+            "without claiming completion",
+            "verified every cited",
         ):
             self.assertIn(phrase, normalized)
 
