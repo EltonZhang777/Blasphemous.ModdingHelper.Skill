@@ -168,13 +168,97 @@ class ReleaseMetadataTests(unittest.TestCase):
                 / "plugin.json"
             ).is_file()
         )
+
+    def test_readme_documents_only_supported_agent_skill_install_routes(self):
         readme = (REPOSITORY_ROOT / "README.md").read_text(encoding="utf-8")
-        repository = codex["repository"].removeprefix("https://github.com/")
-        self.assertIn(f"codex plugin marketplace add {repository}", readme)
-        self.assertIn(
-            f"codex plugin add {codex_entry['name']}@{codex_marketplace['name']}",
+
+        self.assertRegex(
+            readme,
+            r"(?m)^\[!\[Agent Skill\]\([^)]+\)\]\(#-install\)$",
+        )
+        install_match = re.search(
+            r"(?ms)^## 🚀 Install\s*\n(.*?)(?=^## |\Z)",
             readme,
         )
+        self.assertIsNotNone(install_match)
+        install = install_match.group(1)
+        self.assertEqual(
+            re.findall(r"(?m)^### (.+)$", install),
+            ["Clone and install", "Install from the release archive", "Activation"],
+        )
+        self.assertIn(
+            'bash install.sh --path "<AGENT_SKILLS_DIR>/blasphemous-modding-helper"',
+            install,
+        )
+        self.assertIn(
+            '.\\install.ps1 --path "<AGENT_SKILLS_DIR>\\blasphemous-modding-helper"',
+            install,
+        )
+        self.assertIn(
+            "Copy the bundled `skills/blasphemous-modding-helper/` directory",
+            install,
+        )
+        self.assertIn("Download the archive from [GitHub Releases]", install)
+        self.assertIn("prompt naturally", install)
+
+        self.assertNotRegex(install, r"(?i)\b(?:curl|irm|iex|wget|npx)\b")
+        self.assertNotRegex(install, r"(?i)raw\.githubusercontent\.com")
+        self.assertNotRegex(install, r"(?i)\bauto-detect(?:s|ion)?\b")
+        self.assertNotRegex(install, r"(?i)\b(?:plugin|extension|marketplace)s?\b")
+        self.assertNotRegex(
+            install,
+            r"(?i)\b(?:claude|gemini|codex|cursor|windsurf|cline)\b",
+        )
+        self.assertNotIn("/command", install)
+        self.assertNotIn("--only", install)
+        self.assertNotIn("--all", install)
+        for metadata_entry in (
+            ".claude-plugin",
+            ".codex-plugin",
+            ".agents/plugins",
+            "gemini-extension.json",
+        ):
+            with self.subTest(metadata_entry=metadata_entry):
+                self.assertNotIn(metadata_entry, readme.casefold())
+
+        distribution = re.search(
+            r"(?ms)^### Distribution note\s*\n(.*?)(?=^---\s*$|^## |\Z)",
+            readme,
+        )
+        self.assertIsNotNone(distribution)
+        statements = [
+            line.strip() for line in distribution.group(1).splitlines() if line.strip()
+        ]
+        self.assertEqual(
+            statements,
+            [
+                "The GitHub Release archive contains only "
+                "`skills/blasphemous-modding-helper/` for manual installation."
+            ],
+        )
+
+        package = json.loads(
+            (REPOSITORY_ROOT / "package.json").read_text(encoding="utf-8")
+        )
+        self.assertIn("Agent Skill", package["description"])
+        self.assertNotRegex(package["description"], r"(?i)\bdetect(?:s|ion)?\b")
+        for retained in (
+            ".claude-plugin/",
+            ".codex-plugin/",
+            ".agents/plugins/",
+            "gemini-extension.json",
+        ):
+            self.assertIn(retained, package["files"])
+
+        preflight = (
+            REPOSITORY_ROOT
+            / "skills"
+            / "blasphemous-modding-helper"
+            / "references"
+            / "config"
+            / "invocation-preflight.md"
+        ).read_text(encoding="utf-8")
+        self.assertIn("README.md#install-from-the-release-archive", preflight)
 
     def test_release_matrix_validates_runtime_before_acceptance(self):
         workflow = (
@@ -195,6 +279,8 @@ class ReleaseMetadataTests(unittest.TestCase):
             "zip -r publish/${{ env.PROJECT_NAME }}.zip skills/${{ env.PROJECT_NAME }}",
             workflow,
         )
+        self.assertIn('node bin/install.js --dry-run --path "$SKILL_DESTINATION"', workflow)
+        self.assertNotIn("--only", workflow)
 
     def test_lock_and_readme_cover_routed_reference_branches(self):
         lock = json.loads(

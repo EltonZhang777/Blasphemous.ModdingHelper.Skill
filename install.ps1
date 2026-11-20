@@ -1,36 +1,19 @@
 <#
 .SYNOPSIS
-  Blasphemous Modding Helper — Unified Installer (Windows / PowerShell shim)
+  Blasphemous Modding Helper — PowerShell installer wrapper
 
 .DESCRIPTION
-  Thin wrapper around bin/install.js (the unified Node installer).
-  Detects AI coding agents on your machine and installs the skill
-  for each one using its native install path.
-
-  Why a Node installer? install.sh + install.ps1 used to duplicate logic
-  and constantly drifted. One Node script works everywhere without
-  bash/PowerShell quoting bugs.
-
-  Why a param() block wrapped in a function? `irm | iex` executes this
-  file as a string: script-path variables ($PSCommandPath) are $null and
-  a top-level param() block cannot receive arguments through a pipe.
-  Wrapping in a function and forwarding $args keeps one script working
-  for both the pipe path and the local-clone path.
+  Run this script from a cloned repository. It forwards every argument
+  to the adjacent bin/install.js.
 
 .EXAMPLE
-  irm https://raw.githubusercontent.com/EltonZhang777/Blasphemous.ModdingHelper.Skill/main/install.ps1 | iex
+  .\install.ps1 --path <AGENT_SKILLS_DIR>\blasphemous-modding-helper
 
 .EXAMPLE
-  .\install.ps1 --dry-run
+  .\install.ps1 --path <AGENT_SKILLS_DIR>\blasphemous-modding-helper --dry-run
 
 .EXAMPLE
-  .\install.ps1 --only trae-cn
-
-.EXAMPLE
-  .\install.ps1 --uninstall
-
-.EXAMPLE
-  .\install.ps1 --dry-run --path "$PWD\custom-harness\blasphemous-modding-helper"
+  .\install.ps1 --path <AGENT_SKILLS_DIR>\blasphemous-modding-helper --uninstall
 #>
 
 function Install-Skill {
@@ -39,96 +22,83 @@ function Install-Skill {
   )
 
   $ErrorActionPreference = "Stop"
-  $Repo = "EltonZhang777/Blasphemous.ModdingHelper.Skill"
 
-  # ── Helper to wait for key press (handles non-interactive terminals) ──────
-  function Wait-ForKeyPress {
-    if ($env:CI -or [Console]::IsInputRedirected -or $Host.Name -eq "ServerRemoteHost") {
-      return
-    }
-    try {
-      $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
-    } catch {
-      # Non-interactive terminal (e.g. CI, AI agent) — just exit
-    }
+  if (-not $PSCommandPath -or [IO.Path]::GetFileName($PSCommandPath) -ine "install.ps1") {
+    Write-Host "[✗] install.ps1 must be run from a cloned checkout." -ForegroundColor Red
+    Write-Host "    Clone the repository, then run the local install.ps1." -ForegroundColor Cyan
+    exit 1
   }
 
-  # ── Check Node ≥18 ────────────────────────────────────────────────────────
+  $here = Split-Path -Parent $PSCommandPath
+  $local = Join-Path $here "bin\install.js"
+  if (-not (Test-Path -LiteralPath $local -PathType Leaf)) {
+    Write-Host "[✗] The local installer was not found at $local" -ForegroundColor Red
+    Write-Host "    Clone the repository and run the local install.ps1." -ForegroundColor Cyan
+    exit 1
+  }
+
   $node = Get-Command node -ErrorAction SilentlyContinue
   if (-not $node) {
     Write-Host "[✗] Node.js (≥18) required." -ForegroundColor Red
     Write-Host "    Install from https://nodejs.org" -ForegroundColor Cyan
-    Write-Host ""
-    Write-Host "    Or via winget:" -ForegroundColor Gray
-    Write-Host "      winget install OpenJS.NodeJS.LTS" -ForegroundColor Gray
-    Wait-ForKeyPress
     exit 1
   }
 
-  $nodeMajor = [int](& node -p "process.versions.node.split('.')[0]")
-  if ($nodeMajor -lt 18) {
-    Write-Host "[✗] Node $nodeMajor too old. Need Node ≥18." -ForegroundColor Red
+  $nodeVersion = & node -p "process.versions.node.split('.')[0]"
+  if ($nodeVersion -notmatch '^\d+$' -or [int]$nodeVersion -lt 18) {
+    Write-Host "[✗] Node $nodeVersion too old. Need Node ≥18." -ForegroundColor Red
     Write-Host "    Upgrade: https://nodejs.org" -ForegroundColor Cyan
-    Wait-ForKeyPress
     exit 1
   }
 
-  # ── Local clone path ──────────────────────────────────────────────────────
-  # When the script runs from a repo clone, use the local bin/install.js
-  # directly. This avoids the npx round-trip and keeps offline installs
-  # working. $PSCommandPath is $null when piped via `irm | iex`, so the
-  # guard below correctly skips this block for the web-pipe path.
-  if ($PSCommandPath) {
-    $here = Split-Path -Parent $PSCommandPath
-    $local = Join-Path $here "bin\install.js"
-    if (Test-Path $local) {
-      Write-Host "[*] Using local installer: $local" -ForegroundColor Cyan
-      & node $local @InstallerArgs
-      $exitCode = $LASTEXITCODE
-      if ($exitCode -ne 0) {
-        Write-Host "[✗] Installer exited with code $exitCode" -ForegroundColor Red
-      }
-      Write-Host ""
-      Wait-ForKeyPress
-      exit $exitCode
+  # Windows PowerShell 5.1 can fold options into a quoted --path ending in a slash.
+  $foldedPath = $null
+  $foldedOptions = @()
+  $rawPath = [regex]::Match([Environment]::CommandLine, '--path\s+"(?<path>[^"]*\\)"(?<rest>.*)$')
+  if ($rawPath.Success) {
+    $foldedPath = $rawPath.Groups["path"].Value
+    $foldedOptions = @($rawPath.Groups["rest"].Value.Trim() -split '\s+' | Where-Object { $_ })
+    $unsupported = @($foldedOptions | Where-Object { $_ -notmatch '^--(?:dry-run|uninstall|help)$' })
+    if ($unsupported.Count -gt 0) {
+      Write-Host "[✗] The wrapped --path ends in a backslash and its remaining arguments could not be parsed." -ForegroundColor Red
+      Write-Host "    Remove the trailing backslash and run the wrapper again." -ForegroundColor Cyan
+      exit 2
     }
   }
 
-  # ── Curl-pipe path: delegate to npx ───────────────────────────────────────
-  # When the script is piped from the web, $PSCommandPath is null so we
-  # fall through to npx. This downloads the package from GitHub and runs
-  # bin/install.js remotely.
-  $npx = Get-Command npx -ErrorAction SilentlyContinue
-  if (-not $npx) {
-    Write-Host "[✗] npx required (ships with Node ≥18)." -ForegroundColor Red
-    Write-Host "    Reinstall Node.js from https://nodejs.org" -ForegroundColor Cyan
-    Wait-ForKeyPress
-    exit 1
+  function ConvertTo-InstallerPath([string]$pathValue) {
+    if ($env:OS -ne "Windows_NT" -or -not $pathValue.EndsWith('\')) {
+      return $pathValue
+    }
+    if ($pathValue -match '^[A-Za-z]:\\+$' -or $pathValue -match '^\\+$') {
+      return $pathValue.Substring(0, $pathValue.Length - 1) + '/'
+    }
+    return $pathValue.TrimEnd('\')
   }
 
-  Write-Host "[*] Downloading installer via npx..." -ForegroundColor Cyan
-  & npx -y "github:$Repo" @InstallerArgs
+  $normalizedArgs = @()
+  for ($index = 0; $index -lt $InstallerArgs.Count; $index++) {
+    $current = $InstallerArgs[$index]
+    $normalizedArgs += $current
+    if ($current -eq "--path" -and $index + 1 -lt $InstallerArgs.Count) {
+      $index++
+      $pathValue = $InstallerArgs[$index]
+      if ($foldedPath -and $pathValue -cne $foldedPath) {
+        $normalizedArgs += ConvertTo-InstallerPath $foldedPath
+        $normalizedArgs += $foldedOptions
+        break
+      }
+      $normalizedArgs += ConvertTo-InstallerPath $pathValue
+    }
+  }
+
+  & node $local @normalizedArgs
   $exitCode = $LASTEXITCODE
-
   if ($exitCode -ne 0) {
-    Write-Host ""
-    Write-Host "[✗] npx installer failed with code $exitCode" -ForegroundColor Red
-    Write-Host "    Possible causes:" -ForegroundColor Yellow
-    Write-Host "    - Network issue (try again or use a VPN)" -ForegroundColor Yellow
-    Write-Host "    - npm registry mirror doesn't support github: protocol" -ForegroundColor Yellow
-    Write-Host "    - Git is not installed or not in PATH" -ForegroundColor Yellow
-    Write-Host ""
-    Write-Host "    Alternative: clone the repo and run locally:" -ForegroundColor Cyan
-    Write-Host "      git clone https://github.com/$Repo" -ForegroundColor Gray
-    Write-Host "      cd Blasphemous.ModdingHelper.Skill" -ForegroundColor Gray
-    Write-Host "      .\install.ps1" -ForegroundColor Gray
+    Write-Host "[✗] Installer exited with code $exitCode" -ForegroundColor Red
   }
-
-  Write-Host ""
-  Wait-ForKeyPress
   exit $exitCode
 }
 
-# $args is the automatic variable: populated when run as a file
-# (`pwsh install.ps1 --all`), empty under `irm | iex`.
+# $args is populated when run as a file and empty under Invoke-Expression.
 Install-Skill -InstallerArgs $args

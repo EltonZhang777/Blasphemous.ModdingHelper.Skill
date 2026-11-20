@@ -8,16 +8,14 @@ This route uses the final terms `Project architecture guidelines`, `Established 
 
 ## Route decision
 
-The Coding Standards router activates this guide when the Caller Mod repository lacks stable directory, namespace, module, or feature boundaries, or when the user explicitly asks how to organize new files or directories.
-
-When a project already has stable or feature-oriented structure and the user has not asked for organization, the ordinary Mod task keeps its existing route and receives no unsolicited layout rewrite. When the user explicitly asks for organization, this guide activates for the decision, but the established structure still takes precedence.
+Activation is owned by the Coding Standards router [Route map](../sub-skills/coding-standards.md#route-map). This guide owns the placement result after routing.
 
 The agent MUST report every architecture placement decision with this route-result contract:
 
 | Field | Required result |
 | --- | --- |
-| Activation status | State `activated` for an unstructured repository or an explicit organization request; state `inactive` for ordinary work in an established architecture. |
-| Activation reason | Explain the request signal that activated the guide, or why the established architecture kept the guide inactive. |
+| Activation status | Link either `activated` for a matching router route or `inactive` for no route to the [Route map](../sub-skills/coding-standards.md#route-map). |
+| Activation reason | Link `no established boundaries` or `explicit placement request` with `activated`, or `established architecture` with `inactive`, to the [Route map](../sub-skills/coding-standards.md#route-map). |
 | Preserved boundary | Name the existing directory, namespace, module, or feature boundary that remains authoritative, or state that none was identified. |
 | Primary responsibility | Name the one responsibility that determines placement; for an inactive route, state that the architecture guide did not assign it. |
 | Suggested directory | Give the new directory or state that the established path is preserved. |
@@ -27,7 +25,7 @@ The agent MUST report every architecture placement decision with this route-resu
 
 This guide applies only to new files and directories in Mod-owned code. Decompiled game code, dependency code, upstream code, generated output, and build output remain outside the Caller Mod architecture boundary.
 
-Existing directory, namespace, module, and feature boundaries take precedence. The guide MUST NOT move, rename, or restructure existing files. A new file MAY follow a role category only when doing so fits the existing structure.
+When the guide is active, existing directory, namespace, module, and feature boundaries MUST take precedence as the placement result. The guide MUST NOT move, rename, or restructure existing files. A new file MAY follow a role category only when doing so fits the existing structure.
 
 Assign each new file by its primary responsibility. A file MAY contain tightly coupled supporting types, but independently meaningful responsibilities MUST be split into separate files. A file with one coherent responsibility SHOULD stay together.
 
@@ -35,7 +33,7 @@ New namespaces SHOULD mirror their directories by default. Existing namespace ex
 
 ## Default shape
 
-For a new project without established boundaries, the default role categories are:
+The default role categories are:
 
     <ModRoot>/
         <entrypoint>.cs

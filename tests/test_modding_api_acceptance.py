@@ -10,6 +10,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 from typing import Callable, Iterable, List, Optional, Sequence
 from urllib.parse import unquote
@@ -122,10 +123,17 @@ def run_installer_surface(node_executable: str) -> None:
         "Installer wrapper contract test",
         (node_executable, str(WRAPPER_TEST)),
     )
-    for agent in ("trae-cn", "claude-code"):
+    with tempfile.TemporaryDirectory() as temporary_directory:
+        destination = Path(temporary_directory) / "blasphemous-modding-helper"
         run_command(
-            f"Node installer dry-run ({agent})",
-            (node_executable, str(INSTALLER), "--dry-run", "--only", agent),
+            "Node installer explicit-path dry-run",
+            (
+                node_executable,
+                str(INSTALLER),
+                "--dry-run",
+                "--path",
+                str(destination),
+            ),
         )
     run_command("Node installer help", (node_executable, str(INSTALLER), "--help"))
 
