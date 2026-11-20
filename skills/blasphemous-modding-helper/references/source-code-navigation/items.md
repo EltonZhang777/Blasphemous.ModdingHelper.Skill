@@ -156,6 +156,8 @@ Inherits `ObjectEffect` — Modifies player attribute values. `EffectMode` enum:
 
 ## Achievement System
 
+Achievement entity, state, backend helper, and checker inventory. Manager lifecycle, persistence, wiring, and runtime flow MUST follow [Core AchievementsManager lifecycle and persistence](core.md#achievementsmanagercs); this section MUST remain the sole achievement-entity inventory.
+
 ### Framework/Achievements/Achievement.cs
 Serializable achievement class. Core properties: `Id`, `Progress` (0-100f), `Name`, `Description`, `Image`, `Status` (LOCKED/UNLOCKED/HIDDEN), `PreserveProgressInNewGamePlus`, `CanBeHidden`. Core methods: `AddProgress(float)`, `AddProgressSafeTo99(float)`, `Grant()`, `IsGranted()`. Localization keys are `Achievements/<Id>_NAME` / `_DESC`.
 
@@ -190,23 +192,7 @@ Serializable struct — `id`, `name`, `hasAnotherName`, `otherName`. Used for AC
 
 ## Special Item Tools
 
-### Tools/Items/ItemAudio.cs
-`ObjectEffect` subclass — Plays specified FMOD audio event on trigger.
-
-### Tools/Items/ItemFlag.cs
-`ObjectEffect` subclass — Sets `Core.Events.SetFlag` on apply/remove.
-
-### Tools/Items/ItemGhostTrail.cs
-`ObjectEffect` subclass — Enables player GhostTrail (`GhostTrailGenerator`) and sets color.
-
-### Tools/Items/ItemTemporalEffect.cs
-`ObjectEffect` subclass — Applies/removes multiple temporary player status effects (see Effect System section).
-
-### Tools/Items/Invulnerability.cs
-`ObjectEffect` subclass — Empty implementation of invulnerability effect (logic driven by parent OnEquip/OnUse events).
-
-### Tools/Items/ObjectEffect_ChangeItem.cs
-`ObjectEffect` subclass — Swaps current item with new one (configurable add/auto-equip).
+The effect-oriented [Special Item Effects (Tools/Items/) inventory](#special-item-effects-toolsitems) MUST remain the sole complete `Tools/Items/` class list.
 
 ---
 
