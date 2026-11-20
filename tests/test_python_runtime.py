@@ -1,3 +1,5 @@
+import contextlib
+import io
 import os
 import subprocess
 import sys
@@ -32,16 +34,22 @@ class PythonRuntimeTests(unittest.TestCase):
     def tearDown(self):
         self.temp_dir.cleanup()
 
-    def run_check(self, *arguments, environment=None):
+    def run_check(self, *arguments, environment=None, cwd=None, python_options=()):
         return subprocess.run(
-            [sys.executable, str(CHECK_SCRIPT), *arguments],
+            [sys.executable, *python_options, str(CHECK_SCRIPT), *arguments],
             capture_output=True,
             text=True,
             encoding="utf-8",
             errors="replace",
+            cwd=cwd,
             env=environment or os.environ.copy(),
             check=False,
         )
+
+    def environment_without_python3(self):
+        environment = os.environ.copy()
+        environment.pop("PYTHON3", None)
+        return environment
 
     def test_public_entry_point_reports_valid_host_runtime(self):
         result = self.run_check(
@@ -56,6 +64,234 @@ class PythonRuntimeTests(unittest.TestCase):
         self.assertIn("PYTHON_VERSION=", result.stdout)
         self.assertIn("PYTHON_DEPENDENCY_COUNT=0", result.stdout)
         self.assertEqual(result.stderr, "")
+
+    def test_interpreter_only_reports_a_valid_runtime_without_dependency_fields(self):
+        result = self.run_check(
+            "--python",
+            sys.executable,
+            "--interpreter-only",
+        )
+
+        self.assertEqual(result.returncode, runtime.EXIT_SUCCESS)
+        self.assertIn("PYTHON_RUNTIME_STATUS=ok", result.stdout)
+        self.assertIn(f"PYTHON3={Path(sys.executable).resolve()}", result.stdout)
+        self.assertIn("PYTHON_VERSION=", result.stdout)
+        self.assertIn("PYTHON_RUNTIME_SOURCE=explicit", result.stdout)
+        self.assertNotIn("PYTHON_REQUIREMENTS=", result.stdout)
+        self.assertNotIn("PYTHON_DEPENDENCY_COUNT=", result.stdout)
+        self.assertEqual(result.stderr, "")
+
+    def test_interpreter_only_preserves_explicit_python3_and_host_precedence(self):
+        environment = self.environment_without_python3()
+        environment["PYTHON3"] = str(self.root / "missing-python3.exe")
+        explicit = self.run_check(
+            "--python",
+            sys.executable,
+            "--interpreter-only",
+            environment=environment,
+        )
+
+        self.assertEqual(explicit.returncode, runtime.EXIT_SUCCESS)
+        self.assertIn("PYTHON_RUNTIME_SOURCE=explicit", explicit.stdout)
+
+        environment["PYTHON3"] = sys.executable
+        from_python3 = self.run_check("--interpreter-only", environment=environment)
+
+        self.assertEqual(from_python3.returncode, runtime.EXIT_SUCCESS)
+        self.assertIn("PYTHON_RUNTIME_SOURCE=PYTHON3", from_python3.stdout)
+
+        from_host = self.run_check(
+            "--interpreter-only",
+            environment=self.environment_without_python3(),
+        )
+
+        self.assertEqual(from_host.returncode, runtime.EXIT_SUCCESS)
+        self.assertIn("PYTHON_RUNTIME_SOURCE=host", from_host.stdout)
+
+    def test_interpreter_only_advances_past_blank_sources(self):
+        environment = self.environment_without_python3()
+        environment["PYTHON3"] = "   "
+
+        result = self.run_check(
+            "--python",
+            "   ",
+            "--interpreter-only",
+            environment=environment,
+        )
+
+        self.assertEqual(result.returncode, runtime.EXIT_SUCCESS)
+        self.assertIn("PYTHON_RUNTIME_SOURCE=host", result.stdout)
+
+    def test_interpreter_only_does_not_fall_back_from_invalid_python3(self):
+        environment = self.environment_without_python3()
+        environment["PYTHON3"] = str(self.root / "missing-python3.exe")
+
+        result = self.run_check("--interpreter-only", environment=environment)
+
+        self.assertEqual(result.returncode, runtime.EXIT_CONFIGURATION)
+        self.assertIn("Error [configuration/python-runtime]", result.stderr)
+        self.assertIn("Reason: missing-interpreter", result.stderr)
+        self.assertIn("PYTHON_RUNTIME_STATUS=error", result.stderr)
+        self.assertNotIn("PYTHON_RUNTIME_STATUS=ok", result.stdout)
+
+    def test_interpreter_only_rejects_a_present_unusable_interpreter(self):
+        candidate = self.root / "not-an-executable.txt"
+        candidate.write_text("not an executable\n", encoding="utf-8")
+
+        result = self.run_check(
+            "--python",
+            str(candidate),
+            "--interpreter-only",
+        )
+
+        self.assertEqual(result.returncode, runtime.EXIT_CONFIGURATION)
+        self.assertIn("Reason: interpreter-probe-failed", result.stderr)
+        self.assertIn("PYTHON_RUNTIME_STATUS=error", result.stderr)
+
+    def test_interpreter_only_enforces_the_python_39_version_boundary(self):
+        cases = (
+            ((3, 9, 0), runtime.EXIT_SUCCESS, "PYTHON_VERSION=3.9.0"),
+            ((3, 8, 10), runtime.EXIT_CONFIGURATION, "Reason: incompatible-interpreter"),
+        )
+        for version, expected_code, expected_output in cases:
+            with self.subTest(version=version):
+                stdout = io.StringIO()
+                stderr = io.StringIO()
+                with mock.patch.object(runtime, "_probe_interpreter", return_value=version):
+                    with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+                        code = runtime.main(
+                            ["--python", sys.executable, "--interpreter-only"]
+                        )
+
+                self.assertEqual(code, expected_code)
+                self.assertIn(expected_output, stdout.getvalue() + stderr.getvalue())
+
+    def test_interpreter_only_skips_manifest_and_dependency_work(self):
+        stdout = io.StringIO()
+        with mock.patch.object(
+            runtime,
+            "parse_requirements",
+            side_effect=AssertionError("manifest must not be read"),
+        ), mock.patch.object(
+            runtime,
+            "validate_dependencies",
+            side_effect=AssertionError("dependencies must not be inspected"),
+        ), contextlib.redirect_stdout(stdout):
+            code = runtime.main(["--python", sys.executable, "--interpreter-only"])
+
+        self.assertEqual(code, runtime.EXIT_SUCCESS)
+        self.assertIn("PYTHON_RUNTIME_STATUS=ok", stdout.getvalue())
+
+    def test_interpreter_only_does_not_import_the_yaml_dependency(self):
+        (self.root / "yaml.py").write_text(
+            "raise ImportError('PyYAML must not be imported')\n",
+            encoding="utf-8",
+        )
+        environment = self.environment_without_python3()
+        environment["PYTHONPATH"] = os.pathsep.join(
+            filter(
+                None,
+                (str(self.root), environment.get("PYTHONPATH")),
+            )
+        )
+
+        result = self.run_check(
+            "--python",
+            sys.executable,
+            "--interpreter-only",
+            environment=environment,
+        )
+
+        self.assertEqual(result.returncode, runtime.EXIT_SUCCESS)
+        self.assertIn("PYTHON_RUNTIME_STATUS=ok", result.stdout)
+        self.assertEqual(result.stderr, "")
+
+    def test_interpreter_only_probe_ignores_modules_in_the_caller_repository(self):
+        (self.root / "json.py").write_text(
+            "raise RuntimeError('caller repository json.py was imported')\n",
+            encoding="utf-8",
+        )
+
+        result = self.run_check(
+            "--python",
+            sys.executable,
+            "--interpreter-only",
+            cwd=self.root,
+        )
+
+        self.assertEqual(result.returncode, runtime.EXIT_SUCCESS)
+        self.assertIn("PYTHON_RUNTIME_STATUS=ok", result.stdout)
+        self.assertEqual(result.stderr, "")
+
+    def test_interpreter_only_command_isolates_pythonpath_probe_modules(self):
+        (self.root / "json.py").write_text(
+            "raise RuntimeError('PYTHONPATH json.py was imported')\n",
+            encoding="utf-8",
+        )
+        environment = self.environment_without_python3()
+        environment["PYTHONPATH"] = str(self.root)
+
+        result = self.run_check(
+            "--python",
+            sys.executable,
+            "--interpreter-only",
+            environment=environment,
+            python_options=("-I",),
+        )
+
+        self.assertEqual(result.returncode, runtime.EXIT_SUCCESS)
+        self.assertIn("PYTHON_RUNTIME_STATUS=ok", result.stdout)
+        self.assertEqual(result.stderr, "")
+
+    def test_interpreter_only_classifies_launch_and_probe_failures(self):
+        cases = (
+            (
+                runtime.CommandResult(
+                    ("python",),
+                    returncode=None,
+                    error="OSError: cannot execute",
+                ),
+                "interpreter-probe-failed",
+            ),
+            (
+                runtime.CommandResult(
+                    ("python",),
+                    returncode=0,
+                    stdout="not-json",
+                ),
+                "interpreter-probe-invalid",
+            ),
+        )
+        for command_result, reason in cases:
+            with self.subTest(reason=reason):
+                stderr = io.StringIO()
+                with mock.patch.object(
+                    runtime,
+                    "run_command",
+                    return_value=command_result,
+                ), contextlib.redirect_stderr(stderr):
+                    code = runtime.main(
+                        ["--python", sys.executable, "--interpreter-only"]
+                    )
+
+                diagnostic = stderr.getvalue()
+                self.assertEqual(code, runtime.EXIT_CONFIGURATION)
+                self.assertIn("Error [configuration/python-runtime]", diagnostic)
+                self.assertIn(f"Reason: {reason}", diagnostic)
+                self.assertIn("Action:", diagnostic)
+                self.assertIn("PYTHON_RUNTIME_STATUS=error", diagnostic)
+
+    def test_interpreter_only_rejects_a_requirements_path(self):
+        result = self.run_check(
+            "--python",
+            sys.executable,
+            "--interpreter-only",
+            "--requirements",
+            str(self.requirements),
+        )
+
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("not allowed with argument", result.stderr)
 
     def test_python3_environment_is_used_when_no_explicit_interpreter_exists(self):
         environment = os.environ.copy()
