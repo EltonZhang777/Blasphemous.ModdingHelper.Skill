@@ -47,11 +47,11 @@ jobs:
       with:
         node-version: "18"
 
-    # Runner images now default to .NET 11, which breaks the legacy MSBuild fixture.
+    # New images default to .NET 11; 10.0.403 is the last verified macOS SDK.
     - name: Set up .NET SDK
       uses: actions/setup-dotnet@v4
       with:
-        dotnet-version: "10.0.x"
+        dotnet-version: "10.0.403"
 
     - name: Validate Skill Python runtime and dependencies
       run: python skills/blasphemous-modding-helper/scripts/check_python_environment.py --python python --requirements skills/blasphemous-modding-helper/requirements.txt
