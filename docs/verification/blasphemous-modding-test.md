@@ -6,6 +6,10 @@
 
 This record separates fixture evidence, native-Python entrypoint evidence, and the real-profile **Player-performed in-game verification** gate. A warning is an unresolved environment or user-operated step; it is not a gameplay pass.
 
+## Long-running execution
+
+A complete maintainer acceptance run can take several minutes and may stay silent between phases. Start it in the background with output redirected to a local log, then inspect that log and the process exit code after completion; alternatively, wait once with a timeout that covers the expected runtime. Do not restart the run because short polls show no new output. If an agent turn is interrupted by loop protection while the process is still running, recover that process's final output and exit code first. Treat the run as complete only when both the exit code and final test summary are available.
+
 ## Automated fixture gate
 
 These repository suites include screenshot validation for knowledge-note candidates. Install the optional maintainer dependency into the Python environment that will run the suites:

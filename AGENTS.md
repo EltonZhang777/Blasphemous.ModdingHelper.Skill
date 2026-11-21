@@ -27,6 +27,12 @@ Use the narrowest authoritative file for each change:
 3. Make the narrowest coherent edit. For cross-platform installer behavior, edit `bin/install.js` first and keep the Bash and PowerShell files as entry shims.
 4. Run the relevant branch checks, then inspect `git diff --check`, the final diff, and `git status --short`. Work is complete when the intended behavior is covered and affected references and metadata are consistent.
 
+## Long-running commands
+
+- When a command is expected to take several minutes or stays silent until exit, start it in the background with output redirected to a local log and inspect the log plus exit code after completion, or wait once with a timeout that covers the expected runtime. Do not repeat short, identical polls of the same session.
+- An unchanged poll or a loop-guard interruption is not a command failure. If the underlying process is still running, recover that process's final output and exit code before retrying; do not restart a long acceptance run merely because polling was interrupted.
+- Report the command, exit code, and summarized result. Keep raw logs and machine-specific session details out of committed handoff records as required by `docs/agents/handoff.md`.
+
 ## Conditional references
 
 - **Skill content:** read `skills/blasphemous-modding-helper/SKILL.md` and the branch references it routes to; preserve frontmatter and relative links.
