@@ -38,7 +38,7 @@ A binding that resolves to a `.cs` asset is asset-level evidence only. A binding
 
 ## Result interpretation
 
-The version-1 envelope contains `schema_version`, `command`, `status`, `project`, `query`, `root`, `asset_candidates`, `results`, `limits`, `truncated`, `complete`, `incomplete_reasons`, `warnings`, and `error`.
+The common envelope is defined by [Version-1 document envelope](MAIN.md#version-1-document-envelope). The relation-specific top-level extension fields are `root`, `asset_candidates`, `complete`, and `incomplete_reasons`.
 
 `results` contains one traversal for `outgoing` or `incoming`, and contains outgoing followed by incoming for `both`. Each traversal reports:
 

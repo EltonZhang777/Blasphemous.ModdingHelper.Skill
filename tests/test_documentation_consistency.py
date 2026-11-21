@@ -118,6 +118,45 @@ ROUTE_DOCUMENTS = (
     "references/unity-project-navigation/component-relations.md",
     "references/unity-project-navigation/bindings.md",
 )
+UNITY_NAVIGATION_ROOT = (
+    SKILL_ROOT / "references" / "unity-project-navigation"
+)
+UNITY_ENVELOPE_FIELDS = (
+    "schema_version",
+    "command",
+    "status",
+    "project",
+    "query",
+    "results",
+    "limits",
+    "truncated",
+    "warnings",
+    "error",
+)
+UNITY_ENVELOPE_LINK_TOPICS = (
+    "assets-and-guids.md",
+    "scenes.md",
+    "scripts.md",
+    "component-relations.md",
+)
+UNITY_ENVELOPE_REQUIRED_TOKENS = {
+    "assets-and-guids.md": ("path", "type", "guid", "metadata", "binary_not_inspected"),
+    "scenes.md": (
+        "logical_name",
+        "present_layers",
+        "missing_layers",
+        "object_count",
+        "reference_count",
+        "evidence",
+    ),
+    "scripts.md": ("path", "type", "name", "guid", "metadata", "csharp_parsed: false"),
+    "component-relations.md": (
+        "root",
+        "asset_candidates",
+        "complete",
+        "incomplete_reasons",
+    ),
+}
 DEPENDENCY_GUIDANCE = (
     REPOSITORY_ROOT / "README.md",
     MAIN_SKILL,
@@ -424,11 +463,33 @@ def heading_anchors(document):
 
 
 def local_links(document):
+    for target, _ in local_link_references(document):
+        yield target
+
+
+def local_link_references(document):
     for raw_target in MARKDOWN_LINK.findall(read(document)):
-        target = raw_target.split("#", 1)[0].strip()
+        path, _, anchor = raw_target.partition("#")
+        target = path.strip()
         if not target or target.startswith(("http://", "https://", "mailto:")):
             continue
-        yield (document.parent / target).resolve()
+        yield (document.parent / target).resolve(), anchor
+
+
+def markdown_anchors(document):
+    anchors = set()
+    for line in read(document).splitlines():
+        heading = re.match(r"^#{1,6}\s+(.+?)\s*$", line)
+        if not heading:
+            continue
+        anchor = re.sub(
+            r"[^\w\s-]",
+            "",
+            heading.group(1).casefold(),
+            flags=re.ASCII,
+        )
+        anchors.add(re.sub(r"\s+", "-", anchor.strip()))
+    return anchors
 
 
 def local_link_fragments(document):
@@ -538,8 +599,14 @@ class DocumentationConsistencyTests(unittest.TestCase):
                 document,
             )
             reached.add(document)
-            for target in local_links(document):
+            for target, anchor in local_link_references(document):
                 self.assertTrue(target.is_file(), f"{document}: {target}")
+                if anchor:
+                    self.assertIn(
+                        anchor,
+                        markdown_anchors(target),
+                        f"{document}: {target}#{anchor}",
+                    )
                 if target.suffix.lower() == ".md":
                     pending.append(target)
             for target, fragment in local_link_fragments(document):
@@ -1202,6 +1269,60 @@ class DocumentationConsistencyTests(unittest.TestCase):
                         RFC2119_KEYWORDS,
                         f"{relative}: boundary cell must use RFC 2119 wording",
                     )
+
+    def test_unity_document_envelope_has_one_owner_and_preserves_topic_extensions(self):
+        main = UNITY_NAVIGATION_ROOT / "MAIN.md"
+        heading = "## Version-1 document envelope"
+        main_text = read(main)
+        self.assertEqual(main_text.count(heading), 1)
+
+        section = markdown_section(main, heading)
+        paragraphs = [" ".join(paragraph.split()) for paragraph in section.split("\n\n")]
+        self.assertIn(
+            UNITY_ENVELOPE_FIELDS,
+            [tuple(re.findall(r"`([^`]+)`", paragraph)) for paragraph in paragraphs],
+        )
+        self.assertTrue(
+            any(
+                "`schema_version`" in paragraph and "`1`" in paragraph
+                for paragraph in paragraphs
+            ),
+            "the envelope section must state schema_version 1",
+        )
+
+        for filename in UNITY_ENVELOPE_LINK_TOPICS:
+            topic = UNITY_NAVIGATION_ROOT / filename
+            self.assertIn(
+                (main.resolve(), "version-1-document-envelope"),
+                list(local_link_references(topic)),
+                f"{filename} must link to the canonical envelope",
+            )
+            topic_text = read(topic)
+            for number, paragraph in enumerate(topic_text.split("\n\n"), 1):
+                self.assertFalse(
+                    all(f"`{field}`" in paragraph for field in UNITY_ENVELOPE_FIELDS),
+                    f"{filename} paragraph {number} repeats the complete envelope",
+                )
+            for token in UNITY_ENVELOPE_REQUIRED_TOKENS[filename]:
+                self.assertIn(f"`{token}`", topic_text)
+
+        for topic in sorted(UNITY_NAVIGATION_ROOT.glob("*.md")):
+            if topic == main:
+                continue
+            for number, paragraph in enumerate(read(topic).split("\n\n"), 1):
+                self.assertFalse(
+                    all(f"`{field}`" in paragraph for field in UNITY_ENVELOPE_FIELDS),
+                    f"{topic.name} paragraph {number} repeats the complete envelope",
+                )
+
+    def test_routing_spec_lists_each_approved_route_owner(self):
+        inventory = markdown_section(
+            REPOSITORY_ROOT / "docs" / "specs" / "routing-tables.md",
+            "## Implementation Decisions",
+        )
+        owners = re.findall(r"^  - `([^`]+)`$", inventory, re.MULTILINE)
+        self.assertEqual(len(owners), 8)
+        self.assertEqual(set(owners), APPROVED_CANONICAL_OWNERS)
 
     def test_coding_standards_branches_defer_shared_ownership_to_router(self):
         router = CODING_STANDARDS_ROUTER

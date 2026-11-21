@@ -10,7 +10,7 @@ The inconsistency is most visible across the top-level Skill entry, the shared i
 
 Give every document that owns a routing decision one concise route table after its introductory and entry/requirement material and before its detailed routing instructions. Each table will use the same three concepts: the request signal or condition, the route destination, and the boundary or next action.
 
-The seven approved routing layers are covered: the top-level request router; the shared invocation preflight; the Coding-standards router; the shared Mod-test entry; the ModdingAPI reference selector and topic router; the ModdingAPI development-document route index; and the source-code navigation index. Existing route maps and decision tables are normalized in place where they already serve this purpose. Existing navigation, quick-access, and domain-reference tables remain when they are not the document's primary request route.
+The eight approved routing layers are covered: the top-level request router; the shared invocation preflight; the Coding-standards router; the shared Mod-test entry; the ModdingAPI reference selector and topic router; the ModdingAPI development-document route index; the source-code navigation index; and the Unity project-navigation index. Existing route maps and decision tables are normalized in place where they already serve this purpose. Existing navigation, quick-access, and domain-reference tables remain when they are not the document's primary request route.
 
 The change is documentation-only. It makes the route visible before detailed branch instructions, preserves the current branch owners and evidence boundaries, and adds a single documentation-contract seam that can detect missing routes, invalid relative links, misplaced tables, and accidental promotion of excluded documents.
 
@@ -49,7 +49,15 @@ The change is documentation-only. It makes the route visible before detailed bra
 
 ## Implementation Decisions
 
-- The approved route-owner set contains seven layers: top-level request routing, shared invocation preflight, Coding-standards routing, shared Mod-test routing, ModdingAPI reference selection/topic routing, ModdingAPI development-document routing, and source-code navigation routing.
+- The approved route-owner set contains eight documents:
+  - `SKILL.md`
+  - `references/config/invocation-preflight.md`
+  - `references/sub-skills/coding-standards.md`
+  - `references/sub-skills/blasphemous-modding-test.md`
+  - `references/sub-skills/referencing-modding-api.md`
+  - `references/coding-standards/coding-standards-moddingAPI.md`
+  - `references/source-code-navigation/MAIN.md`
+  - `references/unity-project-navigation/MAIN.md`
 - A document qualifies as a route owner when it selects among two or more operational branches, authorities, or destination references, or when it is the authoritative index for a set of feature-specific navigation destinations.
 - A branch document that only owns one selected workflow is not a route owner. The legacy compatibility pointer is explicitly non-authoritative and remains outside the route-owner set.
 - Each route-owner document receives one concise route table. Existing tables that already own the route are normalized in place; a second competing table is not added.
@@ -69,7 +77,7 @@ The change is documentation-only. It makes the route visible before detailed bra
 ## Testing Decisions
 
 - The highest and only required seam is the packaged Skill Markdown routing contract. Tests inspect observable route behavior and document relationships, not paragraph wording or internal test helpers.
-- The contract verifies that the seven approved route-owner documents each expose one canonical route table in the required location.
+- The contract verifies that the eight approved route-owner documents each expose one canonical route table in the required location.
 - The contract verifies that every current route branch, exclusion boundary, and clarification/combined path owned by the document remains represented.
 - The contract verifies that route destinations resolve through existing relative links and that the legacy compatibility pointer and terminal branch documents are not promoted as route owners.
 - Existing documentation tests remain prior art for checking branch links, route signals, evidence boundaries, architecture routing, localization routing, and RFC 2119 constraints. The implementation should extend or reuse those checks before adding a separate validator.

@@ -24,7 +24,7 @@ Every query MUST provide `--project` and exactly one of `--path`, `--guid`, or `
 
 ## Result interpretation
 
-The version-1 envelope contains `schema_version`, `command`, `status`, `project`, `query`, `results`, `limits`, `truncated`, `warnings`, and `error`.
+The common envelope is defined by [Version-1 document envelope](MAIN.md#version-1-document-envelope).
 
 - `ok` means the query returned the selector's exact observed target. For a GUID query, it also means metadata uniqueness was established. Exit code `0`.
 - `ambiguous` means more than one readable candidate has the requested identity, or a GUID query cannot prove uniqueness because metadata is unusable. Exit code `2`. Every readable candidate is returned in deterministic project-relative path, type, and GUID order; the agent MUST NOT choose one silently. Exact path and name queries retain their exact target and surface the risk as `metadata_unusable` without inventing another candidate.

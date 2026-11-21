@@ -30,7 +30,7 @@ The result lists `present_layers` and `missing_layers` from actual filenames. Th
 
 ## Result
 
-The version-1 envelope uses the common `schema_version`, `command`, `status`, `project`, `query`, `results`, `limits`, `truncated`, `warnings`, and `error` fields. Each scene result contains:
+The common envelope is defined by [Version-1 document envelope](MAIN.md#version-1-document-envelope). Each scene result contains:
 
 - `logical_name`, `directory`, and `kind`.
 - `present_layers`, `missing_layers`, and the observed `members`.
