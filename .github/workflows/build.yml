@@ -47,6 +47,12 @@ jobs:
       with:
         node-version: "18"
 
+    # Runner images now default to .NET 11, which breaks the legacy MSBuild fixture.
+    - name: Set up .NET SDK
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: "10.0.x"
+
     - name: Validate Skill Python runtime and dependencies
       run: python skills/blasphemous-modding-helper/scripts/check_python_environment.py --python python --requirements skills/blasphemous-modding-helper/requirements.txt
 

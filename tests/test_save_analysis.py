@@ -872,7 +872,8 @@ class SaveAnalysisTests(unittest.TestCase):
         self.assertIn("Incomplete records: 1", summary)
 
     def test_moddingapi_excessive_depth_reports_unsupported_depth(self):
-        depth = 1100
+        # Python 3.12 parses 1100 levels; exceed both supported parser limits.
+        depth = 10000
         source = self.root / "deep-modding-records.bin"
         source.write_bytes(
             ("demo.mod\n" + ("[" * depth) + "0" + ("]" * depth) + "\n").encode(
