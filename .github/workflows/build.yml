@@ -47,10 +47,13 @@ jobs:
       with:
         node-version: "18"
 
-    # New images default to .NET 11; pin the SDK so every lane uses the same
-    # toolchain. macOS build failures are tracked separately below.
+    # New images default to .NET 11; the isolated dir makes this pin effective.
     - name: Set up .NET SDK
       uses: actions/setup-dotnet@v4
+      env:
+        # Without a clean install dir, setup-dotnet adds the requested SDK
+        # beside the image's SDKs and the newest preinstalled version wins.
+        DOTNET_INSTALL_DIR: ${{ runner.temp }}/dotnet
       with:
         dotnet-version: "10.0.403"
 
