@@ -32,7 +32,7 @@ Every executable example in this Skill MUST use this context:
 3. Agent MUST invoke Skill runtime and test scripts through their explicit Python entry point:
    - Bash host: `"$PYTHON3" "$SKILL_ROOT/scripts/<script>.py" [arguments]`.
    - PowerShell host: `& $PYTHON3 (Join-Path $SkillRoot 'scripts\<script>.py') [arguments]`.
-   The Python interpreter MUST be resolved first. Runtime selection and failure classification are defined in [Python Runtime](python-runtime.md). Legacy JavaScript, PowerShell, and Bash script files are not Skill invocation paths.
+   The Python interpreter MUST be resolved first, except for the [Python Runtime](python-runtime.md) interpreter-only cold-start probe. That sole bootstrap MAY use any usable host Python in isolated mode (`-I`) before `PYTHON3` is validated; after it succeeds, its absolute output path becomes `PYTHON3`. Runtime selection and failure classification are defined in [Python Runtime](python-runtime.md). Legacy JavaScript, PowerShell, and Bash script files are not Skill invocation paths.
 4. Agent MUST resolve and set the root variable and Python interpreter before copying or executing a command. The selected branch MUST supply any additional native-OS or compatibility-layer requirement; command context does not authorize a compatibility environment.
 5. Agent MUST quote paths and arguments whenever selected shell requires quoting, including paths containing spaces.
 
@@ -47,13 +47,15 @@ PowerShell and Bash are host syntaxes for the same native Python entry point; th
 | Bash | `"$PYTHON3" "$SKILL_ROOT/scripts/<script>.py" [arguments]` |
 | PowerShell | `& $PYTHON3 (Join-Path $SkillRoot 'scripts\<script>.py') [arguments]` |
 
-Both forms MUST use the resolved `PYTHON3`, an absolute installed Skill root, the caller's Mod repository as working directory, and the same script and argument values. Paths remain separate quoted arguments; host-specific slash syntax is the only permitted textual difference. Examples in branch references inherit this contract and MUST NOT call a legacy shell/JavaScript entry point, MUST NOT use a checkout-relative Skill path, and MUST NOT change the working directory implicitly.
+Both forms MUST use the resolved `PYTHON3`, an absolute installed Skill root, the caller's Mod repository as working directory, and the same script and argument values once a validated Python context exists. The only pre-context exception is the interpreter-only cold-start bootstrap defined in [Python Runtime](python-runtime.md); after it succeeds, both forms use the returned absolute path. Paths remain separate quoted arguments; host-specific slash syntax is the only permitted textual difference. Examples in branch references inherit this contract and MUST NOT call a legacy shell/JavaScript entry point, MUST NOT use a checkout-relative Skill path, and MUST NOT change the working directory implicitly.
 
 ## Python runtime gate
 
-During first-time setup, agent MUST complete [Python Runtime](python-runtime.md) before asking setup questions. The gate resolves an explicit interpreter, `PYTHON3`, or the host interpreter in that order; accepts Python 3.9 or newer; validates the Skill dependency manifest; and never installs packages automatically.
+When an operational request has no validated interpreter context, agent MUST run one [Python Runtime](python-runtime.md) interpreter-only preflight before Skill scripts. It resolves an explicit interpreter, `PYTHON3`, or the host interpreter in that order; accepts Python 3.9 or newer; and the agent MUST reuse the returned absolute path for the current top-level request. Interpreter-only mode MUST NOT read configuration or the dependency manifest, inspect installed packages, perform network work, or persist interpreter state. First-time setup retains the full preflight and default behavior remains unchanged.
 
-After setup succeeds, agent MUST reuse the validated interpreter context for normal branches. Agent MUST retry this gate only after a classified Python-environment failure. Ordinary Git, network, dotnet, game, profile, log, and Mod failures remain branch-owned runtime or domain failures and MUST NOT trigger Python reconfiguration.
+During first-time setup, agent MUST complete the full [Python Runtime](python-runtime.md) preflight before asking setup questions. It validates the Skill dependency manifest and never installs packages automatically.
+
+After cold start or setup succeeds, agent MUST reuse the validated interpreter context for normal branches. Only a classified `PythonEnvironmentError` permits later full-gate recovery; `CommandExecutionError` and unrelated domain failures do not. A failed script MUST NOT be replayed automatically. Ordinary Git, network, dotnet, game, profile, log, and Mod failures remain branch-owned runtime or domain failures and MUST NOT trigger Python reconfiguration.
 
 ## Configuration gate
 

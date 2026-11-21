@@ -1069,6 +1069,37 @@ class DocumentationConsistencyTests(unittest.TestCase):
         self.assertNotIn('"$PYTHON3"', real_profile)
         self.assertNotIn("& $PYTHON3", real_profile)
 
+    def test_python_runtime_cold_start_and_recovery_boundaries_match(self):
+        documents = {
+            "runtime": normalized(
+                SKILL_ROOT / "references" / "config" / "python-runtime.md"
+            ),
+            "invocation preflight": normalized(
+                SKILL_ROOT / "references" / "config" / "invocation-preflight.md"
+            ),
+            "runtime ADR": normalized(REPOSITORY_ROOT / "docs" / "adr" / "0004-python-script-runtime-migration.md"),
+        }
+
+        for label, text in documents.items():
+            with self.subTest(document=label):
+                for phrase in (
+                    "interpreter-only",
+                    "current top-level request",
+                    "must not read configuration or the dependency manifest",
+                    "persist interpreter state",
+                    "first-time setup retains the full preflight and default behavior remains unchanged",
+                    "only a classified `pythonenvironmenterror` permits later full-gate recovery",
+                    "`commandexecutionerror` and unrelated domain failures do not",
+                    "a failed script must not be replayed automatically",
+                ):
+                    self.assertIn(phrase, text)
+
+        invocation = documents["invocation preflight"]
+        self.assertIn("interpreter-only cold-start probe", invocation)
+        self.assertIn("sole bootstrap may use any usable host python in isolated mode (`-i`)", invocation)
+        self.assertIn("only pre-context exception", invocation)
+        self.assertIn("in isolated mode", documents["runtime"])
+
     def test_evidence_terms_keep_sources_and_gameplay_boundaries_distinct(self):
         shared = " ".join(
             read(SKILL_ROOT / "references/sub-skills/blasphemous-modding-test.md").split()
