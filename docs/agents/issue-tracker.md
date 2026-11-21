@@ -1,6 +1,6 @@
 # Issue tracker: GitHub
 
-Issues and specs for this repo live as GitHub issues. Use the `gh` CLI for all operations.
+GitHub issues own active normative requirements and acceptance criteria. Local specification records are non-authoritative drafts or supporting records; they cannot be the sole specification authority. Use the `gh` CLI for all GitHub issue operations.
 
 ## Conventions
 

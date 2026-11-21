@@ -15,8 +15,8 @@ The following terms are distinct and MUST be used consistently in route and comp
 
 | Term | Meaning and boundary |
 | --- | --- |
-| `Current log` | Live configured BepInEx/Unity sources read for diagnosis with explicit `--current`; it is not completed-session evidence. |
-| `Test log snapshot` | Complete, session-bound BepInEx/Unity evidence captured for one Test session with explicit `--snapshot`; it never falls back to a live log. |
+| `Current log` | Live configured BepInEx/Unity sources selected for diagnosis through the explicit Current log source mode; it is not completed-session evidence. |
+| `Test log snapshot` | Complete, session-bound BepInEx/Unity evidence selected for one completed Test session through the explicit snapshot source mode; it never falls back to a live log. |
 | `Player-performed in-game verification` | Player-operated observation of in-game behavior, kept separate from Computer Use automated in-game test evidence, CLI, startup, test-runner output, and profile operations. |
 | `Computer Use automated in-game test` | Automated in-game evidence produced through Computer Use, kept separate from Player-performed in-game verification, Automated xUnit output, and Real-profile operations. |
 | `Automated xUnit test` | Deterministic caller-Mod test run through the standard xUnit/.NET runner without a real profile or game process. |
@@ -31,7 +31,7 @@ The following terms are distinct and MUST be used consistently in route and comp
 3. Agent MUST preserve the distinction between caller Mod repositories, the Skill repository, Mod-owned code, generated output, and external game artifacts.
 4. Agent MUST keep **Player-performed in-game verification**, **Computer Use automated in-game test**, and Automated xUnit output distinct. Startup logs are not in-game evidence.
 
-Classification happens before branch-specific gates. A caller-owned Automated xUnit request does not invoke Skill scripts or require the Skill's configuration or Python runtime; the Real-profile branch owns its own preflight and profile requirements.
+This entry owns the caller-owned Automated xUnit configuration exception. Classification happens before branch-specific gates. A caller-owned Automated xUnit request does not invoke Skill scripts or require the Skill's configuration or Python runtime; the Real-profile branch owns its own preflight and profile requirements.
 
 ## Route decision table
 
@@ -56,7 +56,7 @@ For any Real-profile phase requiring in-game behavior or a specified visible sta
 
 Each phase records independent commands, independent evidence, and independent statuses. A failure or block in one phase does not fabricate the other phase result. Both is complete only after all required phases complete.
 
-Conflicting environment or evidence requirements return `ambiguous` or `unresolved`. Ambiguous requests execute no test or profile command. The final report MUST include route, per-phase command, status, completion evidence, blocked reason when applicable, and next action; Automated xUnit, startup, **Player-performed in-game verification**, and **Computer Use automated in-game test** evidence remain separate.
+Conflicting environment or evidence requirements return `ambiguous` or `unresolved`. Ambiguous requests execute no test or profile command. The final report MUST follow the shared completion-report contract in [Invocation preflight](../config/invocation-preflight.md#common-completion-report-fields) and include route, per-phase command, each phase's route-specific status and evidence, any blocked or failed detail, and the next route action; Automated xUnit, startup, **Player-performed in-game verification**, and **Computer Use automated in-game test** evidence remain separate.
 
 Test doubles, mocks, and stubs remain compatible with the Automated xUnit route when the test does not require the real game process, profile, lifecycle, or player. A test that needs those runtime conditions belongs to the Real-profile route even when it references Unity or game-facing types.
 
@@ -73,9 +73,9 @@ Test doubles, mocks, and stubs remain compatible with the Automated xUnit route 
 
 ## Subagent guidance
 
-Any delegated test work MUST follow the shared [General subagent delegation guidelines](../subagent-delegation/subagent-delegation-general-guidelines.md). The selected phase MUST also follow its owner: [Automated xUnit testing delegation](../subagent-delegation/xunit-testing-delegation.md) or [Real-profile testing delegation](../subagent-delegation/real-profile-testing-delegation.md). An ambiguous request remains unresolved and MUST NOT be delegated as an executable test phase. For a `both` result, the parent MUST assign the Automated xUnit phase to one child first, then assign the Real-profile phase to a separate child after the xUnit handoff; each child MUST report only its own phase, keeping status, evidence, blocked reason, and next action independent. If a child for a selected test phase is unavailable, the parent MUST report that phase as blocked with the reason and next action; it MUST NOT run the assigned tests as a fallback.
+Any delegated test work MUST follow the shared [General subagent delegation guidelines](../subagent-delegation/subagent-delegation-general-guidelines.md). The selected phase MUST also follow its owner: [Automated xUnit testing delegation](../subagent-delegation/xunit-testing-delegation.md) or [Real-profile testing delegation](../subagent-delegation/real-profile-testing-delegation.md). An ambiguous request remains unresolved and MUST NOT be delegated as an executable test phase. For a `both` result, the parent MUST assign the Automated xUnit phase to one child first, then assign the Real-profile phase to a separate child after the xUnit handoff; each child MUST report only its own phase, keeping each phase's shared-contract report fields independent. If a child for a selected test phase is unavailable, the parent MUST report that phase as blocked with the exact reason and recovery action; it MUST NOT run the assigned tests as a fallback.
 
-## Manual completion and session identity
+## Player-performed in-game verification completion and session identity
 
 The agent MUST treat an explicit statement that testing is complete or a natural-language success, failure, or anomalous result as a snapshot trigger only when the result is clear and can be associated with exactly one Test session. An ambiguous result or an unclear session identity remains unresolved.
 
@@ -83,4 +83,4 @@ When the result or session is ambiguous, the agent MUST NOT invoke `snapshot`, M
 
 ## Completion criterion
 
-The request is classified before execution, the selected branch owns the operational steps, and the final report names status, completion evidence, blocked reason when applicable, next action, and Automated xUnit, startup, **Player-performed in-game verification**, and **Computer Use automated in-game test** evidence separately. The `/blasphemous-modding-test stop SESSION_ID` safety path is owned by the [Real-profile branch](blasphemous-modding-test-real-profile.md).
+The request is classified before execution, the selected branch owns the operational steps, and the final report follows the shared [completion-report contract](../config/invocation-preflight.md#common-completion-report-fields) and keeps Automated xUnit, startup, **Player-performed in-game verification**, and **Computer Use automated in-game test** evidence separate. The `/blasphemous-modding-test stop SESSION_ID` safety path is owned by the [Real-profile branch](blasphemous-modding-test-real-profile.md).

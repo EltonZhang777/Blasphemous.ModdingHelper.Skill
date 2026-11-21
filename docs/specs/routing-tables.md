@@ -25,7 +25,7 @@ The change is documentation-only. It makes the route visible before detailed bra
 7. As a Mod developer, I want Coding-standards requests mapped to the correct branch reference, so that C# and runtime Unity, ModdingAPI, Harmony, architecture placement, and excluded source code are separated.
 8. As an AI agent, I want the Coding-standards scope gate represented as a negative route, so that decompiled, upstream, dependency, generated, and directly copied code is not sent into Mod-owned standards.
 9. As a Mod developer, I want a test request classified by its runtime conditions, so that a deterministic test and a real-profile test do not share an ambiguous entry path.
-10. As an AI agent, I want the Mod-test route table to distinguish Real-profile and Automated xUnit evidence, so that startup logs and player-operated Manual verification remain separate.
+10. As an AI agent, I want the Mod-test route table to distinguish Real-profile and Automated xUnit evidence, so that startup logs and Player-performed in-game verification remain separate.
 11. As an AI agent, I want ambiguous test conditions routed to clarification, so that the Skill does not silently select a destructive, incomplete, or evidence-incompatible branch.
 12. As a Mod developer, I want a combined test request to show its ordered phases, so that Automated xUnit and Real-profile evidence remain independently attributable.
 13. As an AI agent, I want ModdingAPI reference selection to distinguish a validated local checkout from the release-aware remote fallback, so that I do not silently use an unqualified moving branch.
@@ -67,7 +67,7 @@ The change is documentation-only. It makes the route visible before detailed bra
 - Positive routes, negative scope routes, combined-request sequencing, and clarification routes are included when the existing document owns those decisions. A row is not added merely to repeat non-routing background material.
 - The top-level Skill remains the sole cross-branch router. The invocation preflight remains the shared operational gate, and specialized references continue to add only their own requirements and evidence.
 - Coding-standards remains the single Mod-owned C# entry point. The route table must preserve its progressive disclosure, scope gate, branch ownership, and RFC 2119 authority.
-- Mod-test routing continues to distinguish Automated xUnit, Real-profile, combined requests, and unresolved runtime conditions. Automated evidence, startup evidence, and Manual verification remain separate.
+- Mod-test routing continues to distinguish Automated xUnit, Real-profile, combined requests, and unresolved runtime conditions. Automated evidence, startup evidence, and Player-performed in-game verification remain separate.
 - ModdingAPI routing continues to distinguish configured local references, release-aware remote references, stable topics, advanced or archived topics, and decompiled game-source navigation.
 - Source-code navigation continues to route by existing feature/path coverage and does not broaden the indexed source tree.
 - The project-architecture route remains a soft placement guide. Route-table work must not move, rename, or restructure existing Caller Mod files.

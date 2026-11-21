@@ -1,6 +1,6 @@
 # Player-performed in-game verification
 
-The agent MUST follow this guide only after [In-game test coordination](blasphemous-modding-test-in-game-coordination.md) selects Player-performed verification and reaches the [Player-performed in-game verification handoff and turn boundary](blasphemous-modding-test-in-game-coordination.md#player-performed-in-game-verification-handoff-and-turn-boundary). That boundary is the sole owner of the handoff content, turn ending, and post-handoff inactivity; this guide owns the detailed in-game actions, observations, and evidence below. The Real-profile branch remains authoritative for every command, profile safeguard, session operation, and snapshot.
+The agent MUST follow this guide only after [In-game test coordination](blasphemous-modding-test-in-game-coordination.md) selects Player-performed in-game verification and reaches the [Player-performed in-game verification handoff and turn boundary](blasphemous-modding-test-in-game-coordination.md#player-performed-in-game-verification-handoff-and-turn-boundary). That boundary is the sole owner of the handoff content, turn ending, and post-handoff inactivity; this guide owns the detailed in-game actions, observations, and evidence below. The Real-profile branch remains authoritative for every command, profile safeguard, session operation, and snapshot.
 
 ## Perform and record the planned scenario
 
@@ -13,4 +13,4 @@ The coordinator's ordinary-penalty rule and disposable-profile limits apply to t
 
 ## Completion criterion
 
-The report MUST identify the Test session, scene/save state, exact actions, expected and observed results, visible errors or approximate failure time, status, and next action. Player-performed evidence remains separate from Computer Use, startup, logs, profile-lifecycle operations, and xUnit.
+The report MUST follow the shared [completion-report contract](../config/invocation-preflight.md#common-completion-report-fields) and identify the Test session, scene/save state, exact actions, expected and observed results, and visible errors or approximate failure time. Player-performed evidence remains separate from Computer Use, startup, logs, profile-lifecycle operations, and xUnit.
