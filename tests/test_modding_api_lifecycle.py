@@ -15,7 +15,8 @@ from pathlib import Path
 from typing import Optional, Sequence
 
 
-SCRIPT_ROOT = Path(__file__).resolve().parent
+REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
+SCRIPT_ROOT = REPOSITORY_ROOT / "skills" / "blasphemous-modding-helper" / "scripts"
 RESOLVER = SCRIPT_ROOT / "resolve_modding_api.py"
 CLONER = SCRIPT_ROOT / "clone_modding_api.py"
 MANAGER = SCRIPT_ROOT / "manage_modding_api.py"

@@ -1,73 +1,137 @@
 ---
 name: invocation-preflight
-description: Shared command context, preferences gate, recovery, and completion contract for blasphemous-modding-helper
+description: Shared command context, configuration gate, recovery, and completion contract for blasphemous-modding-helper
 ---
 
 # Invocation preflight
 
-This reference is the single source of truth for the shared preflight contract of every operational `blasphemous-modding-helper` invocation. It owns command context, preference scope selection, when first-time setup is required, path-failure recovery, the tracked-session stop exception, and preflight completion. Detailed setup questions, validation, save operations, and optional local checkout belong to [First-Time Setup](first-time-setup.md). The top-level [Skill](../../SKILL.md) remains the sole cross-branch router. Specialized references MUST link here and MUST add only their own requirements and evidence.
+The top-level [Skill](../../SKILL.md) owns the shared configuration gate and cross-branch routing. This reference is the detailed execution authority for the shared preflight contract of operational `blasphemous-modding-helper` invocations subject to this gate. It owns command context, configuration scope selection, when first-time setup is required, path-failure recovery, the tracked-session stop exception, preflight execution completion, and the common completion-report fields. Detailed setup questions, validation, save operations, and optional local checkout belong to [First-Time Setup](first-time-setup.md). Specialized references MUST link here and MUST add only their own requirements and evidence.
 
-The read-only [localization lookup branch](../sub-skills/localization-lookup.md) is the documented preference exception. It reads the bundled localization index as text and does not run Skill scripts, inspect a Modding profile, or inspect source code. It confirms the index path and file readability, then follows its own completion criteria.
+The read-only [localization lookup branch](../sub-skills/localization-lookup.md) and [Save analysis](../sub-skills/save-analysis.md) branch are the documented configuration exceptions owned by this shared gate. Localization lookup reads the bundled localization index as text and does not run Skill scripts, inspect a Modding profile, or inspect source code. Save analysis requires one explicit local input and does not read configuration, a Modding profile, game installation, or source context. Each exception applies only within its own route and does not alter other routes.
+
+The Localization lookup branch, Save analysis, and tracked-session stop exception scopes are owned here. The Mod-test entry owns the caller-owned Automated xUnit exception within its configuration scope; see [Mod-test entry](../sub-skills/blasphemous-modding-test.md). It is not centralized here.
+
+| Invocation path | Preflight route | Boundary and handoff |
+| --- | --- | --- |
+| Localization lookup | bundled index | Agent MUST read only the bundled index. Agent MUST NOT run scripts or inspect configuration, a Modding profile, or source code. Agent MUST confirm the index path and readability. Agent MUST use [Localization lookup](../sub-skills/localization-lookup.md) as the branch-completion authority. |
+| Save analysis (read-only) | [Save analysis](../sub-skills/save-analysis.md) | Agent MUST require one explicit local input path. Agent MUST NOT read Skill configuration, a Modding profile, game installation, or source context. Agent MUST use this branch-completion authority. |
+| Gate-bound operational branches | shared preflight → selected branch | Agent MUST apply an owner-documented exception before this gate. For every remaining operational branch, Agent MUST resolve required command context and complete this preflight before specialized work. Agent MUST route to [Source analyzer](../sub-skills/source-analyzer.md), [Log analyzer](../sub-skills/log-analyzer.md), [Mod-test entry](../sub-skills/blasphemous-modding-test.md), [Coding standards](../sub-skills/coding-standards.md), or [Referencing ModdingAPI](../sub-skills/referencing-modding-api.md). Agent MUST treat each routed document as its branch's detailed authority. Agent MUST supply the selected branch its required context, then MUST return to the top-level [Skill](../../SKILL.md) workflow. Agent MUST leave Mod-test classification and its documented Automated xUnit exception to the Mod-test entry. |
+| Unity project navigation | shared preflight | Agent MUST require a valid `unity_project_path` only for this route. Agent MUST ask only for that field when the selected valid configuration omits it, and MUST route invalid YAML through normal first-time setup. |
+| First-time setup and Python validation | Python Runtime → First-Time Setup | Agent MUST complete [Python Runtime](python-runtime.md) before asking setup questions. Agent MUST use [First-Time Setup](first-time-setup.md) for setup questions, validation, save operations, and optional local checkout. Agent MUST let Python Runtime own interpreter and dependency validation, and MUST NOT install packages automatically. |
+| Configuration result | selected config | For a branch subject to this shared gate, Agent MUST consume `skipped`, `passed`, `normalized`, or `failed` as valid results. When a result is `failed` or the file is missing, Agent MUST enter [First-Time Setup](first-time-setup.md). Agent MUST give project configuration precedence over user configuration. Agent MUST read, parse, and apply the selected file. Downstream branches MUST consume its scope and path without rediscovering or revalidating them. |
+| Tracked-session stop | recorded process tree | Agent MUST use only the recorded session identity. Agent MUST NOT read or edit configuration when normal context preflight is unavailable. Agent MUST stop the recorded process tree or confirm that it is gone, and MUST NOT touch unrelated processes. |
+| Path recovery | path-recovery prompt | Agent MUST use the exact prompt below. If the user answers Yes, Agent MUST delete the active `config.yml` and return to [First-Time Setup](first-time-setup.md). If the user answers No, Agent MUST continue with current paths and report the specific failure. After setup succeeds, Agent MUST return a validated configuration file to the main workflow. If recovery is declined, Agent MUST report the failure and next action. |
+| Preflight completion | preflight result | For branches subject to the shared gate, Agent MUST require ready command context, an applied selected configuration or successful setup, and branch context before mutations, process launches, or reliance on source/log paths. Agent MUST leave the documented Automated xUnit exception to the Mod-test entry. The stop exception MUST end only when its recorded process is stopped or confirmed gone, and Agent MUST NOT touch unrelated processes. Agent MUST report the route or gate status, route-specific evidence, and next document or action under the common completion-report fields below. |
 
 ## Command context
 
 Every executable example in this Skill MUST use this context:
 
 1. Agent MUST set `SKILL_ROOT` in Bash or `$SkillRoot` in PowerShell to the absolute installed directory containing this `SKILL.md` and its `scripts/` directory. The value identifies the installed Skill and MUST NOT be inferred from, or replaced by, a checkout-relative path.
-2. Agent MUST keep caller's Mod repository as current working directory when invoking Skill scripts. Project-relative paths, `.csproj` discovery, and project-scoped preferences MUST resolve from that caller directory.
+2. Agent MUST keep caller's Mod repository as current working directory when invoking Skill scripts. Project-relative paths, `.csproj` discovery, and project-scoped configuration MUST resolve from that caller directory.
 3. Agent MUST invoke Skill runtime and test scripts through their explicit Python entry point:
    - Bash host: `"$PYTHON3" "$SKILL_ROOT/scripts/<script>.py" [arguments]`.
    - PowerShell host: `& $PYTHON3 (Join-Path $SkillRoot 'scripts\<script>.py') [arguments]`.
-   The Python interpreter MUST be resolved first. Runtime selection and failure classification are defined in [Python Runtime](python-runtime.md). Legacy JavaScript, PowerShell, and Bash script files are not Skill invocation paths.
+   The Python interpreter MUST be resolved first, except for the [Python Runtime](python-runtime.md) interpreter-only cold-start probe. That sole bootstrap MAY use any usable host Python in isolated mode (`-I`) before `PYTHON3` is validated; after it succeeds, its absolute output path becomes `PYTHON3`. Runtime selection and failure classification are defined in [Python Runtime](python-runtime.md). Legacy JavaScript, PowerShell, and Bash script files are not Skill invocation paths.
 4. Agent MUST resolve and set the root variable and Python interpreter before copying or executing a command. The selected branch MUST supply any additional native-OS or compatibility-layer requirement; command context does not authorize a compatibility environment.
 5. Agent MUST quote paths and arguments whenever selected shell requires quoting, including paths containing spaces.
 
 Command context is ready when installed Skill root, caller Mod repository, resolved Python interpreter, and supported native host are known before a command is executed.
 
+## Native Python shell template
+
+PowerShell and Bash are host syntaxes for the same native Python entry point; they are not separate implementations. Every executable example MUST preserve this parity:
+
+| Context | Canonical invocation |
+| --- | --- |
+| Bash | `"$PYTHON3" "$SKILL_ROOT/scripts/<script>.py" [arguments]` |
+| PowerShell | `& $PYTHON3 (Join-Path $SkillRoot 'scripts\<script>.py') [arguments]` |
+
+Both forms MUST use the resolved `PYTHON3`, an absolute installed Skill root, the caller's Mod repository as working directory, and the same script and argument values once a validated Python context exists. The only pre-context exception is the interpreter-only cold-start bootstrap defined in [Python Runtime](python-runtime.md); after it succeeds, both forms use the returned absolute path. Paths remain separate quoted arguments; host-specific slash syntax is the only permitted textual difference. Examples in branch references inherit this contract and MUST NOT call a legacy shell/JavaScript entry point, MUST NOT use a checkout-relative Skill path, and MUST NOT change the working directory implicitly.
+
 ## Python runtime gate
 
-During first-time setup, agent MUST complete [Python Runtime](python-runtime.md) before asking setup questions. The gate resolves an explicit interpreter, `PYTHON3`, or the host interpreter in that order; accepts Python 3.9 or newer; validates the Skill dependency manifest; and never installs packages automatically.
+When an operational request has no validated interpreter context, agent MUST run one [Python Runtime](python-runtime.md) interpreter-only preflight before Skill scripts. It resolves an explicit interpreter, `PYTHON3`, or the host interpreter in that order; accepts Python 3.9 or newer; and the agent MUST reuse the returned absolute path for the current top-level request. Interpreter-only mode MUST NOT read configuration or the dependency manifest, inspect installed packages, perform network work, or persist interpreter state. First-time setup retains the full preflight and default behavior remains unchanged.
 
-After setup succeeds, agent MUST reuse the validated interpreter context for normal branches. Agent MUST retry this gate only after a classified Python-environment failure. Ordinary Git, network, dotnet, game, profile, log, and Mod failures remain branch-owned runtime or domain failures and MUST NOT trigger Python reconfiguration.
+During first-time setup, agent MUST complete the full [Python Runtime](python-runtime.md) preflight before asking setup questions. It validates the Skill dependency manifest and never installs packages automatically.
 
-## Preferences gate
+After cold start or setup succeeds, agent MUST reuse the validated interpreter context for normal branches. Only a classified `PythonEnvironmentError` permits later full-gate recovery; `CommandExecutionError` and unrelated domain failures do not. A failed script MUST NOT be replayed automatically. Ordinary Git, network, dotnet, game, profile, log, and Mod failures remain branch-owned runtime or domain failures and MUST NOT trigger Python reconfiguration.
 
-Agent MUST run preference check from caller's Mod repository with explicit Skill-root path:
+## Configuration gate
+
+Agent MUST run the configuration check from caller's Mod repository with explicit Skill-root path:
 
 ```bash
-"$PYTHON3" "$SKILL_ROOT/scripts/check_preferences.py"
+"$PYTHON3" "$SKILL_ROOT/scripts/check_preferences.py" --validate
 ```
 
 ```powershell
-& $PYTHON3 (Join-Path $SkillRoot 'scripts\check_preferences.py')
+& $PYTHON3 (Join-Path $SkillRoot 'scripts\check_preferences.py') --validate
 ```
 
-Check emits `project`, `user`, or no output. Project scope MUST take precedence over user scope:
+Validation mode emits structured `PREFERENCES_*` fields with a stable status of `skipped`, `passed`, `normalized`, or `failed`. A `failed` result includes an actionable reason, marks `PREFERENCES_SETUP=required`, and MUST enter [First-Time Setup](first-time-setup.md) before any downstream operational workflow continues. Downstream branches MUST consume the selected validation result and `PREFERENCES_SCOPE`/`PREFERENCES_FILE`; they MUST NOT rediscover or revalidate configuration independently. Project scope MUST take precedence over user scope:
 
-- Project: `.skills/blasphemous-modding-helper/preferences.md` under caller's current working directory.
-- User: `$HOME/.skills/blasphemous-modding-helper/preferences.md`.
+- Project: `.skills/blasphemous-modding-helper/config.yml` under caller's current working directory.
+- User: `$HOME/.skills/blasphemous-modding-helper/config.yml`.
 
-When check finds file, agent MUST read, parse, and apply that selected file. complete field schema and approved local-reference locations are defined in [preferences-schema.md](preferences-schema.md). branch MAY require additional fields, but it MUST validate those fields after this shared gate selects active file.
+`unity_project_path` is optional for the shared gate and required only by the [Unity project navigation](../sub-skills/unity-project-navigation.md) route. A valid configuration that omits it remains usable by every other operational branch.
 
-When check finds no file, agent MUST enter [First-Time Setup](first-time-setup.md). Agent MUST NOT infer defaults or enter source analysis, log analysis, modding operations, or test workflow commands before setup reports success or explicit setup failure.
+When check finds a file, agent MUST read, parse, and apply that selected file. Complete field schema and approved local-reference locations are defined in [the config schema](preferences-schema.md). A branch MAY require additional fields, but it MUST validate those fields after this shared gate selects the active file.
+
+The no-argument `check_preferences.py` mode remains available for callers that only need the legacy `project`, `user`, or empty scope output; it does not run freshness validation or write configuration metadata.
+
+When check finds no file, agent MUST enter [First-Time Setup](first-time-setup.md) for every operational route subject to this shared gate. The read-only Localization lookup and Save analysis routes, and the caller-owned Automated xUnit route, follow their documented route-owner exceptions and MUST NOT enter this shared configuration path. Agent MUST NOT infer defaults or enter source analysis, log analysis, modding operations, or test workflow commands before setup reports success or explicit setup failure.
 
 ## First-time setup and recovery
 
 [First-Time Setup](first-time-setup.md) owns setup questions, validation, scope save, optional local ModdingAPI checkout, and the setup-specific success or incomplete result. The shared gate above owns when setup is required and consumes that result; this section owns the common blocking and recovery contract:
 
-- Missing preferences MUST block every operational branch until setup succeeds. The read-only localization lookup branch does not require preferences and remains available when no preference file exists. Setup failure MUST be reported with its error and retry path.
-- Only preflight exception is `/blasphemous-modding-test stop SESSION_ID`. It MUST use only recorded session identity, MUST address only that tracked process tree, and MUST not read or edit preferences when normal context preflight is unavailable.
-- Source-code or modding path failure MUST use this exact handoff: "Some operations failed using the saved paths in `preferences.md`. Would you like to re-run the first-time setup to update them?"
-- If user answers Yes, agent MUST delete active `preferences.md` and return to [First-Time Setup](first-time-setup.md). If user answers No, agent MUST continue with current paths and report specific failure.
+- Missing configuration MUST block every operational branch subject to this shared gate until setup succeeds; routes with a documented exception follow their route owner's boundary and remain available when no configuration file exists. Setup failure MUST be reported with its error and retry path.
+- The only tracked-session stop exception is `/blasphemous-modding-test stop SESSION_ID`. It MUST use only recorded session identity, MUST address only that tracked process tree, and MUST NOT read or edit configuration when normal context preflight is unavailable.
+- Source-code or modding path failure MUST use this exact handoff: "Some operations failed using the saved paths in `config.yml`. Would you like to re-run the first-time setup to update them?"
+- If user answers Yes, agent MUST delete active `config.yml` and return to [First-Time Setup](first-time-setup.md). If user answers No, agent MUST continue with current paths and report specific failure.
 
 After this contract completes, agent MUST return to top-level Skill's workflow. top-level document selects applicable source, log, mod-test, or general-modding branch; each branch then adds only its own path, environment, or evidence requirements.
 
+## Dependencies
+
+The entries below record the declared post-install package and dependencies that apply only to specific workflows, including their current scope and missing-dependency handling.
+
+### Post-install package
+
+| Dependency | Scope | Declaration and check | Missing dependency behavior |
+| --- | --- | --- | --- |
+| `PyYAML>=6.0` | Python workflows that load `config.yml` through the shared configuration gate. The read-only localization and Save analysis routes and caller-owned Automated xUnit branch are exceptions. | Declared in [`requirements.txt`](../../requirements.txt) and validated by the [Python Runtime](python-runtime.md) gate. | Missing or incompatible packages produce configuration exit code `78` with a stable diagnostic and manual repair action. The gate never installs or upgrades Python packages. |
+
+### Conditional workflow dependencies
+
+| Dependency | Applies to | Existing handling when missing or unavailable |
+| --- | --- | --- |
+| `Pillow>=10.0` | Maintainer preflight and promotion of candidates that contain screenshots. It is not part of the installed Skill runtime. | Candidate screenshot checks fail with an install instruction for `ci/requirements-image-validation.txt`; no package is installed automatically. |
+| `ilspycmd` | Automatic source decompilation during First-Time Setup. | The existing decompiler searches `PATH` and the .NET global-tools directory, then runs `dotnet tool install --global ilspycmd` when the tool is absent. If installation fails or the executable remains unavailable, it returns a `decompile/tools` diagnostic with a manual install or `PATH` recovery action. |
+| BepInEx | Real-profile Mod Test and workflows that inspect BepInEx logs. | Real-profile preflight requires `BepInEx/core/BepInEx.dll`; absence is a profile/configuration failure (exit code `10`). A missing or unreadable current BepInEx log, or a startup timeout, is a logs/readiness failure (exit code `60`); a missing Unity log instead warns and requires user handoff. See [Real-profile testing](../sub-skills/blasphemous-modding-test-real-profile.md) for preflight behavior and [Log Analyzer](../sub-skills/log-analyzer.md) for source precedence and recovery. |
+| ModdingAPI | Mod projects that use the framework, or tasks that need its API documentation/source. It is not a package required by every Skill workflow. | A local reference checkout is optional. If its configuration fields are absent, the [ModdingAPI reference route](../sub-skills/referencing-modding-api.md) uses the release-aware remote fallback; a failed resolution reports its recovery diagnostic. |
+| Git | Optional local ModdingAPI checkout, or resolving an explicit `tag:` or `branch:` selector. | Missing Git during explicit tag/branch resolution returns a runtime diagnostic suggesting Git installation or an exact commit selector. Local clone/update failures return a runtime diagnostic to check Git installation, network access, selector, and target path. |
+
+### Installation-time requirement
+
+Node.js `>=18` is required only to run the package installer, including `bin/install.js`. If it is unavailable, the agent MUST follow the [manual install flow](https://github.com/EltonZhang777/Blasphemous.ModdingHelper.Skill/blob/main/README.md#install-from-the-release-archive). Node.js is not a post-install Skill runtime requirement.
+
+The `ilspycmd` global-tool installation above is existing decompiler behavior; this inventory adds no installer or runtime behavior.
+
 ## Completion criteria
+
+### Common completion-report fields
+
+The common completion-report fields are `status`, `completion evidence`, `blocked reason`, and `next action`. When `status` is `blocked` or `failed`, the report MUST give its exact blocked or failed reason; successful results need not invent one. Branch owners MAY add status categories, evidence categories, partial outcomes, and pending outcomes. Operational completion-report branches and completion-report child-handoff contracts MUST link here and add only their route-specific extensions; they MUST NOT redefine the common field list. Save analysis remains a documented exception and retains its branch-owned input, evidence, and partial-report contract.
+
+### Shared preflight completion
 
 Shared preflight is complete only when all applicable conditions below hold:
 
-1. An operational branch has a ready command context, including installed Skill root, caller Mod repository, resolved Python interpreter, and supported native host; or the localization branch has a confirmed bundled index path and readable file.
-2. An operational branch has a selected and applied project or user preference file, or First-Time Setup has reported success. The localization branch has no preference requirement.
+1. A branch subject to this shared gate has a ready command context, including installed Skill root, caller Mod repository, resolved Python interpreter, and supported native host; or a route with an owner-documented exception, including Localization lookup, Save analysis, or caller-owned Automated xUnit, has only the context required by its owner.
+2. A branch subject to this shared gate has a selected and applied project or user configuration file, or First-Time Setup has reported success; or a route with an owner-documented exception has satisfied its owner's exception conditions.
 3. The selected branch has received its required context before mutating files, launching a process, or relying on source or log paths.
 4. For the tracked-session stop exception, the recorded process is stopped or confirmed gone and no unrelated process was touched.
-5. For declined path recovery, the specific failure and next action have been reported. Successful setup instead returns a validated preference file to the main workflow.
+5. For declined path recovery, the specific failure and next action have been reported. Successful setup instead returns a validated configuration file to the main workflow.
+6. The result report uses the common completion-report fields above and gives the next document or action.

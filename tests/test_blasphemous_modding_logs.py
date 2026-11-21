@@ -208,12 +208,12 @@ class BlasphemousModdingLogsTests(unittest.TestCase):
             None,
             {},
             full=False,
-            configured_warning="Set unity_log_dir in preferences.md.",
+            configured_warning="Set unity_log_dir in config.yml.",
         )
 
         self.assertFalse(source.exists)
         self.assertFalse(source.current)
-        self.assertEqual(source.warning, "Set unity_log_dir in preferences.md.")
+        self.assertEqual(source.warning, "Set unity_log_dir in config.yml.")
 
     def test_resolves_windows_and_unix_unity_log_names(self):
         for filename in ("output_log.txt", "Player.log"):
@@ -224,7 +224,7 @@ class BlasphemousModdingLogsTests(unittest.TestCase):
 
             resolved, warning = logs.resolve_unity_log_path(
                 str(directory),
-                preference_path=self.root / "preferences.md",
+                preference_path=self.root / "config.yml",
                 log_filenames=(filename,),
                 cwd=self.root,
             )

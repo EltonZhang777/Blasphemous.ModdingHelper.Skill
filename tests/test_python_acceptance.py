@@ -1,18 +1,17 @@
+import importlib.util
+import io
 import subprocess
 import sys
 import unittest
+from contextlib import redirect_stdout
 from pathlib import Path
+from unittest.mock import patch
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 ROOT_RUNNER = REPOSITORY_ROOT / "tests" / "run_blasphemous_modding_test.py"
-ACCEPTANCE_RUNNER = (
-    REPOSITORY_ROOT
-    / "skills"
-    / "blasphemous-modding-helper"
-    / "scripts"
-    / "test_modding_api_acceptance.py"
-)
+ACCEPTANCE_RUNNER = REPOSITORY_ROOT / "tests" / "test_modding_api_acceptance.py"
+ROOT_TESTS = REPOSITORY_ROOT / "tests"
 SCRIPT_TESTS = (
     REPOSITORY_ROOT
     / "skills"
@@ -51,14 +50,15 @@ class PythonAcceptanceEntryPointTests(unittest.TestCase):
         self.assertIn("--python", result.stdout)
         self.assertEqual(result.stderr, "")
 
-    def test_script_local_behavior_tests_have_python_entry_points(self):
-        for name in (
-            "test_modding_api_lifecycle.py",
-            "test_referencing_modding_api.py",
-            "test_modding_api_live.py",
-        ):
-            with self.subTest(name=name):
-                result = self.run_entry_point(SCRIPT_TESTS / name, "--help")
+    def test_python_behavior_test_entry_points_have_help_contract(self):
+        entry_points = (
+            ROOT_TESTS / "test_modding_api_lifecycle.py",
+            SCRIPT_TESTS / "test_referencing_modding_api.py",
+            ROOT_TESTS / "test_modding_api_live.py",
+        )
+        for entry_point in entry_points:
+            with self.subTest(name=entry_point.name):
+                result = self.run_entry_point(entry_point, "--help")
 
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertIn("usage:", result.stdout)
@@ -66,12 +66,87 @@ class PythonAcceptanceEntryPointTests(unittest.TestCase):
 
     def test_live_smoke_requires_explicit_opt_in(self):
         result = self.run_entry_point(
-            SCRIPT_TESTS / "test_modding_api_live.py"
+            ROOT_TESTS / "test_modding_api_live.py"
         )
 
         self.assertEqual(result.returncode, 2)
         self.assertIn("opt-in", result.stderr)
         self.assertEqual(result.stdout, "")
+
+    def test_workflow_tests_are_scheduled_once_through_unittest_discovery(self):
+        spec = importlib.util.spec_from_file_location("acceptance_runner", ACCEPTANCE_RUNNER)
+        runner = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(runner)
+        invocations = []
+
+        def capture(label, command, **kwargs):
+            invocations.append((label, [str(part) for part in command]))
+            return subprocess.CompletedProcess(command, 0, "", "")
+
+        with patch.object(runner, "run_command", side_effect=capture), \
+                patch.object(runner, "run_installer_surface"), \
+                patch.object(runner, "run_check"), \
+                redirect_stdout(io.StringIO()):
+            self.assertEqual(runner.main(["--python", sys.executable]), 0)
+
+        root_runs = [
+            command
+            for label, command in invocations
+            if label == "Python deterministic contract surface"
+        ]
+        self.assertEqual(len(root_runs), 1)
+        self.assertIn(str(ROOT_RUNNER), root_runs[0])
+        self.assertEqual(len(invocations), 1)
+
+    def test_lifecycle_behavior_runs_in_discovery_and_help_is_checked_once(self):
+        spec = importlib.util.spec_from_file_location("root_acceptance_runner", ROOT_RUNNER)
+        runner = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(runner)
+        invocations = []
+
+        def capture(label, command, **kwargs):
+            invocations.append((label, [str(part) for part in command]))
+            return subprocess.CompletedProcess(command, 0, "", "")
+
+        with patch.object(runner, "run_command", side_effect=capture), \
+                redirect_stdout(io.StringIO()):
+            runner.run_fixture_suite(sys.executable)
+
+        discovery = [
+            command
+            for label, command in invocations
+            if label == "Python unittest contract suite"
+        ]
+        self.assertEqual(len(discovery), 1)
+        self.assertIn("test_*.py", discovery[0])
+        lifecycle = str(ROOT_TESTS / "test_modding_api_lifecycle.py")
+        lifecycle_tests = [
+            command
+            for label, command in invocations
+            if label == "Python script-local test test_modding_api_lifecycle.py"
+        ]
+        lifecycle_help = [
+            command
+            for label, command in invocations
+            if label == "Python script-local help test_modding_api_lifecycle.py"
+        ]
+        self.assertEqual(lifecycle_tests, [])
+        self.assertEqual(len(lifecycle_help), 1)
+        self.assertEqual(lifecycle_help[0][1:], [lifecycle, "--help"])
+
+    def test_repository_only_tools_are_outside_the_packaged_skill(self):
+        for name in (
+            "test_modding_api_acceptance.py",
+            "test_modding_api_lifecycle.py",
+            "test_modding_api_live.py",
+        ):
+            with self.subTest(name=name):
+                self.assertTrue((ROOT_TESTS / name).is_file())
+                self.assertFalse((SCRIPT_TESTS / name).exists())
+
+        self.assertTrue((REPOSITORY_ROOT / "ci" / "audit_rfc2119.py").is_file())
+        self.assertFalse((SCRIPT_TESTS / "audit_rfc2119.py").exists())
+        self.assertTrue((SCRIPT_TESTS / "test_referencing_modding_api.py").is_file())
 
     def test_legacy_skill_scripts_and_test_runners_are_absent(self):
         legacy_scripts = sorted(

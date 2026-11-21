@@ -3,7 +3,7 @@ name: Build
 on:
   push:
     tags: [ "**" ]
-    branches: [ "main", "test-ci", "experimental" ]
+    branches: [ "main", "dev", "test-ci"]
 
 jobs:
   modding-api-regression:
@@ -11,11 +11,19 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # Keep the 3.9 minimum-version lane while Ubuntu latest covers 3.12.
+          - os: ubuntu-22.04
+            python_version: "3.9"
+            shell_name: bash
           - os: ubuntu-latest
+            python_version: "3.12"
             shell_name: bash
           - os: windows-latest
+            python_version: "3.9"
             shell_name: pwsh
-          - os: macos-latest
+          # Pin the macOS line; macos-latest image drift broke dotnet build.
+          - os: macos-15
+            python_version: "3.9"
             shell_name: bash
     runs-on: ${{ matrix.os }}
 
@@ -26,23 +34,42 @@ jobs:
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
-        python-version: "3.9"
+        python-version: ${{ matrix.python_version }}
+
+    - name: Install Skill Python dependencies
+      run: python -m pip install --requirement skills/blasphemous-modding-helper/requirements.txt
+
+    - name: Install optional screenshot validation dependency
+      run: python -m pip install --requirement ci/requirements-image-validation.txt
 
     - name: Set up Node.js installer boundary
       uses: actions/setup-node@v4
       with:
         node-version: "18"
 
+    # New images default to .NET 11; the isolated dir makes this pin effective.
+    - name: Set up .NET SDK
+      uses: actions/setup-dotnet@v4
+      env:
+        # Without a clean install dir, setup-dotnet adds the requested SDK
+        # beside the image's SDKs and the newest preinstalled version wins.
+        DOTNET_INSTALL_DIR: ${{ runner.temp }}/dotnet
+      with:
+        dotnet-version: "10.0.403"
+
+    - name: Validate Skill Python runtime and dependencies
+      run: python skills/blasphemous-modding-helper/scripts/check_python_environment.py --python python --requirements skills/blasphemous-modding-helper/requirements.txt
+
     # The acceptance runner includes the Node installer and wrapper contracts.
     - name: Run acceptance surface (Bash)
       if: matrix.shell_name == 'bash'
       shell: bash
-      run: python skills/blasphemous-modding-helper/scripts/test_modding_api_acceptance.py --python python --require-clean
+      run: python tests/test_modding_api_acceptance.py --python python --require-clean
 
     - name: Run acceptance surface (PowerShell)
       if: matrix.shell_name == 'pwsh'
       shell: pwsh
-      run: python skills/blasphemous-modding-helper/scripts/test_modding_api_acceptance.py --python python --require-clean
+      run: python tests/test_modding_api_acceptance.py --python python --require-clean
 
   build:
     permissions:
@@ -71,16 +98,14 @@ jobs:
 
     - name: Smoke-test Installer (dry run)
       run: |
-        node bin/install.js --dry-run --only trae-cn
-        node bin/install.js --dry-run --only claude-code
+        SKILL_DESTINATION="$(mktemp -d)/blasphemous-modding-helper"
+        node bin/install.js --dry-run --path "$SKILL_DESTINATION"
         node bin/install.js --help
 
     - name: Package Release
       run: |
         mkdir -p publish
         zip -r publish/${{ env.PROJECT_NAME }}.zip skills/${{ env.PROJECT_NAME }}
-        cp install.sh publish/install.sh
-        cp install.ps1 publish/install.ps1
 
     # Release is created only on tag pushes; main-branch pushes just run
     # the packaging steps above as a build check.
@@ -92,5 +117,3 @@ jobs:
         draft: true
         files: |
           publish/${{ env.PROJECT_NAME }}.zip
-          publish/install.sh
-          publish/install.ps1

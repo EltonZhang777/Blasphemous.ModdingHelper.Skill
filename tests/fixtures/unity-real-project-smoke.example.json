@@ -1,0 +1,224 @@
+{
+  "schema_version": 1,
+  "unity_version": "2017.4.40f1",
+  "baseline": {
+    "assets_total_files": 94153,
+    "scanner_total_files": 94154,
+    "unity_files": 1970,
+    "prefab_files": 729,
+    "asset_files": 32617,
+    "cs_files": 5308,
+    "meta_files": 47685,
+    "complete_scene_sets": 393,
+    "incomplete_scene_sets": 0,
+    "standalone_scenes": 5
+  },
+  "scene_set": {
+    "name": "<LOCAL_SCENE_SET_NAME>",
+    "kind": "complete",
+    "present_layers": [
+      "_MAIN",
+      "_LOGIC",
+      "_LAYOUT",
+      "_DECO",
+      "_AUDIO"
+    ],
+    "members": [
+      "<LOCAL_SCENE_SET_MEMBER_1>",
+      "<LOCAL_SCENE_SET_MEMBER_2>",
+      "<LOCAL_SCENE_SET_MEMBER_3>",
+      "<LOCAL_SCENE_SET_MEMBER_4>",
+      "<LOCAL_SCENE_SET_MEMBER_5>"
+    ],
+    "object_count": 0,
+    "reference_count": 0
+  },
+  "standalone_scene": {
+    "path": "<LOCAL_STANDALONE_SCENE_PATH>",
+    "kind": "standalone",
+    "members": [
+      "<LOCAL_STANDALONE_SCENE_PATH>"
+    ],
+    "object_count": 0,
+    "reference_count": 0
+  },
+  "prefab": {
+    "path": "<LOCAL_PREFAB_PATH>",
+    "guid": "<LOCAL_PREFAB_GUID>",
+    "evidence_kind": "flattened",
+    "object_count": 0,
+    "reference_count": 0,
+    "object_file_ids": [
+      0
+    ]
+  },
+  "script": {
+    "path": "<LOCAL_SCRIPT_PATH>",
+    "name": "<LOCAL_SCRIPT_NAME>",
+    "guid": "<LOCAL_SCRIPT_GUID>",
+    "metadata_status": "present"
+  },
+  "guid_lookup": {
+    "guid": "<LOCAL_PREFAB_GUID>",
+    "path": "<LOCAL_PREFAB_PATH>",
+    "type": "prefab"
+  },
+  "references": {
+    "path": "<LOCAL_REFERENCE_OWNER_PATH>",
+    "object_file_id": 0,
+    "direction": "outgoing",
+    "depth": 2,
+    "limit": 30,
+    "timeout_seconds": 120,
+    "status": "ok",
+    "complete": true,
+    "node_count": 0,
+    "edge_count": 0,
+    "edges": [
+      {
+        "field": "<LOCAL_REFERENCE_FIELD>",
+        "scope": "external",
+        "target_path": "<LOCAL_REFERENCE_TARGET_PATH>",
+        "target_file_id": 0,
+        "target_status": "unsupported",
+        "target_reason": "binary_asset_not_inspected"
+      }
+    ]
+  },
+  "bindings": {
+    "census": {
+      "rows": 75147,
+      "candidate_source_files": 35316,
+      "source_asset_kind": {
+        "scene": 69267,
+        "prefab": 4803,
+        "asset": 1077
+      },
+      "reference_shape": {
+        "structured": 75146,
+        "null": 1,
+        "malformed": 0
+      },
+      "target_category": {
+        "cs": 68660,
+        "dll": 2356,
+        "unresolved": 4130,
+        "null": 1,
+        "malformed": 0,
+        "binary_other": 0,
+        "other": 0
+      },
+      "asset_resolution": {
+        "resolved": 71016,
+        "missing": 4130,
+        "ambiguous": 0,
+        "unsupported_binary": 0,
+        "not_applicable": 1
+      },
+      "script_object_resolution": {
+        "asset_level_only": 68660,
+        "not_verifiable_binary": 2356,
+        "not_applicable": 4131
+      },
+      "distinct_m_script_file_ids": 50,
+      "non_typical_file_id_rows": 6484,
+      "packages_source_candidates": 0
+    },
+    "samples": {
+      "cs": {
+        "source_asset_path": "<LOCAL_SOURCE_ASSET_PATH>",
+        "source_asset_kind": "<LOCAL_SOURCE_ASSET_KIND>",
+        "source_object_file_id": "<LOCAL_SOURCE_OBJECT_FILE_ID>",
+        "reference_shape": "<LOCAL_REFERENCE_SHAPE>",
+        "m_script_file_id": "<LOCAL_SCRIPT_FILE_ID>",
+        "m_script_guid_sha256": "<LOCAL_SCRIPT_GUID_SHA256>",
+        "m_script_type": 0,
+        "target_asset_kind": "<LOCAL_TARGET_ASSET_KIND>",
+        "target_asset_path": "<LOCAL_TARGET_ASSET_PATH>",
+        "target_asset_candidate_count": 0,
+        "asset_resolution": "<LOCAL_ASSET_RESOLUTION>",
+        "asset_resolution_reason": "<LOCAL_ASSET_RESOLUTION_REASON>",
+        "script_object_resolution": "<LOCAL_SCRIPT_OBJECT_RESOLUTION>"
+      },
+      "dll": {
+        "source_asset_path": "<LOCAL_SOURCE_ASSET_PATH>",
+        "source_asset_kind": "<LOCAL_SOURCE_ASSET_KIND>",
+        "source_object_file_id": "<LOCAL_SOURCE_OBJECT_FILE_ID>",
+        "reference_shape": "<LOCAL_REFERENCE_SHAPE>",
+        "m_script_file_id": "<LOCAL_SCRIPT_FILE_ID>",
+        "m_script_guid_sha256": "<LOCAL_SCRIPT_GUID_SHA256>",
+        "m_script_type": 0,
+        "target_asset_kind": "<LOCAL_TARGET_ASSET_KIND>",
+        "target_asset_path": "<LOCAL_TARGET_ASSET_PATH>",
+        "target_asset_candidate_count": 0,
+        "asset_resolution": "<LOCAL_ASSET_RESOLUTION>",
+        "asset_resolution_reason": "<LOCAL_ASSET_RESOLUTION_REASON>",
+        "script_object_resolution": "<LOCAL_SCRIPT_OBJECT_RESOLUTION>"
+      },
+      "unresolved": {
+        "source_asset_path": "<LOCAL_SOURCE_ASSET_PATH>",
+        "source_asset_kind": "<LOCAL_SOURCE_ASSET_KIND>",
+        "source_object_file_id": "<LOCAL_SOURCE_OBJECT_FILE_ID>",
+        "reference_shape": "<LOCAL_REFERENCE_SHAPE>",
+        "m_script_file_id": "<LOCAL_SCRIPT_FILE_ID>",
+        "m_script_guid_sha256": "<LOCAL_SCRIPT_GUID_SHA256>",
+        "m_script_type": 0,
+        "target_asset_kind": "<LOCAL_TARGET_ASSET_KIND>",
+        "target_asset_path": "<LOCAL_TARGET_ASSET_PATH>",
+        "target_asset_candidate_count": 0,
+        "asset_resolution": "<LOCAL_ASSET_RESOLUTION>",
+        "asset_resolution_reason": "<LOCAL_ASSET_RESOLUTION_REASON>",
+        "script_object_resolution": "<LOCAL_SCRIPT_OBJECT_RESOLUTION>"
+      },
+      "null": {
+        "source_asset_path": "<LOCAL_SOURCE_ASSET_PATH>",
+        "source_asset_kind": "<LOCAL_SOURCE_ASSET_KIND>",
+        "source_object_file_id": "<LOCAL_SOURCE_OBJECT_FILE_ID>",
+        "reference_shape": "<LOCAL_REFERENCE_SHAPE>",
+        "m_script_file_id": "<LOCAL_SCRIPT_FILE_ID>",
+        "m_script_guid_sha256": "<LOCAL_SCRIPT_GUID_SHA256>",
+        "m_script_type": 0,
+        "target_asset_kind": "<LOCAL_TARGET_ASSET_KIND>",
+        "target_asset_path": "<LOCAL_TARGET_ASSET_PATH>",
+        "target_asset_candidate_count": 0,
+        "asset_resolution": "<LOCAL_ASSET_RESOLUTION>",
+        "asset_resolution_reason": "<LOCAL_ASSET_RESOLUTION_REASON>",
+        "script_object_resolution": "<LOCAL_SCRIPT_OBJECT_RESOLUTION>"
+      },
+      "non_typical_file_id": {
+        "source_asset_path": "<LOCAL_SOURCE_ASSET_PATH>",
+        "source_asset_kind": "<LOCAL_SOURCE_ASSET_KIND>",
+        "source_object_file_id": "<LOCAL_SOURCE_OBJECT_FILE_ID>",
+        "reference_shape": "<LOCAL_REFERENCE_SHAPE>",
+        "m_script_file_id": "<LOCAL_SCRIPT_FILE_ID>",
+        "m_script_guid_sha256": "<LOCAL_SCRIPT_GUID_SHA256>",
+        "m_script_type": 0,
+        "target_asset_kind": "<LOCAL_TARGET_ASSET_KIND>",
+        "target_asset_path": "<LOCAL_TARGET_ASSET_PATH>",
+        "target_asset_candidate_count": 0,
+        "asset_resolution": "<LOCAL_ASSET_RESOLUTION>",
+        "asset_resolution_reason": "<LOCAL_ASSET_RESOLUTION_REASON>",
+        "script_object_resolution": "<LOCAL_SCRIPT_OBJECT_RESOLUTION>"
+      },
+      "asset": {
+        "source_asset_path": "<LOCAL_SOURCE_ASSET_PATH>",
+        "source_asset_kind": "<LOCAL_SOURCE_ASSET_KIND>",
+        "source_object_file_id": "<LOCAL_SOURCE_OBJECT_FILE_ID>",
+        "reference_shape": "<LOCAL_REFERENCE_SHAPE>",
+        "m_script_file_id": "<LOCAL_SCRIPT_FILE_ID>",
+        "m_script_guid_sha256": "<LOCAL_SCRIPT_GUID_SHA256>",
+        "m_script_type": 0,
+        "target_asset_kind": "<LOCAL_TARGET_ASSET_KIND>",
+        "target_asset_path": "<LOCAL_TARGET_ASSET_PATH>",
+        "target_asset_candidate_count": 0,
+        "asset_resolution": "<LOCAL_ASSET_RESOLUTION>",
+        "asset_resolution_reason": "<LOCAL_ASSET_RESOLUTION_REASON>",
+        "script_object_resolution": "<LOCAL_SCRIPT_OBJECT_RESOLUTION>"
+      }
+    }
+  },
+  "representative_files": [
+    "<LOCAL_REPRESENTATIVE_FILE_1>",
+    "<LOCAL_REPRESENTATIVE_FILE_2>"
+  ]
+}

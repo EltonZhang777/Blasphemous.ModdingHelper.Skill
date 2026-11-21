@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Update the package version everywhere from ci/update-version/version.yml.
+"""Update the package version everywhere from the distributed Skill version.yml.
 
-ci/update-version/version.yml is the single source of truth:
+skills/blasphemous-modding-helper/version.yml is the single source of truth:
 
     version: <current-version>
 
@@ -9,6 +9,7 @@ Every "version" field in the JSON manifests below is rewritten to match it:
 
     package.json
     .claude-plugin/plugin.json
+    .codex-plugin/plugin.json
     gemini-extension.json
     skills-lock.json            (main entry + sub-skill entries)
 
@@ -29,12 +30,13 @@ import sys
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-VERSION_FILE = REPO_ROOT / "ci" / "update-version" / "version.yml"
+VERSION_FILE = REPO_ROOT / "skills" / "blasphemous-modding-helper" / "version.yml"
 
-# Files whose "version" fields are kept in sync with version.yml.
+# Files whose "version" fields are kept in sync with the Skill version.yml.
 MANIFESTS = [
     "package.json",
     ".claude-plugin/plugin.json",
+    ".codex-plugin/plugin.json",
     "gemini-extension.json",
     "skills-lock.json",
 ]

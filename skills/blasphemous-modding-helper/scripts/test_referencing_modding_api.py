@@ -20,7 +20,13 @@ REPOSITORY_ROOT = SKILL_ROOT.parents[1]
 RESOLVER = SCRIPT_ROOT / "resolve_modding_api.py"
 MODDING_API_REPOSITORY = "https://github.com/BrandenEK/Blasphemous.ModdingAPI.git"
 CHECKED_AT = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
-LEGACY_SCRIPT_NAME = re.compile(r"\b[\w.-]+\.(?:js|ps1|sh)\b", re.IGNORECASE)
+LEGACY_SCRIPT_NAME = re.compile(
+    r"\b(?!Node\.js\b)[\w.-]+\.(?:js|ps1|sh)\b", re.IGNORECASE
+)
+INSTALLER_GUIDANCE_SENTENCE = re.compile(
+    r"(?i:\bNode\.js\b[^\n]*?\brequired only to run the package installer, "
+    r"including [`]?)(?P<path>bin/install\.js)[`]?(?:\.(?:\s|$))"
+)
 PYTHON_ENTRY_POINTS = (
     "blasphemous_modding_test.py",
     "check_python_environment.py",
@@ -29,8 +35,6 @@ PYTHON_ENTRY_POINTS = (
     "decompile_source.py",
     "manage_modding_api.py",
     "resolve_modding_api.py",
-    "test_modding_api_acceptance.py",
-    "test_modding_api_live.py",
     "test_referencing_modding_api.py",
 )
 
@@ -56,20 +60,83 @@ def assert_not_contains(text: str, needle: str, label: str) -> None:
         raise DocumentationTestFailure(f"{label} must not contain: {needle}")
 
 
+def legacy_script_reference_diagnostics(
+    document: str, source: str
+) -> Sequence[str]:
+    allowed_installer_spans = {
+        (guidance.start("path") + len("bin/"), guidance.end("path"))
+        for guidance in INSTALLER_GUIDANCE_SENTENCE.finditer(document)
+    }
+    return [
+        f"{source}: {match.group(0)}"
+        for match in LEGACY_SCRIPT_NAME.finditer(document)
+        if match.span() not in allowed_installer_spans
+    ]
+
+
+def check_legacy_script_reference_rules() -> None:
+    source = "fixture.md"
+    install_guidance = (
+        "Node.js `>=18` is required only to run the package installer, "
+        "including `bin/install.js`."
+    )
+    if legacy_script_reference_diagnostics(install_guidance, source):
+        raise DocumentationTestFailure(
+            "script-reference audit must allow install-only bin/install.js guidance "
+            "and the Node.js runtime name"
+        )
+    post_install_guidance = (
+        install_guidance
+        + " After installation, use bin/install.js as a Skill runtime entry point."
+    )
+    if legacy_script_reference_diagnostics(post_install_guidance, source) != [
+        f"{source}: install.js"
+    ]:
+        raise DocumentationTestFailure(
+            "script-reference audit must reject bin/install.js as a post-install entry point"
+        )
+    for reference, filename in (
+        ("bin/INSTALL.JS", "INSTALL.JS"),
+        ("Bin/install.js", "install.js"),
+    ):
+        diagnostic = legacy_script_reference_diagnostics(
+            install_guidance.replace("bin/install.js", reference), source
+        )
+        if diagnostic != [f"{source}: {filename}"]:
+            raise DocumentationTestFailure(
+                f"script-reference audit must require exact installer path casing: {reference}"
+            )
+    for reference in (
+        "legacy.js",
+        "legacy.ps1",
+        "legacy.sh",
+        "scripts/bin/install.js",
+        "C:bin/install.js",
+    ):
+        diagnostic = legacy_script_reference_diagnostics(reference, source)
+        if diagnostic != [f"{source}: {reference.rsplit('/', 1)[-1]}"]:
+            raise DocumentationTestFailure(
+                f"obsolete script diagnostic must identify {reference}"
+            )
+
+
 def audit_skill_documentation() -> None:
     """Reject documentation that still presents legacy script files as entry points."""
 
+    check_legacy_script_reference_rules()
     documents = sorted(SKILL_ROOT.rglob("*.md"))
     contents = {path: read_file(path) for path in documents}
     legacy_references = []
     for path, document in contents.items():
-        for match in LEGACY_SCRIPT_NAME.finditer(document):
-            legacy_references.append(
-                f"{path.relative_to(SKILL_ROOT).as_posix()}: {match.group(0)}"
+        legacy_references.extend(
+            legacy_script_reference_diagnostics(
+                document, path.relative_to(SKILL_ROOT).as_posix()
             )
+        )
     if legacy_references:
         raise DocumentationTestFailure(
-            "Skill documentation contains legacy script references:\n"
+            "Skill documentation contains obsolete script references "
+            "(only bin/install.js is allowed for installation):\n"
             + "\n".join(legacy_references)
         )
 
@@ -249,7 +316,7 @@ def assert_version_relationship(
     ):
         raise DocumentationTestFailure(
             "ModdingAPI version relationship is incomplete; report fixture version, "
-            "selected preference, local checkout version, and remote resolution version."
+            "selected configuration selector, local checkout version, and remote resolution version."
         )
     if fixture_version != remote_resolution:
         raise DocumentationTestFailure(
@@ -259,7 +326,7 @@ def assert_version_relationship(
         )
     if checkout_selector != preference_selector:
         raise DocumentationTestFailure(
-            "ModdingAPI version mismatch: preference "
+            "ModdingAPI version mismatch: configuration selector "
             f"{preference_selector} != local checkout selector {checkout_selector}. "
             "Next step: run the local reference manager update or repair its lock state."
         )
@@ -269,7 +336,7 @@ def assert_version_relationship(
         expected_remote = selected_version(remote_selector)
     if expected_remote != remote_resolution:
         raise DocumentationTestFailure(
-            "ModdingAPI version mismatch: remote preference "
+            "ModdingAPI version mismatch: remote selector "
             f"{remote_selector} != remote resolution {remote_resolution}. "
             "Next step: repair the selector or resolve the matching Release."
         )
@@ -281,7 +348,7 @@ def assert_version_relationship(
         expected_local = selected_version(preference_selector)
     if expected_local != local_checkout:
         raise DocumentationTestFailure(
-            "ModdingAPI version mismatch: preference "
+            "ModdingAPI version mismatch: configuration selector "
             f"{preference_selector} != local checkout {local_checkout}. "
             "Next step: run the local reference manager update or repair its lock state."
         )
@@ -296,6 +363,12 @@ def run_documentation_smoke() -> None:
         ),
         "First-Time Setup reference": read_file(
             SKILL_ROOT / "references" / "config" / "first-time-setup.md"
+        ),
+        "config schema": read_file(
+            SKILL_ROOT / "references" / "config" / "preferences-schema.md"
+        ),
+        "Python runtime reference": read_file(
+            SKILL_ROOT / "references" / "config" / "python-runtime.md"
         ),
         "ModdingAPI route": read_file(
             SKILL_ROOT / "references" / "sub-skills" / "referencing-modding-api.md"
@@ -316,6 +389,8 @@ def run_documentation_smoke() -> None:
     top_level = documents["top-level Skill"]
     preflight = documents["Invocation preflight reference"]
     setup = documents["First-Time Setup reference"]
+    config_schema = documents["config schema"]
+    python_runtime = documents["Python runtime reference"]
     referencing = documents["ModdingAPI route"]
     source = documents["source route"]
     logs = documents["log route"]
@@ -332,14 +407,31 @@ def run_documentation_smoke() -> None:
         "references/config/invocation-preflight.md",
         "top-level Skill",
     )
-    if top_level.count("references/config/invocation-preflight.md") != 1:
+    canonical_preflight_path = "references/config/invocation-preflight.md"
+    preflight_link_targets = {
+        target.split("#", 1)[0]
+        for label, target in re.findall(r"\[([^\]]+)\]\(([^)]+)\)", top_level)
+        if "preflight" in label.lower() or "invocation-preflight" in target.lower()
+    }
+    shared_gate = re.search(
+        r"(?ms)^## Shared entry gate\s+(.*?)(?=^## |\Z)", top_level
+    )
+    shared_gate_links = (
+        re.findall(r"\[Invocation preflight\]\(([^)]+)\)", shared_gate.group(1))
+        if shared_gate is not None
+        else []
+    )
+    if (
+        preflight_link_targets != {canonical_preflight_path}
+        or shared_gate_links != [canonical_preflight_path]
+    ):
         raise DocumentationTestFailure(
-            "top-level Skill must expose one shared preflight entry pointer"
+            "top-level Skill must keep one canonical preflight entry; route shortcuts must target it"
         )
     assert_not_contains(top_level, "## Skill command context", "top-level Skill")
     assert_not_contains(
         top_level,
-        "## Preferences gate (see Invocation preflight)",
+        "## Configuration gate (see Invocation preflight)",
         "top-level Skill",
     )
     assert_not_contains(top_level, "main branch", "top-level Skill")
@@ -348,7 +440,7 @@ def run_documentation_smoke() -> None:
     for heading in (
         "# Invocation preflight",
         "## Command context",
-        "## Preferences gate",
+        "## Configuration gate",
         "## First-time setup and recovery",
         "## Completion criteria",
     ):
@@ -359,6 +451,7 @@ def run_documentation_smoke() -> None:
         "Project scope MUST take precedence over user scope",
         "check_preferences.py",
         "/blasphemous-modding-test stop SESSION_ID",
+        "Downstream branches MUST consume the selected validation result",
     ):
         assert_contains(
             preflight,
@@ -377,6 +470,24 @@ def run_documentation_smoke() -> None:
         "### Setup incomplete",
     ):
         assert_contains(setup, heading, "First-Time Setup reference")
+    for contract_text in (
+        "last_checked_time",
+        "last_checked_version",
+        "check_period_days",
+        "skipped",
+        "passed",
+        "normalized",
+        "failed",
+        "leaves the file unchanged",
+    ):
+        assert_contains(config_schema, contract_text, "config schema")
+    for contract_text in (
+        "Python 3.9 or newer",
+        "requirements.txt",
+        "MUST NOT install or upgrade packages",
+    ):
+        assert_contains(python_runtime, contract_text, "Python runtime reference")
+    assert_contains(preflight, "PyYAML>=6.0", "Invocation preflight reference")
 
     for label, document in (
         ("source route", source),
@@ -395,13 +506,43 @@ def run_documentation_smoke() -> None:
     assert_contains(mod_test, "Completion criterion", "mod-test route")
 
     for heading in (
+        "## Reference and topic routing",
         "## Routing contract",
-        "## Stable API topic routing",
         "## Advanced and archived topics",
         "## Game-source separation",
         "## Documentation smoke check",
     ):
         assert_contains(referencing, heading, "ModdingAPI reference sub-skill")
+    for stable_row in (
+        "Stable topic: Project setup and package shape",
+        "Stable topic: Mod class, registration, and lifecycle",
+        "Stable topic: Initialization and callback order",
+        "Stable topic: Persistent data and save compatibility",
+        "Stable topic: ModLog methods and severity",
+        "Stable topic: Mod configuration",
+        "Stable topic: File utilities and Mod-owned files",
+        "Stable topic: Input and keybindings",
+        "Stable topic: Localization and translations",
+    ):
+        assert_contains(
+            referencing,
+            f"| {stable_row} |",
+            "ModdingAPI reference canonical route table",
+        )
+    for route_contract in (
+        "A decompiled-game-source request",
+        "MUST NOT perform these steps",
+        "The game-source",
+        "row is a direct route",
+        "MUST NOT require or load a ModdingAPI reference",
+        "| Topic absent from the table, unlisted, or newly added | `docs/development/main.md` |",
+        "MUST NOT copy the upstream documentation tree",
+    ):
+        assert_contains(
+            referencing,
+            route_contract,
+            "ModdingAPI reference canonical route table",
+        )
     for page in (
         "docs/development/main.md",
         "docs/development/setup.md",
@@ -432,8 +573,8 @@ def run_documentation_smoke() -> None:
 
     with tempfile.TemporaryDirectory(prefix="modding-api-reference-doc-smoke-") as raw_root:
         fixture_root = Path(raw_root)
-        local_preferences = fixture_root / "local-preferences.md"
-        skipped_preferences = fixture_root / "skipped-preferences.md"
+        local_preferences = fixture_root / "local-config.yml"
+        skipped_preferences = fixture_root / "skipped-config.yml"
         local_path = fixture_root / "references" / "modding-api"
         local_documentation = local_path / "docs" / "development" / "main.md"
         local_documentation.parent.mkdir(parents=True)
@@ -528,13 +669,13 @@ def run_documentation_smoke() -> None:
             or local_route.get("checkout_version") != local_version
         ):
             raise DocumentationTestFailure(
-                "configured local preferences must select the local reference route and version"
+                "configured local settings must select the local reference route and version"
             )
         if not Path(local_route["documentation_path"]).is_file():
             raise DocumentationTestFailure("local route must point at docs/development/main.md")
         if local_route.get("selector") != f"tag:{local_version}":
             raise DocumentationTestFailure(
-                "local preferences must preserve the configured selector"
+                "local settings must preserve the configured selector"
             )
 
         remote_route = select_route(parse_preferences(skipped_preferences))

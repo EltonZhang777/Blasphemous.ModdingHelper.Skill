@@ -6,7 +6,7 @@ from pathlib import Path
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 SKILL_ROOT = REPOSITORY_ROOT / "skills" / "blasphemous-modding-helper"
-AUDIT = SKILL_ROOT / "scripts" / "audit_rfc2119.py"
+AUDIT = REPOSITORY_ROOT / "ci" / "audit_rfc2119.py"
 MODDING_API_STANDARDS = (
     SKILL_ROOT
     / "references"
@@ -31,6 +31,8 @@ class Rfc2119AuditTests(unittest.TestCase):
 
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("RFC 2119 candidate audit: PASS", result.stdout)
+        expected_count = len(list(SKILL_ROOT.rglob("*.md")))
+        self.assertIn(f"PASS ({expected_count} Markdown files scanned)", result.stdout)
 
     def test_modding_api_guidance_uses_resolved_reference_urls(self):
         standards = MODDING_API_STANDARDS.read_text(encoding="utf-8")

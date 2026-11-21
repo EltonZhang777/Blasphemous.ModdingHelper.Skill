@@ -1,23 +1,38 @@
 # Blasphemous mod test acceptance record
 
-This record is the evidence surface for issue #19. It separates fixture evidence, native-Python entrypoint evidence, and the real-profile **Manual verification** gate. A warning is an unresolved environment or user-operated step; it is not a gameplay pass.
+**Historical snapshot status:** Document reviewed on 2026-11-19 at HEAD 69031cb0a8a230594aa542b9ccc6ff893849adb3. That review identifies the source record's provenance; the later documentation edits in this branch were not executed or revalidated at that HEAD. This record preserves the evidence surface for issue #19 as a historical document review, not as fresh execution evidence.
+
+**Current gate status:** The current automated gate has not been revalidated at the document-review HEAD. No fresh local suite, real game, or Modding profile was run for this documentation change. The existing deferred Real-profile status remains below.
+
+This record separates fixture evidence, native-Python entrypoint evidence, and the real-profile **Player-performed in-game verification** gate. A warning is an unresolved environment or user-operated step; it is not a gameplay pass.
+
+## Long-running execution
+
+A complete maintainer acceptance run can take several minutes and may stay silent between phases. Start it in the background with output redirected to a local log, then inspect that log and the process exit code after completion; alternatively, wait once with a timeout that covers the expected runtime. Do not restart the run because short polls show no new output. If an agent turn is interrupted by loop protection while the process is still running, recover that process's final output and exit code first. Treat the run as complete only when both the exit code and final test summary are available.
 
 ## Automated fixture gate
+
+These repository suites include screenshot validation for knowledge-note candidates. Install the optional maintainer dependency into the Python environment that will run the suites:
+
+```text
+<python3> -m pip install -r ci/requirements-image-validation.txt
+```
+
+Pillow is used only for repository maintainer checks and is not part of the installed Skill runtime.
 
 Run from the repository root:
 
 ```text
-<python3> tests/run_blasphemous_modding_test.py --require-clean
+<python3> tests/run_blasphemous_modding_test.py
 ```
 
-The Python runner exercises the CLI, script-local contract tests, help contracts,
-documentation smoke checks, temporary projects, packages, profiles, processes,
-logs, and session state. It does not modify a real game profile or claim
-gameplay verification. The broader maintainer gate is:
+The Python runner exercises the CLI, script-local contract tests, help contracts, documentation smoke checks, temporary projects, packages, profiles, processes, logs, and session state. It does not modify a real game profile or claim gameplay verification. The broader maintainer gate is:
 
 ```text
-<python3> skills/blasphemous-modding-helper/scripts/test_modding_api_acceptance.py --require-clean
+<python3> tests/test_modding_api_acceptance.py
 ```
+
+These commands verify functionality without requiring a clean worktree. Append `--require-clean` for an explicit cleanliness gate; CI uses that gate on a fresh checkout. Local runs should omit it when preserving pre-existing changes.
 
 | Acceptance area | Fixture evidence |
 | --- | --- |
@@ -26,101 +41,91 @@ gameplay verification. The broader maintainer gate is:
 | Dry-run and deployment safety | `test_dry_run_resolves_project_and_profile_without_mutation`, `test_deployment_records_backups_and_hashes_without_logs`, `test_deployment_preflight_rejects_file_parent_without_mutation`, `test_deployment_rejects_hard_linked_destination_without_mutation`, `test_deployment_failure_rolls_back_partial_copy`, `test_archive_failure_rolls_back_the_new_deployment` |
 | New files, changed files, and rollback order | `test_clean_restores_overwritten_files_and_keeps_new_files`, `test_clean_protects_an_overwritten_file_changed_during_testing`, `test_clean_removes_new_files_only_after_explicit_approval`, `test_clean_protects_a_new_file_changed_during_testing_when_removal_is_approved`, `test_clean_rejects_an_older_session_until_the_newer_session_is_cleaned`, `test_repeated_runs_archive_previous_session_and_status_is_newest_first` |
 | Process ownership and idempotence | `test_launch_records_live_profile_process`, `test_launch_refuses_conflicting_running_launcher`, `test_launch_does_not_report_exited_process_as_launched`, `test_stop_terminates_tracked_process_and_is_idempotent`, `test_stop_and_clean_are_idempotent_when_session_state_is_gone`, `test_stop_marks_an_already_exited_process_without_termination`, `test_stop_refuses_a_reused_pid_without_termination`, `test_clean_refuses_while_the_tracked_game_process_is_running` |
-| Startup states, timeout, logs, and output bounds | `test_run_reports_launched_ready_and_mod_loaded_as_distinct_states`, `test_startup_timeout_preserves_process_and_session_for_diagnosis`, `test_timeout_rechecks_evidence_at_deadline`, `test_logs_reports_bounded_current_evidence_without_persisting_logs`, `test_logs_reports_bounded_hits_with_source_path_provenance`, `test_logs_detects_early_current_hit_outside_bounded_tail`, `test_logs_marks_same_size_content_rewrite_as_current`, `test_logs_full_output_includes_the_complete_current_log`, `test_logs_requires_current_chainloader_evidence_for_ready_and_mod_loaded`, `test_logs_recognizes_structured_moddingapi_registration_for_runtime_alias`, `test_logs_recognizes_registering_moddingapi_record`, `test_logs_recognizes_mod_loader_id_and_bepinex_display_name`, `test_bepinex_display_name_does_not_become_canonical_id`, `test_logs_recognizes_registered_mod_loader_record`, `test_logs_rejects_similar_mod_loader_id`, `test_logs_recognizes_standard_bepinex_loading_record`, `test_logs_recognizes_standard_bepinex_loaded_record`, `test_logs_rejects_paths_errors_and_unstructured_target_text`, `test_registration_without_current_bepinex_readiness_does_not_load_mod`, `test_target_error_before_registration_does_not_promote_to_loaded`, `test_target_error_after_registration_does_not_demote_loaded_state`, `test_target_error_after_many_registrations_remains_visible`, `test_logs_ignores_prelaunch_bepinex_evidence_as_stale`, `test_missing_unity_log_warns_with_preference_update_handoff`, `test_missing_bepinex_log_persists_missing_source_before_failure` |
+| Startup states, timeout, logs, snapshots, and output bounds | `test_run_reports_launched_ready_and_mod_loaded_as_distinct_states`, `test_startup_timeout_preserves_process_and_session_for_diagnosis`, `test_timeout_rechecks_evidence_at_deadline`, `test_logs_reports_bounded_current_evidence_without_persisting_logs`, `test_logs_reports_bounded_hits_with_source_path_provenance`, `test_logs_detects_early_current_hit_outside_bounded_tail`, `test_logs_marks_same_size_content_rewrite_as_current`, `test_logs_full_output_includes_the_complete_current_log`, `test_logs_requires_current_chainloader_evidence_for_ready_and_mod_loaded`, `test_logs_recognizes_structured_moddingapi_registration_for_runtime_alias`, `test_logs_recognizes_registering_moddingapi_record`, `test_logs_recognizes_mod_loader_id_and_bepinex_display_name`, `test_bepinex_display_name_does_not_become_canonical_id`, `test_logs_recognizes_registered_mod_loader_record`, `test_logs_rejects_similar_mod_loader_id`, `test_logs_recognizes_standard_bepinex_loading_record`, `test_logs_recognizes_standard_bepinex_loaded_record`, `test_logs_rejects_paths_errors_and_unstructured_target_text`, `test_registration_without_current_bepinex_readiness_does_not_load_mod`, `test_target_error_before_registration_does_not_promote_to_loaded`, `test_target_error_after_registration_does_not_demote_loaded_state`, `test_target_error_after_many_registrations_remains_visible`, `test_logs_ignores_prelaunch_bepinex_evidence_as_stale`, `test_missing_unity_log_warns_with_preference_update_handoff`, `test_missing_bepinex_log_persists_missing_source_before_failure`, `test_snapshot_copies_exited_logs_and_survives_clean`, `test_snapshot_replaces_sources_and_preserves_previous_copy_on_failure`, `test_snapshot_reports_missing_source_without_deleting_successful_copy`, `test_snapshot_running_process_waits_for_explicit_stop_approval`, `test_snapshot_command_reports_pending_approval`, `test_snapshot_approved_stop_captures_after_normal_stop`, `test_snapshot_normal_stop_failure_waits_for_separate_force_approval`, `test_snapshot_declined_stop_captures_explicit_current_logs`, `test_snapshot_declined_force_stop_captures_current_logs_after_failure`, `test_snapshot_failed_force_stop_captures_current_logs_with_error`, `test_snapshot_analysis_reads_the_session_snapshot_not_later_current_logs`, `test_snapshot_analysis_reports_missing_snapshot_without_current_fallback`, `test_snapshot_analysis_reports_incomplete_source_and_recovery_action`, `test_running_snapshot_analysis_exposes_non_final_capture_condition`, `test_snapshot_recapture_after_exit_updates_same_session_analysis`, `test_explicit_current_log_analysis_keeps_live_source_mode` |
 | Unicode paths and decoding boundaries | `test_dry_run_preserves_unicode_and_space_paths_with_non_utf8_console`, `test_build_error_preserves_unicode_project_path_and_exit_category`, `test_unicode_space_paths_survive_complete_lifecycle_and_bad_log_bytes` |
-| Preferences, profile preflight, shell restrictions, and exit categories | `test_project_scope_overrides_user_scope`, `test_explicit_profile_overrides_project_preference`, `test_missing_preferences_returns_profile_preference_error`, `test_missing_profile_children_are_rejected_without_creation`, `test_missing_launcher_is_rejected_without_mutation`, `test_compatibility_shell_is_rejected`, `test_stop_rejects_compatibility_shell`, `test_proton_environment_is_rejected`, `test_build_failure_returns_build_error_before_artifact_validation` |
+| Configuration, profile preflight, shell restrictions, and exit categories | `test_project_scope_overrides_user_scope`, `test_explicit_profile_overrides_project_preference`, `test_missing_preferences_returns_profile_preference_error`, `test_missing_profile_children_are_rejected_without_creation`, `test_missing_launcher_is_rejected_without_mutation`, `test_compatibility_shell_is_rejected`, `test_stop_rejects_compatibility_shell`, `test_proton_environment_is_rejected`, `test_build_failure_returns_build_error_before_artifact_validation` |
+| YAML configuration freshness gate and setup recovery | `test_config_parser_preserves_yaml_scalar_types_and_comments`, `test_config_parser_rejects_malformed_yaml_and_duplicate_keys`, `test_first_validation_writes_default_metadata_and_preserves_content`, `test_current_version_change_triggers_validation`, `test_elapsed_period_uses_strictly_greater_than`, `test_current_config_within_period_skips_and_does_not_write`, `test_positive_float_period_is_floored_and_stored`, `test_invalid_periods_fail_without_replacing_the_value`, `test_invalid_yaml_and_future_metadata_route_to_setup`, `test_missing_config_reports_setup_recovery` |
 | Agent-safe help and parser contracts | `test_root_help_contains_canonical_agent_workflow_examples`, `test_command_help_lists_only_valid_options_and_context`, `test_parser_accepts_each_command_contract`, `test_parser_rejects_misplaced_command_options` |
 
 Completion criterion: the fixture command exits successfully, all rows above remain represented by passing tests, and skipped cases are reported with their environment reason.
 
-Observed on 2026-08-23: the process-scoped Windows Python runner passed CLI help and 62 tests; 2 symlink-related cases were skipped by host privilege conditions.
+The table describes the intended gate; it is not a pass claim for the document-review HEAD. The following historical runner observations predate the document review, their exact HEAD was not recorded, and they must not be read as having run at the review HEAD.
 
-Issue #49 validation on 2026-08-28: the native Python runner passed CLI help and 91 tests; the same 2 symlink-related cases were skipped by host privilege conditions.
+Historical runner observation on 2026-08-23 (exact HEAD not recorded): the process-scoped Windows Python runner passed CLI help and 62 tests; 2 symlink-related cases were skipped by host privilege conditions.
 
-Issue #79/#80 validation on 2026-08-31: the native Python runner passed CLI
-help and 179 tests; 2 symlink-related cases were skipped by host privilege
-conditions. The CI contract runs this same Python surface on native Windows,
-Linux, and macOS.
+Historical issue #49 runner observation on 2026-08-28 (exact HEAD not recorded): the native Python runner passed CLI help and 91 tests; the same 2 symlink-related cases were skipped by host privilege conditions.
+
+Historical issue #79/#80 runner observation on 2026-08-31 (exact HEAD not recorded): the native Python runner passed CLI help and 179 tests; 2 symlink-related cases were skipped by host privilege conditions. The CI contract runs this same Python surface on native Windows, Linux, and macOS.
 
 ## Agent-safe help gate
 
-The root help must expose the canonical sequence: normal `run`, current-log `logs`, tracked `stop`, newest-first `clean`, and read-only `status`. Each subcommand help is the option authority for that command. `stop` accepts only `SESSION_ID` and optional `--force`; it does not accept context, build, log, or cleanup options. Parser tests must preserve valid invocations and reject cross-command or misplaced options.
+Root and subcommand `--help` output and parser tests are the sole owners of flags and argument grammar. Root help must expose the canonical sequence: `run`, explicitly selected Current log `logs` when needed, `snapshot` after a clear completion result, tracked `stop`, newest-first `clean`, and read-only `status`. Parser tests must preserve valid invocations and reject cross-command or misplaced options.
 
 ## Native Python entrypoint gate
 
-The acceptance runner invokes the same Python CLI and fixture suite directly on
-each supported native host. The invoking shell is only a process host; no
-legacy Skill shell or JavaScript implementation is part of the contract. The
-runner performs no deployment and launches no game:
+The acceptance runner invokes the same Python CLI and fixture suite directly on each supported native host. The invoking shell is only a process host; no legacy Skill shell or JavaScript implementation is part of the contract. The runner performs no deployment and launches no game:
 
 Repository runner:
 
 ```text
-<python3> tests/run_blasphemous_modding_test.py --require-clean
+<python3> tests/run_blasphemous_modding_test.py
 ```
 
 Maintainer acceptance runner:
 
 ```text
-<python3> skills/blasphemous-modding-helper/scripts/test_modding_api_acceptance.py --require-clean
+<python3> tests/test_modding_api_acceptance.py
 ```
 
-Both runners accept an explicit Python 3 executable through `--python`; the
-default is the current interpreter. Skill runtime commands use the resolved
-`PYTHON3` context from [Python Runtime](../../skills/blasphemous-modding-helper/references/config/python-runtime.md)
-and do not silently install dependencies.
+Both runners accept an explicit Python 3 executable through `--python`; the default is the current interpreter. Skill runtime commands use the resolved `PYTHON3` context from [Python Runtime](../../skills/blasphemous-modding-helper/references/config/python-runtime.md) and do not silently install dependencies.
 
-The CLI rejects compatibility-layer indicators such as `MSYSTEM`, `CYGWIN`,
-WSL, Proton, and Wine before profile operations. This keeps a compatibility
-layer from being reported as a native host.
+The native OS support axis is Windows, Linux, or macOS. Bash and PowerShell are process hosts only. The [Real-profile branch](../../skills/blasphemous-modding-helper/references/sub-skills/blasphemous-modding-test-real-profile.md) owns compatibility-layer policy; this record does not reproduce that policy as a competing platform or shell matrix.
 
-Completion criterion: the same Python entry point prints its host identity,
-passes CLI help, and passes the same fixture suite on native Windows, Linux,
-and macOS. An unavailable CI host produces a warning with the reason; it is
-not substituted with a shell-wrapper result.
+Completion criterion: the same Python entry point prints its host identity, passes CLI help, and passes the same fixture suite on native Windows, Linux, and macOS. An unavailable CI host produces a warning with the reason; it is not substituted with a shell-wrapper result.
 
-## Real-profile Manual verification gate
+## ModdingAPI reference maintainer gate
+
+Before publishing changes to the ModdingAPI reference workflow, maintainers MUST run the repository-only acceptance gate from the Skill repository root:
+
+```text
+<python3> tests/test_modding_api_acceptance.py
+```
+
+Append `--require-clean` for final verification. CI runs the gate with that option on native Windows, Linux, and macOS jobs. The gate covers resolver, clone, lifecycle, and documentation behavior; resolver parity; installer dry-runs; repository-owned Markdown links; and `git diff --check`. It does not contact GitHub or use a caller's reference checkout. Ignored local Markdown artifacts MAY produce a separate warning, but MUST NOT fail repository-owned documentation validation.
+
+Maintainers MAY run the separate live release check when network access is available. Run it from the Skill repository root:
+
+```text
+<python3> tests/test_modding_api_live.py
+```
+
+The check resolves the latest non-draft, non-prerelease Release, compares the resolved tag and commit, and verifies tag-specific documentation and source URLs. The live check is optional; report it as not run when it was not requested or network access is unavailable.
+
+## Real-profile Player-performed in-game verification gate
 
 The agent does not run this gate automatically. Deployment changes an external profile, launch starts a game process, and gameplay actions require the player. Use a disposable non-Steam or mirror profile and obtain user direction before performing it. For issue #19, the user has deferred this gate until the three worktrees are merged.
 
-1. Confirm `preferences.md`, the project, `modding_profile_path`, and `unity_log_dir`.
-2. Run the documented `run` command with the exact project/profile paths and an explicit `--startup-timeout`.
+1. Confirm `config.yml`, the project, `modding_profile_path`, and `unity_log_dir`.
+2. Run the documented `run` command with the exact project/profile paths and an explicit startup wait; use root and subcommand `--help` for flags and argument grammar.
 3. Record the printed test session ID, `launched`, `ready`, or `mod_loaded` state, warnings, and current BepInEx/Unity log paths.
-4. Ask the player to perform the scenario and provide a natural-language **Manual verification**: state, actions, expected behavior, observed behavior, and approximate failure time.
-5. Read the current logs with `logs SESSION_ID`; use `--full` only when bounded output is insufficient.
-6. Stop the tracked session, then run newest-first `clean`. Confirm overwritten files are restored and new files remain unless explicit removal was approved.
+4. Ask the player to perform the scenario and provide a natural-language **Player-performed in-game verification**: state, actions, expected behavior, observed behavior, and approximate failure time.
+5. Read the Current logs with `logs`; use its help-exposed full-output mode only when bounded output is insufficient.
+6. After the player reports a clear result, bind it to exactly one session and run `snapshot`. If the result or session is ambiguous, ask for clarification and do not capture. If the process is still running, request ordinary stop approval and repeat with the help-exposed decision; after a failed ordinary stop, request a separate force-stop decision. Keep pending requests uncaptured; record any explicit current-capture condition.
+7. Stop the tracked session if it remains running, then run newest-first `clean`. Confirm overwritten files are restored and new files remain unless explicit removal was approved.
 
-Invocation template:
+Exact CLI flags and argument grammar belong to root and subcommand `--help` plus parser tests; host invocation and quoting belong to [Invocation preflight](../../skills/blasphemous-modding-helper/references/config/invocation-preflight.md). This record does not provide reusable PowerShell or Bash command templates. A dated observation may retain the actual command used as provenance, but not as a normative template.
 
-The agent MUST resolve a native Python 3 interpreter as `PYTHON3` before running these commands. The agent MUST run them from the caller's Mod repository and MUST set `SKILL_ROOT` in Bash or `$SkillRoot` in PowerShell to the installed directory containing the Skill's `SKILL.md` and `scripts/`, as defined by the [authoritative Invocation preflight](../../skills/blasphemous-modding-helper/references/config/invocation-preflight.md).
+Completion criterion: the user has supplied Player-performed in-game verification evidence and the agent has paired it with CLI/log evidence, or the record contains a warning naming the exact blocked step. `mod_loaded` never satisfies this gate by itself.
 
-PowerShell:
+## Unity project navigation real-project gate
 
-```powershell
-$PYTHON3 = 'C:\path\to\python.exe'
-& $PYTHON3 (Join-Path $SkillRoot 'scripts\blasphemous_modding_test.py') run --project <PROJECT.csproj> --profile <PROFILE> --unity-log-dir <UNITY_LOG_DIR> --startup-timeout 60
-& $PYTHON3 (Join-Path $SkillRoot 'scripts\blasphemous_modding_test.py') logs <SESSION_ID>
-& $PYTHON3 (Join-Path $SkillRoot 'scripts\blasphemous_modding_test.py') stop <SESSION_ID>
-& $PYTHON3 (Join-Path $SkillRoot 'scripts\blasphemous_modding_test.py') clean <SESSION_ID>
-```
-
-Native Bash:
-
-```bash
-PYTHON3=/path/to/python3
-"$PYTHON3" "$SKILL_ROOT/scripts/blasphemous_modding_test.py" run --project <PROJECT.csproj> --profile <PROFILE> --unity-log-dir <UNITY_LOG_DIR> --startup-timeout 60
-"$PYTHON3" "$SKILL_ROOT/scripts/blasphemous_modding_test.py" logs <SESSION_ID>
-"$PYTHON3" "$SKILL_ROOT/scripts/blasphemous_modding_test.py" stop <SESSION_ID>
-"$PYTHON3" "$SKILL_ROOT/scripts/blasphemous_modding_test.py" clean <SESSION_ID>
-```
-
-Completion criterion: the user has supplied the Manual verification and the agent has paired it with CLI/log evidence, or the record contains a warning naming the exact blocked step. `mod_loaded` never satisfies this gate by itself.
+Synthetic Unity navigation tests are part of the repository acceptance suite. The opt-in real-export gate is separate and runs only with an explicit UTinyRipper project path. Its commands, fixed manifest, baseline counts, read-only evidence, and blocked/failed behavior are defined in [Unity project navigation acceptance](unity-project-navigation.md). A missing real export is reported as `blocked`; a synthetic pass MUST NOT be used as a substitute.
 
 ## Current environment warnings
 
 - **Native Python matrix:** this local record was produced on Windows. Linux and macOS evidence is supplied by the CI matrix using the same Python entry point; a local Windows shell is not a substitute for either host.
 - **Python setup:** if interpreter or dependency validation fails, follow the first-time setup gate and retry only after the failure is classified as a Python-environment failure.
-- **Real profile gate deferred:** no external profile was deployed to or launched by this worktree. The user will perform the authorized Manual verification after the three worktrees are merged.
+- **Real profile gate deferred:** no external profile was deployed to or launched by this worktree. The user will perform the authorized Player-performed in-game verification after the three worktrees are merged.
 - **Gameplay remains manual:** the CLI and fixture suite do not control game input or verify visual, input, combat, menu, save, or other gameplay behavior.
 - **Symlink privilege:** the existing suite may skip directory-symlink or hard-link cases when the host denies creation; the test output is the authoritative warning for that run.
 

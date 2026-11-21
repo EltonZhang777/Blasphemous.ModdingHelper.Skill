@@ -363,7 +363,7 @@ def _probe_interpreter(
     environment: Optional[Mapping[str, str]] = None,
 ) -> Tuple[int, int, int]:
     result = run_command(
-        (executable, "-c", _PROBE_CODE),
+        (executable, "-I", "-c", _PROBE_CODE),
         env=_merged_environment(environment),
         timeout=timeout,
     )
@@ -618,21 +618,30 @@ def classify_import_failure(
     )
 
 
+def _format_interpreter(interpreter: RuntimeInterpreter) -> str:
+    return "\n".join(
+        [
+            "PYTHON_RUNTIME_STATUS=ok",
+            f"PYTHON3={interpreter.executable}",
+            f"PYTHON_VERSION={interpreter.version_text}",
+            f"PYTHON_RUNTIME_SOURCE={interpreter.source}",
+        ]
+    )
+
+
 def format_report(report: RuntimeReport) -> str:
-    lines = [
-        "PYTHON_RUNTIME_STATUS=ok",
-        f"PYTHON3={report.interpreter.executable}",
-        f"PYTHON_VERSION={report.interpreter.version_text}",
-        f"PYTHON_RUNTIME_SOURCE={report.interpreter.source}",
-        f"PYTHON_REQUIREMENTS={report.requirements_path}",
-        f"PYTHON_DEPENDENCY_COUNT={len(report.dependencies)}",
-    ]
-    return "\n".join(lines)
+    return "\n".join(
+        [
+            _format_interpreter(report.interpreter),
+            f"PYTHON_REQUIREMENTS={report.requirements_path}",
+            f"PYTHON_DEPENDENCY_COUNT={len(report.dependencies)}",
+        ]
+    )
 
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Validate the Python runtime and Skill dependency manifest.",
+        description="Validate the Python runtime, optionally with the Skill dependency manifest.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument(
@@ -640,7 +649,13 @@ def _build_parser() -> argparse.ArgumentParser:
         dest="explicit_python",
         help="Python executable path or command name to validate.",
     )
-    parser.add_argument(
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument(
+        "--interpreter-only",
+        action="store_true",
+        help="Validate only the selected interpreter; do not read the dependency manifest.",
+    )
+    mode.add_argument(
         "--requirements",
         dest="requirements_path",
         help="Dependency manifest; defaults to the Skill's requirements.txt.",
@@ -659,11 +674,21 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
     args = _build_parser().parse_args(argv)
     try:
-        report = check_environment(
-            args.explicit_python,
-            requirements_path=args.requirements_path,
-            timeout=args.timeout,
-        )
+        if args.interpreter_only:
+            output = _format_interpreter(
+                resolve_interpreter(
+                    args.explicit_python,
+                    timeout=args.timeout,
+                )
+            )
+        else:
+            output = format_report(
+                check_environment(
+                    args.explicit_python,
+                    requirements_path=args.requirements_path,
+                    timeout=args.timeout,
+                )
+            )
     except PythonEnvironmentError as error:
         print(error.render(), file=sys.stderr)
         print("PYTHON_RUNTIME_STATUS=error", file=sys.stderr)
@@ -679,7 +704,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         print("PYTHON_RUNTIME_STATUS=error", file=sys.stderr)
         return diagnostic.code
 
-    print(format_report(report))
+    print(output)
     return EXIT_SUCCESS
 
 

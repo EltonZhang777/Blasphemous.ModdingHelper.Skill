@@ -2,7 +2,17 @@
 
 The user-facing activation path is the top-level `blasphemous-modding-helper` Skill; the Agent selects this reference automatically.
 
-Agent MUST use this read-only branch for a natural-language request to identify, explain, compare, or translate a Blasphemous 1 term, name, UI phrase, or textual reference. Agent MUST NOT require `preferences.md`, a Modding profile, a source-code path, or a Python runtime for this branch.
+Agent MUST use this read-only branch for a natural-language request to identify, explain, compare, or translate a Blasphemous 1 term, name, UI phrase, or textual reference. Agent MUST NOT require `config.yml`, a Modding profile, a source-code path, or a Python runtime for this branch.
+
+## Read-only lookup delegation
+
+This route follows the shared [Read-only evidence delegation](../subagent-delegation/read-only-evidence-delegation.md) contract and keeps its configuration-free exception. The main agent owns language and index selection, evidence synthesis, and any decision to escalate to source analysis.
+
+- The main agent MAY delegate a full-language comparison, broad index search, or ambiguous multi-candidate lookup only when its evidence slice is read-only, clearly bounded, independently verifiable, and large enough to justify context isolation. A small targeted lookup SHOULD stay with the main agent.
+- Before delegating, the main agent MUST complete Procedure steps 1–3: identify the instruction and requested languages, select the core or all-language index, and confirm its path, readability, and header. The child task MUST receive the exact question and search terms, the selected index's resolved path and identity (core or all-language), requested language columns, and the resolved path to `references/localization/semantic-aliases.md`; these are its only evidence sources. The child MUST NOT choose a different index or language scope.
+- For every candidate, the child MUST preserve the exact localization key and requested-language TSV values, including tags, placeholders, punctuation, and variants. It MUST report all plausible candidates and ambiguity, and apply the existing semantic-alias matching, context, confidence, and confirmation rules. Alias results MUST preserve the original wording, language, type, relevant context, confidence, note, and evidence keys.
+- The child MUST keep TSV results labeled as `Localization evidence`; localization wording MUST NOT establish runtime behavior, mechanics, values, or code relationships. The child MUST NOT perform or initiate source analysis. If the result needs gameplay evidence or remains an unresolved code-like identifier or explicit source reference, the child MUST return that gap to the main agent, which retains the source-route decision and its preflight.
+- The child handoff MUST satisfy the shared contract with exact keys and values, the selected index and language scope, alias evidence, candidates, ambiguity, and missing evidence. The main agent SHOULD verify reported rows and aliases against those selected authorities before using them.
 
 ## Procedure
 
@@ -56,7 +66,7 @@ Agent MUST use this read-only branch for a natural-language request to identify,
 
 7. Agent MUST report candidates and ambiguity when several rows match or the wording is ordinary prose. Agent MUST NOT force a canonical game concept from a weak text match.
    - After the selected TSV search, agent MUST search [Semantic aliases](../localization/semantic-aliases.md), including when text matches are ambiguous. Agent MUST follow the matching, context, confidence, and confirmation rules in that document.
-   - If no localization or alias evidence resolves the term, agent MUST route code-like identifiers, explicit source references, or unresolved terms requiring gameplay evidence to [Source analyzer](source-analyzer.md). Agent MUST follow that branch's source-path and preferences preflight.
+   - If no localization or alias evidence resolves the term, agent MUST route code-like identifiers, explicit source references, or unresolved terms requiring gameplay evidence to [Source analyzer](source-analyzer.md). Agent MUST follow that branch's source-path and configuration preflight.
    - Agent MUST report source-derived runtime behavior, mechanics, values, and code relationships as `Gameplay evidence`, and keep localization rows under `Localization evidence`.
    - If source evidence supports a relationship between a code identifier and a localized concept, agent MUST label it explicitly as an `Inference` and cite both sides. Agent MUST NOT create a persistent code-name-to-translation mapping table.
    - A natural-language term that remains unresolved and is not code-like MUST remain a candidate or actionable unresolved result. Agent MUST NOT turn it into an automatic source or web-search guess.
@@ -72,3 +82,5 @@ The branch is complete when it has either:
 - returned one or more evidence-backed localization candidates with their keys and exact values for the selected requested languages; or
 - returned a controlled source-analysis result with its required preflight and gameplay evidence; or
 - returned a closed, actionable failure for a missing or malformed index, or an explicit unresolved/candidate result without an unverified guess.
+
+Every lookup result MUST satisfy the shared [completion-report contract](../config/invocation-preflight.md#common-completion-report-fields). The configuration-free exception does not remove this reporting requirement.

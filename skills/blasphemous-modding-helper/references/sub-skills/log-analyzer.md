@@ -9,12 +9,16 @@ This sub-skill analyzes Blasphemous log files, focusing on debugging Mod-related
 
 ## Entry conditions
 
-Before log analysis, agent MUST complete [Invocation preflight](../config/invocation-preflight.md). This branch adds log-source requirements: active `preferences.md` MUST provide `modding_profile_path`, and `unity_log_dir` MUST be resolved when Unity evidence is needed.
+Before log analysis, agent MUST complete [Invocation preflight](../config/invocation-preflight.md). This branch adds log-source requirements: active `config.yml` MUST provide `modding_profile_path`, and `unity_log_dir` MUST be resolved when Unity evidence is needed.
 
 ## Log File Paths
-- Blasphemous Unity log file: resolve `unity_log_dir` from `preferences.md`; Windows normally uses `$env:USERPROFILE/AppData/LocalLow/TheGameKitchen/Blasphemous/output_log.txt`, while native Linux/macOS profiles normally use `Player.log` under configured directory
+- Blasphemous Unity log file: resolve `unity_log_dir` from `config.yml`; Windows normally uses `$env:USERPROFILE/AppData/LocalLow/TheGameKitchen/Blasphemous/output_log.txt`, while native Linux/macOS profiles normally use `Player.log` under configured directory
 - BepInEx log file: `<modding_profile_path>/BepInEx/LogOutput.log`
-  - Agent MUST acquire `<modding_profile_path>` from `preferences.md`.
+  - Agent MUST acquire `<modding_profile_path>` from `config.yml`. The [Dependencies](../config/invocation-preflight.md#dependencies) section summarizes BepInEx scope and missing-source handling.
+
+## Read-only evidence delegation
+
+Any delegated log evidence work MUST follow the shared [Read-only evidence delegation](../subagent-delegation/read-only-evidence-delegation.md) authority. The main agent MUST complete [Invocation preflight](../config/invocation-preflight.md), bound the permitted log sources and session, and select one evidence mode before delegating: the explicit Current log source mode for live diagnosis or the completed-session snapshot source mode for a Test session. For current evidence, the main agent MUST resolve `modding_profile_path` and the configured `unity_log_dir` whenever Unity evidence is in scope; for snapshot evidence, it MUST identify the Test session and its snapshot. The child MUST use only the supplied paths and mode, preserve BepInEx-first analysis and the diagnostic ownership and provenance rules below, and MUST NOT switch or silently fall back between current logs and a Test snapshot. Missing, unreadable, or incomplete evidence MUST be returned with the exact source/path, gap, and applicable recovery action for the main agent. The shared authority's child boundaries apply, including its restrictions on configuration changes, log writes, worktree creation, and user decisions.
 
 ## Analysis Approach
 
@@ -28,17 +32,16 @@ Before log analysis, agent MUST complete [Invocation preflight](../config/invoca
 When mod-test CLI reports missing Unity log directory or log:
 
 1. Agent MUST ask user for directory that contains current Unity log.
-2. Agent MUST add `unity_log_dir: PATH` to active `preferences.md`, or pass `--unity-log-dir PATH` for one-run override. active file is scope selected by [Invocation preflight](../config/invocation-preflight.md).
-3. Agent MUST re-run `logs SESSION_ID` or explicit startup-evidence wait.
+2. Agent MUST add `unity_log_dir: PATH` to active `config.yml`, or request the help-exposed one-run context override. active file is scope selected by [Invocation preflight](../config/invocation-preflight.md).
+3. Agent MUST rerun the `logs` operation through the help-exposed Current log source mode, or explicit startup-evidence wait.
 
-This step is complete only when CLI resolves Unity log or warning remains visible with exact missing path and preference file to update. CLI reads existing BepInEx and Unity logs in place; it does not create persistent log copies.
+This step is complete only when CLI resolves Unity log or warning remains visible with exact missing path and configuration file to update. CLI reads existing BepInEx and Unity logs in place; it does not create persistent log copies.
 
-`launched`, `ready`, and `mod_loaded` are startup states. They MUST NOT be used to verify visual, input, combat, menu, save, or other gameplay behavior. After startup evidence is collected, agent MUST ask player to operate game and report observed behavior in natural language; agent MUST treat that report as manual gameplay evidence.
+`launched`, `ready`, and `mod_loaded` are startup states. They MUST NOT be used to verify visual, input, combat, menu, save, or other gameplay behavior. When gameplay verification is also requested, the agent MUST return to the shared [Mod-test entry](blasphemous-modding-test.md) and follow [In-game test coordination](blasphemous-modding-test-in-game-coordination.md) before using the selected Player-performed or Computer Use evidence guide. This log-analysis branch does not own in-game interaction.
 
 ## Startup diagnostic ownership
 
-The `logs` operation keeps structured warning and error records as bounded evidence
-hits with an ownership group:
+The `logs` operation keeps structured warning and error records as bounded evidence hits with an ownership group:
 
 | Group | Meaning |
 | --- | --- |
@@ -47,22 +50,25 @@ hits with an ownership group:
 | `baseline` | The record is a structured warning/error within the exact pre-session byte prefix retained by the current log. This is provenance, not a harmlessness claim. |
 | `unknown` | The record is not target-owned, is not from a recognized framework source, and has no proven session baseline; it remains visible without an ownership claim. |
 
-The launcher captures only pre-session file metadata (including size, digest, and
-line count). A current source receives `baseline` labels only when its retained
-prefix still matches that digest and ends at a complete line boundary; a
-rewritten, truncated, missing, or otherwise unproven prefix receives no
-baseline labels. Baseline labels are provenance only; log lines remain visible. Newly
-observed warnings and errors remain visible as `framework` or `unknown`
-evidence, and target-owned errors remain beside the startup result. The report
-stays bounded and does not persist a complete log copy.
+The launcher captures only pre-session file metadata (including size, digest, and line count). A current source receives `baseline` labels only when its retained prefix still matches that digest and ends at a complete line boundary; a rewritten, truncated, missing, or otherwise unproven prefix receives no baseline labels. Baseline labels are provenance only; log lines remain visible. Newly observed warnings and errors remain visible as `framework` or `unknown` evidence, and target-owned errors remain beside the startup result. The report stays bounded and does not persist a complete log copy.
+
+## Test-session analysis source
+
+For a completed Test session, agent MUST analyze the session-bound **Test log snapshot** through the help-exposed completed-session source mode.
+
+The operation MUST identify the requested session, require a complete BepInEx and Unity snapshot, and report every affected source plus the recovery action when the snapshot is missing or incomplete. It MUST NOT silently read a later live profile log in that mode. Snapshot analysis MUST label the evidence source and expose the snapshot capture condition, process state, stop decision, and the stop result. A snapshot captured while the process was running remains valid session evidence but is not described as post-stop final output. A later recapture after process exit updates the same session snapshot and is the snapshot used by subsequent analysis.
+
+For live diagnosis, agent MUST explicitly request **Current log** evidence through the help-exposed Current log source mode.
+
+Current analysis continues to resolve `modding_profile_path` and `unity_log_dir` from the active configuration and keeps the existing bounded diagnostic ownership rules. The explicit source mode is required; the CLI has no implicit current-log alias.
 
 ## Completion criteria
 
-Agent MUST mark log analysis complete only when report contains all of these:
+Agent MUST mark log analysis complete only when the report satisfies the shared [completion-report contract](../config/invocation-preflight.md#common-completion-report-fields) and contains all of these:
 
-1. Active preferences file and every log source inspected, or exact missing path and required preference-update handoff.
+1. Active configuration file and every log source inspected, or exact missing path and required configuration-update handoff.
 2. Expected pattern, relevant log evidence, and conclusion tied to that evidence. If BepInEx log is sufficient, agent MUST state that Unity-log read was not required; otherwise, Unity-log result MUST be included.
-3. Concrete next action: code/configuration change, another evidence request, tracked-session operation, or player Manual verification.
+3. A concrete route action: code/configuration change, another evidence request, tracked-session operation, or the selected in-game evidence phase after coordination.
 
-Missing or unreadable evidence is not successful analysis. analysis is complete in that case only when warning names missing source, active preferences file, and next action needed to recover.
+Missing or unreadable evidence is not successful analysis. Analysis is complete in that case only when warning names missing source, active configuration file, and next action needed to recover.
 

@@ -744,6 +744,6 @@ class DecompileWorkflow:
         self.output(f"  Projects: {len(projects)} decompiled")
         self.output("")
         self.output("Next step:")
-        self.output("  Update preferences.md 'lightweight_source_code_path' to:")
+        self.output("  Update config.yml 'lightweight_source_code_path' to:")
         self.output(f"    {output}")
         return DecompileResult(game, output, solution, projects)

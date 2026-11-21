@@ -10,14 +10,14 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 from typing import Callable, Iterable, List, Optional, Sequence
 from urllib.parse import unquote
 
 
-SCRIPT_ROOT = Path(__file__).resolve().parent
-SKILL_ROOT = SCRIPT_ROOT.parent
-REPOSITORY_ROOT = SKILL_ROOT.parents[1]
+REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
+SKILL_ROOT = REPOSITORY_ROOT / "skills" / "blasphemous-modding-helper"
 ROOT_RUNNER = REPOSITORY_ROOT / "tests" / "run_blasphemous_modding_test.py"
 INSTALLER = REPOSITORY_ROOT / "bin" / "install.js"
 INSTALLER_TEST = REPOSITORY_ROOT / "tests" / "test_installer.js"
@@ -37,7 +37,7 @@ def build_parser() -> argparse.ArgumentParser:
         epilog=(
             "Migrated Skill behavior runs through Python entry points. "
             "The Node.js installer is tested separately; live GitHub, Steam, "
-            "game, and Manual verification remain opt-in."
+            "game, and Player-performed in-game verification remain opt-in."
         ),
     )
     parser.add_argument(
@@ -123,10 +123,17 @@ def run_installer_surface(node_executable: str) -> None:
         "Installer wrapper contract test",
         (node_executable, str(WRAPPER_TEST)),
     )
-    for agent in ("trae-cn", "claude-code"):
+    with tempfile.TemporaryDirectory() as temporary_directory:
+        destination = Path(temporary_directory) / "blasphemous-modding-helper"
         run_command(
-            f"Node installer dry-run ({agent})",
-            (node_executable, str(INSTALLER), "--dry-run", "--only", agent),
+            "Node installer explicit-path dry-run",
+            (
+                node_executable,
+                str(INSTALLER),
+                "--dry-run",
+                "--path",
+                str(destination),
+            ),
         )
     run_command("Node installer help", (node_executable, str(INSTALLER), "--help"))
 

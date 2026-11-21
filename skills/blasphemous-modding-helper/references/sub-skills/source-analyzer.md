@@ -11,7 +11,11 @@ This sub-skill analyzes Blasphemous game source code, with focus on game mechani
 
 ## Entry conditions
 
-Before source analysis, agent MUST complete [Invocation preflight](../config/invocation-preflight.md). This branch adds source-path requirement: active `preferences.md` MUST provide at least one valid `full_source_code_path` or `lightweight_source_code_path`.
+Before source analysis, agent MUST complete [Invocation preflight](../config/invocation-preflight.md). This branch adds source-path requirement: active `config.yml` MUST provide at least one valid `full_source_code_path` or `lightweight_source_code_path`.
+
+## Read-only evidence delegation
+
+Any delegated source evidence work MUST follow the shared [Read-only evidence delegation](../subagent-delegation/read-only-evidence-delegation.md) authority. The main agent MUST complete [Invocation preflight](../config/invocation-preflight.md), satisfy this source-path gate, and select one configured source tree plus its applicable authority through the [Source Code Navigation Guide](../source-code-navigation/MAIN.md) before delegating. The child MUST stay within that tree and authority and return each claim with the source identity, exact file path, and line number(s). If a path is missing or unreadable, the child MUST report the exact gap and next path-recovery action to the main agent; it MUST NOT guess or switch source trees. The shared authority's child boundaries apply, including its restrictions on configuration changes, log writes, worktree creation, and user decisions.
 
 ## Analysis Approach
 1. Agent MUST analyze user input to extract expected pattern, source-code details to find, and source-code file to check when one is specified.
@@ -24,5 +28,7 @@ Before source analysis, agent MUST complete [Invocation preflight](../config/inv
 
 ## Completion criteria
 
-Agent MUST mark source analysis complete only when active preferences file and source path used are recorded, relevant source evidence has been checked, and every cited class or file path has been verified against selected source tree. If required source paths are missing or invalid, agent MUST report exact missing path and next setup or recovery action instead of claiming completion.
+Agent MUST mark source analysis complete only when active configuration file and source path used are recorded, relevant source evidence has been checked, and every cited class or file path has been verified against selected source tree. If required source paths are missing or invalid, agent MUST report exact missing path and next setup or recovery action instead of claiming completion. The result MUST satisfy the shared [completion-report contract](../config/invocation-preflight.md#common-completion-report-fields) and report the active configuration file, source path, verified source evidence, and any exact source gap with its setup or recovery action.
+
+For exported project topology evidence, the agent MUST route through [Unity project navigation](unity-project-navigation.md). For exported script-asset identity evidence only, use [scripts.md](../unity-project-navigation/scripts.md) to resolve a path, GUID, or exact name without C# parsing. Source analysis remains authoritative for C# behavior and MUST NOT infer behavior from exported Unity script files. If this source tree cannot support a behavior, dependency, or class-semantics request, the agent MUST report the source gap as `blocked`.
 
