@@ -47,11 +47,46 @@ jobs:
       with:
         node-version: "18"
 
-    # New images default to .NET 11; 10.0.403 is the last verified macOS SDK.
+    # New images default to .NET 11; pin the SDK so every lane uses the same
+    # toolchain. macOS build failures are tracked separately below.
     - name: Set up .NET SDK
       uses: actions/setup-dotnet@v4
       with:
         dotnet-version: "10.0.403"
+
+    # Temporary probe: macOS images after 2026-11-17 fail the acceptance
+    # fixture's dotnet build with exit 1 and no captured output. Keep this
+    # non-failing so the acceptance results and probe evidence both appear.
+    - name: Diagnose macOS .NET build
+      if: runner.os == 'macOS'
+      shell: bash
+      run: |
+        set +e
+        echo "host=$(uname -a)"
+        echo "dotnet=$(command -v dotnet)"
+        echo "DOTNET_ROOT=${DOTNET_ROOT:-}"
+        env | grep -E '^(DOTNET|MSBUILD|NUGET|HOME|TMPDIR)=' || true
+        dotnet --info
+        echo "dotnet_info_exit=$?"
+        probe="$(mktemp -d)"
+        cat > "$probe/Probe.csproj" <<'PROJECT'
+        <Project DefaultTargets="Build">
+          <PropertyGroup>
+            <TargetName>Probe</TargetName>
+          </PropertyGroup>
+          <Target Name="Build">
+            <MakeDir Directories="$(SolutionDir)publish/Probe" />
+            <WriteLinesToFile File="$(SolutionDir)publish/Probe/probe.txt" Lines="ok" Overwrite="true" />
+            <Message Text="probe-ok" Importance="high" />
+          </Target>
+        </Project>
+        PROJECT
+        log="$probe/build.log"
+        SolutionDir="$probe/" dotnet build "$probe/Probe.csproj" --configuration Debug --verbosity diagnostic --tl:off >"$log" 2>&1
+        echo "probe_exit=$?"
+        echo "probe_log_bytes=$(wc -c < "$log")"
+        tail -n 200 "$log"
+        exit 0
 
     - name: Validate Skill Python runtime and dependencies
       run: python skills/blasphemous-modding-helper/scripts/check_python_environment.py --python python --requirements skills/blasphemous-modding-helper/requirements.txt
