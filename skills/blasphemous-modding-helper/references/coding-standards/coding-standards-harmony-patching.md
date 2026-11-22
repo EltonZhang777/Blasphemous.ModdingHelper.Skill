@@ -2,9 +2,11 @@
 
 This reference is Harmony branch selected by [coding standards router](../sub-skills/coding-standards.md). Before applying a rule, the agent MUST read [Requirement levels](../requirement-levels-definitions.md). branch covers Mod-owned Harmony patch declarations, file and class organization, target resolution, patch methods, lifecycle placement, and approved manual-patch exceptions.
 
-## Scope and authority
+## Branch applicability and authority
 
-These rules MUST apply only to Harmony code Mod author can maintain in root of Caller Mod repository. Decompiled game source, upstream Mods, dependency or vendor code, generated output, and direct copies remain under router's exclusion and preservation rules.
+This branch applies to Harmony code Mod author can maintain in root of Caller Mod repository; the router selects the [C# and runtime Unity branch](coding-standards-csharp-unity.md) as its prerequisite. For Mod-owned scope, excluded-source handling, and direct-copy preservation, use the router's [Entry and scope requirements](../sub-skills/coding-standards.md#entry-and-scope-requirements).
+
+The canonical guidance for Mod-owned game API access is in the [Mod-owned game API access reminder](../sub-skills/coding-standards.md#mod-owned-game-api-access).
 
 Caller's actual referenced Harmony assembly and target type's actual signature MUST determine which attributes, overloads, injection parameters, and resolver APIs are legal. authority order is:
 
@@ -19,7 +21,7 @@ If target signature, attribute overload, or resolver result is missing or confli
 
 ## Patch files and classes
 
-New Mod-owned Patch files MUST live under Mod root's `Patches/` directory. file name MUST use one of these aggregation forms:
+New Mod-owned Patch files MUST live under Mod root's `Patches/` directory by default. In a project with an established `HarmonyPatches/` boundary, related new Patch files MAY remain there; the agent MUST NOT require a rename or migration. A project SHOULD use `HarmonyPatches/` only when it intentionally separates patch mechanisms. This placement exception MUST NOT change framework-managed discovery. file name MUST use one of these aggregation forms:
 
 | Grouping | File name | Use |
 | --- | --- | --- |

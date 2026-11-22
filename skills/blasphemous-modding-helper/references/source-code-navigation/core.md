@@ -31,6 +31,9 @@ Core Manager layer in Framework at `Framework/Managers/`. All Managers inherit f
 - **InputManager.cs** - Input management (based on Rewired). Supports keyboard/controller switching, `SetBlocker(name, blocking)` controls input blocking, `ActiveControllerType` gets current input device type, `ApplyRumble()` controls controller vibration.
 - **LevelManager.cs** - Level loading management. `ChangeLevel(levelName)` loads level, `currentLevel` is current level, `lastLevel` is previous level. Manages level loading lifecycle (`OnBeforeLevelLoad` → `OnLevelPreLoaded` → `OnLevelLoaded`). Manages safe respawn positions.
 
+### AchievementsManager.cs
+`GameSystem` + `PersistentInterface` — Owns the runtime achievement dictionary and backend helper. `Initialize()` creates the achievement data, selects `SteamAchievementsHelper`, subscribes `Entity.Death` for AC39/AC41 progress, and loads AC39 enemy data. Public methods add, grant, and check progress; persistence stores the achievement list under `ID_ACHIEVEMENTS_MANAGER`. Achievement entity definitions, state behavior, backend helpers, and checkers MUST follow the [Items achievement entities and backend helpers](items.md#achievement-system) route.
+
 ### Persistence & Save System
 
 - **PersistentManager.cs** - Save system core. Manages `SnapShot` snapshot system, supports 3 save slots. `SaveGame(slot)` / `LoadGame(slot)` for saving/loading, `ResetAll()` resets all data. `GetSlotData(slot)` gets save summary. Implements save backup/restore mechanism. Calculates game completion percentage.

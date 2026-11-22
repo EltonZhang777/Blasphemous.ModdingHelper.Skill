@@ -18,24 +18,30 @@ Blasphemous source navigation. Paths relative to `Assembly-CSharp/`.
 | `HutongGames/` | PlayMaker Custom Actions |
 | `TPO_FOLLOWER_PROTOTYPE/` | TPO Follower Prototype |
 | Root `.cs` files | Miscellaneous tools, traps, effects, UI components, etc. |
+| Other supporting roots (`LevelEditor/`, `Platforms/`, `Properties/`, `PygmyMonkey/`, `RewiredConsts/`, `Sauce3D/`) | Smaller source areas; search these paths directly when a requested type does not fit a domain route. |
 
 ---
 
-## Navigation Document Index
+## Navigation Routes
 
-| Section | Description | Document |
-|---------|-------------|----------|
-| Core | Core Framework: Managers, Attributes, Audio, Dialog, Map, Penitences, BossRush, DLC, Pooling, Util, Achievements | [core.md](core.md) |
-| Player | Player Penitent: Abilities, Attacks, Movement, Input, Animation, Prayers, State Machine | [player.md](player.md) |
-| Enemy | Enemy System: All enemy types, AI Framework, Entity Base Classes | [enemy.md](enemy.md) |
-| Bosses | Boss System: All Boss types, BossFightManager, Common Attacks | [bosses.md](bosses.md) |
-| UI | UI System: UIController, Widgets, MenuLogic, HUD, Console | [ui.md](ui.md) |
-| Items | Item/Equipment System: Inventory item types, Effect System, Achievements | [items.md](items.md) |
-| Level | Level/Environment: Actionables, Interactables, Layout, Teleport | [level.md](level.md) |
-| Tools | Tool Set: PlayMaker Actions/Conditions/Events, Audio, Data Containers, NPC | [tools.md](tools.md) |
-| Localization | Localization System: I2.Loc, Blasphemous's own LocalizationManager | [localization.md](localization.md) |
+| Request signal / condition | Route destination | Boundary / next action |
+|--------------------------|--------------------|------------------------|
+| **Core.** Core Framework: Managers, Attributes, Audio, Dialog, Map, Penitences, BossRush, DLC, Pooling, Util. `AchievementsManager` lifecycle, persistence, wiring, and runtime flow, including mixed requests such as `AchievementsManager achievement entities` (an explicit manager signal MUST take precedence over the Items default and MUST NOT absorb an explicit entity, UI widget, or PlayMaker signal) — `Framework/Managers/AchievementsManager.cs`. Story Events (`EventManager`, `DialogManager`) — `Framework/Managers/`; Save System (`PersistentManager`) — `Framework/Managers/`; Core Framework (Attributes, Audio, Map, DLC) — `Framework/`, `Framework/FrameworkCore/`. | [core.md](core.md) | Agent MUST start at the explicitly named manager class, follow the Items achievement-entity link for a mixed request, and inspect the matching manager or framework class within the selected `Assembly-CSharp/` tree before citing or tracing dependents. |
+| **Player.** Player Penitent: Abilities, Attacks, Movement, Input, Animation, Prayers, State Machine. Player Actions (Penitent, Abilities, Input) — `Gameplay/GameControllers/Penitent/`. | [player.md](player.md) | Agent MUST inspect the relevant Penitent behavior within the selected `Assembly-CSharp/` tree and verify the class and file path before citing it. |
+| **Enemy.** Enemy System: All enemy types, AI Framework, Entity Base Classes. Enemy AI (`EnemyBehaviour`, `EnemyAI`) — `Gameplay/GameControllers/Enemies/`; Entity Base Classes (`Entity`, `Enemy`, `Hit`, `Attack`) — `Gameplay/GameControllers/Entities/`. | [enemy.md](enemy.md) | Agent MUST identify whether the question concerns enemy AI or shared entity bases within the selected `Assembly-CSharp/` tree, then verify the class hierarchy and file path. |
+| **Bosses.** Boss System: All Boss types, BossFightManager, Common Attacks. Boss Combat (`BossFightManager`, `BossBehaviour`) — `Gameplay/GameControllers/Bosses/`. | [bosses.md](bosses.md) | Agent MUST inspect the boss or shared combat behavior within the selected `Assembly-CSharp/` tree and verify its file path before tracing the fight flow. |
+| **UI.** UI System: UIController, Widgets, MenuLogic, HUD, Console; Achievement UI widgets, including `Achievement UI widgets runtime flow` (an explicit widget signal MUST take precedence over generic runtime-flow wording). UI Screens (`UIController`, Widgets, MenuLogic) — `Gameplay/UI/`; Console Commands (`Console/`) — `Gameplay/UI/Console/`. | [ui.md](ui.md) | Agent MUST choose the screen/widget or console path that matches the request within the selected `Assembly-CSharp/` tree and verify the cited UI class there. |
+| **Items.** Item/Equipment System: Inventory item types, Effect System; bare Achievements entity default; achievement entities, state behavior, backend helpers, and checkers (`Framework/Achievements/*`), including `Framework/Achievements/* persistence` (an explicit entity, helper, or checker signal MUST take precedence over generic manager-flow wording). Item Effects (`ObjectEffect`, `RelicEffect`, `RosaryBead`) — `Framework/Inventory/`, `Tools/Items/`. | [items.md](items.md) | Agent MUST start at the explicitly named achievement class or file, follow the Core AchievementsManager link for a mixed request, and inspect the item or effect implementation within the selected `Assembly-CSharp/` tree and verify its path before following its inventory or achievement behavior. |
+| **Level.** Level/Environment: Actionables, Interactables, Layout, Teleport. Level Mechanics (Actionables, Interactables, Teleport) — `Tools/Level/`. | [level.md](level.md) | Agent MUST inspect the matching level mechanic within the selected `Assembly-CSharp/` tree and verify its file path before tracing scene interactions. |
+| **Tools.** Tool Set: PlayMaker Actions/Conditions/Events, Audio, Data Containers, NPC; Achievement PlayMaker actions, conditions, and events, including `Achievement PlayMaker actions runtime flow` (an explicit PlayMaker signal MUST take precedence over generic runtime-flow wording). PlayMaker Scripts (Playmaker2/Action, Condition, Events) — `Tools/Playmaker2/`. | [tools.md](tools.md) | Agent MUST use the matching tool family as the search entry within the selected `Assembly-CSharp/` tree and verify each cited class or path there. |
+| **Localization.** Localization System: I2.Loc, Blasphemous's own LocalizationManager. Localization / Translation — `I2/`, `Framework/Managers/LocalizationManager.cs`. | [localization.md](localization.md) | Agent MUST inspect I2 localization or the game LocalizationManager as indicated within the selected `Assembly-CSharp/` tree and verify the source path before citing strings or behavior. |
+| **Lifecycle.** Cross-domain ownership and runtime flow: framework setup, scene transitions, subsystem or actor lifecycle, shared events, and teardown. | [core.md](core.md), then the relevant domain guide | Agent MUST start at `Framework/Managers/Core.cs`, `LogicManager.cs`, or `LevelManager.cs` for system or scene flow; otherwise, Agent MUST start at the feature's domain route and follow its shared base and lifecycle/event links. |
 
 ---
+
+This guide indexes decompiled game source under `Assembly-CSharp/`. For Mod-owned changes, [Project architecture guidelines](../sub-skills/project-architecture-guidelines.md) own project structure, [Harmony patching standards](../coding-standards/coding-standards-harmony-patching.md) own patches, and the [Mod-test entry](../sub-skills/blasphemous-modding-test.md) owns verification.
+
+For exported project topology evidence, use [Unity project navigation](../unity-project-navigation/MAIN.md) instead. For exported script-asset identity evidence only, use [scripts.md](../unity-project-navigation/scripts.md); that query returns placement and metadata without C# parsing. Matching paths or Unity `.cs` files MUST NOT replace this source tree as behavioral evidence. If this source tree cannot support a behavior, dependency, or class-semantics request, report the source gap as `blocked`.
 
 ## Quick Access for Mod Development
 
@@ -72,23 +78,3 @@ Blasphemous source navigation. Paths relative to `Assembly-CSharp/`.
 | `Gameplay.UI` | All UI-related |
 | `I2.Loc` | I2 Localization Framework |
 | `Tools.Playmaker2` | PlayMaker Custom Actions |
-
----
-
-## Find by Feature / Path Route
-
-| Feature / Class | Path Prefix | Document |
-|------|------|------|
-| Player Actions (Penitent, Abilities, Input) | `Gameplay/GameControllers/Penitent/` | [player.md](player.md) |
-| Enemy AI (EnemyBehaviour, EnemyAI) | `Gameplay/GameControllers/Enemies/` | [enemy.md](enemy.md) |
-| Entity Base Classes (Entity, Enemy, Hit, Attack) | `Gameplay/GameControllers/Entities/` | [enemy.md](enemy.md) |
-| Boss Combat (BossFightManager, BossBehaviour) | `Gameplay/GameControllers/Bosses/` | [bosses.md](bosses.md) |
-| Item Effects (ObjectEffect, RelicEffect, RosaryBead) | `Framework/Inventory/`, `Tools/Items/` | [items.md](items.md) |
-| UI Screens (UIController, Widgets, MenuLogic) | `Gameplay/UI/` | [ui.md](ui.md) |
-| Level Mechanics (Actionables, Interactables, Teleport) | `Tools/Level/` | [level.md](level.md) |
-| Story Events (EventManager, DialogManager) | `Framework/Managers/` | [core.md](core.md) |
-| Save System (PersistentManager) | `Framework/Managers/` | [core.md](core.md) |
-| Core Framework (Attributes, Audio, Map, DLC) | `Framework/`, `Framework/FrameworkCore/` | [core.md](core.md) |
-| Localization / Translation | `I2/`, `Framework/Managers/LocalizationManager.cs` | [localization.md](localization.md) |
-| PlayMaker Scripts (Playmaker2/Action, Condition, Events) | `Tools/Playmaker2/` | [tools.md](tools.md) |
-| Console Commands (Console/) | `Gameplay/UI/Console/` | [ui.md](ui.md) |

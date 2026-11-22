@@ -1,0 +1,1295 @@
+"""Read-only component-script binding inventory for an exported Unity project."""
+
+from __future__ import annotations
+
+import base64
+import binascii
+import concurrent.futures
+import hashlib
+import json
+import math
+import os
+import re
+import time
+from collections import defaultdict, deque
+from pathlib import Path
+from typing import Dict, Iterable, Iterator, List, Optional, Sequence, Tuple
+
+from .unity_assets import (
+    BINARY_SUFFIXES,
+    GUID_PATTERN,
+    MAX_METADATA_VERSION_DIGITS,
+    META_GUID,
+    META_GUID_KEY,
+    META_VERSION,
+    _project_info,
+    _normalize_path,
+)
+from .unity_project import (
+    SCHEMA_VERSION,
+    NavigationError,
+    _is_link_like,
+    _relative,
+    _sorted_warnings,
+    _validated_project,
+    _walk_files,
+    _warning,
+    _within,
+)
+
+
+DEFAULT_LIMIT = 200
+MAX_LIMIT = 1000
+DEFAULT_TIMEOUT_SECONDS = 60.0
+MAX_TIMEOUT_SECONDS = 300.0
+METADATA_READ_WORKERS = 16
+SORT_VERSION = 3
+CURSOR_VERSION = 3
+INT64_MIN = -(1 << 63)
+INT64_MAX = (1 << 63) - 1
+TYPICAL_SCRIPT_FILE_ID = "11500000"
+SOURCE_KINDS = {
+    ".unity": "scene",
+    ".prefab": "prefab",
+    ".asset": "asset",
+}
+CENSUS_SOURCE_KINDS = ("scene", "prefab", "asset")
+CENSUS_TARGET_CATEGORIES = (
+    "cs",
+    "dll",
+    "unresolved",
+    "null",
+    "malformed",
+    "binary_other",
+    "other",
+)
+REFERENCE_SHAPES = frozenset({"structured", "null", "malformed"})
+ASSET_RESOLUTIONS = frozenset(
+    {
+        "resolved",
+        "missing",
+        "ambiguous",
+        "unsupported_binary",
+        "not_applicable",
+    }
+)
+SCRIPT_OBJECT_RESOLUTIONS = frozenset(
+    {
+        "asset_level_only",
+        "not_verifiable_binary",
+        "not_applicable",
+    }
+)
+DOCUMENT_HEADER = re.compile(
+    r"^--- !u!(?P<class_id>\d+) &(?P<file_id>-?\d+)(?:\s+stripped)?\s*$"
+)
+INLINE_MAP = re.compile(r"^\{\s*(?P<body>[^{}]*?)\s*\}$")
+INLINE_ENTRY = re.compile(
+    r"^\s*(?P<key>fileID|guid|type)\s*:\s*(?P<value>[^,{}]+?)\s*$"
+)
+DECIMAL_INTEGER = re.compile(r"^[+-]?\d+$")
+
+
+def _parse_limit(value: Optional[str]) -> int:
+    if value is None:
+        return DEFAULT_LIMIT
+    try:
+        limit = int(value)
+    except (TypeError, ValueError) as error:
+        raise NavigationError(
+            "invalid_query",
+            "The limit must be an integer.",
+        ) from error
+    if limit < 1 or limit > MAX_LIMIT:
+        raise NavigationError(
+            "invalid_query",
+            f"The limit must be between 1 and {MAX_LIMIT}.",
+        )
+    return limit
+
+
+def _parse_timeout(value: Optional[str]) -> float:
+    if value is None:
+        return DEFAULT_TIMEOUT_SECONDS
+    try:
+        timeout = float(value)
+    except (TypeError, ValueError) as error:
+        raise NavigationError(
+            "invalid_query",
+            "The timeout must be a number of seconds.",
+        ) from error
+    if (
+        not math.isfinite(timeout)
+        or timeout < 0
+        or timeout > MAX_TIMEOUT_SECONDS
+    ):
+        raise NavigationError(
+            "invalid_query",
+            f"The timeout must be between 0 and {MAX_TIMEOUT_SECONDS:g} seconds.",
+        )
+    return timeout
+
+
+def _check_deadline(deadline: float) -> None:
+    if time.monotonic() >= deadline:
+        raise NavigationError(
+            "timeout",
+            "The binding scan timed out before evidence collection completed.",
+        )
+
+
+def _project_identity(root: Path) -> str:
+    return hashlib.sha256(
+        os.path.normcase(str(root)).encode("utf-8")
+    ).hexdigest()
+
+
+def _canonical_json(value: object) -> str:
+    return json.dumps(value, sort_keys=True, separators=(",", ":"))
+
+
+def _query_signature(root: Path, query: Dict[str, object]) -> str:
+    material = {
+        "command": "bindings",
+        "project": _project_identity(root),
+        "query": query,
+        "schema_version": SCHEMA_VERSION,
+        "sort_version": SORT_VERSION,
+    }
+    return hashlib.sha256(
+        _canonical_json(material).encode("utf-8")
+    ).hexdigest()
+
+
+def _encode_cursor(
+    root: Path,
+    query: Dict[str, object],
+    key: Tuple[str, int, str, str, str, str, int],
+) -> str:
+    payload = {
+        "p": [
+            key[0],
+            str(key[1]),
+            key[2],
+            key[3],
+            key[4],
+            key[5],
+            str(key[6]),
+        ],
+        "q": _query_signature(root, query),
+        "s": SORT_VERSION,
+        "v": CURSOR_VERSION,
+    }
+    encoded = base64.urlsafe_b64encode(
+        _canonical_json(payload).encode("utf-8")
+    ).decode("ascii")
+    return encoded.rstrip("=")
+
+
+def _decode_cursor(
+    root: Path,
+    query: Dict[str, object],
+    value: str,
+) -> Tuple[str, int, str, str, str, str, int]:
+    if not value:
+        raise NavigationError("invalid_query", "The cursor is empty.")
+    try:
+        padded = value + "=" * (-len(value) % 4)
+        decoded = base64.b64decode(
+            padded.encode("ascii"),
+            altchars=b"-_",
+            validate=True,
+        )
+        payload = json.loads(decoded.decode("utf-8"))
+    except (binascii.Error, RecursionError, UnicodeError, ValueError) as error:
+        raise NavigationError(
+            "invalid_query",
+            "The cursor is invalid.",
+        ) from error
+    if not isinstance(payload, dict):
+        raise NavigationError("invalid_query", "The cursor is invalid.")
+    if (
+        payload.get("v") != CURSOR_VERSION
+        or payload.get("s") != SORT_VERSION
+        or payload.get("q") != _query_signature(root, query)
+    ):
+        raise NavigationError(
+            "invalid_query",
+            "The cursor does not belong to this query or project.",
+        )
+    position = payload.get("p")
+    if (
+        not isinstance(position, list)
+        or len(position) != 7
+        or not all(isinstance(item, str) for item in position)
+    ):
+        raise NavigationError("invalid_query", "The cursor position is invalid.")
+    try:
+        object_id = int(position[1])
+        occurrence = int(position[6])
+    except ValueError as error:
+        raise NavigationError(
+            "invalid_query",
+            "The cursor position is invalid.",
+        ) from error
+    if occurrence < 0:
+        raise NavigationError(
+            "invalid_query",
+            "The cursor position is invalid.",
+        )
+    return (
+        position[0],
+        object_id,
+        position[2],
+        position[3],
+        position[4],
+        position[5],
+        occurrence,
+    )
+
+
+def _iter_documents(
+    text: str,
+) -> Iterable[Tuple[Optional[Tuple[int, int]], List[str]]]:
+    header: Optional[Tuple[int, int]] = None
+    lines: List[str] = []
+    for line in text.splitlines():
+        if line.startswith("--- !u!"):
+            if header is not None:
+                yield header, lines
+            match = DOCUMENT_HEADER.match(line)
+            class_id = (
+                _decimal_integer(
+                    match.group("class_id"),
+                    0,
+                    INT64_MAX,
+                )
+                if match is not None
+                else None
+            )
+            file_id = (
+                _decimal_integer(
+                    match.group("file_id"),
+                    INT64_MIN,
+                    INT64_MAX,
+                )
+                if match is not None
+                else None
+            )
+            if class_id is None or file_id is None:
+                yield None, []
+                header = None
+            else:
+                header = (class_id, file_id)
+            lines = []
+        elif header is not None:
+            lines.append(line)
+    if header is not None:
+        yield header, lines
+
+
+def _indent(line: str) -> int:
+    return len(line) - len(line.lstrip(" "))
+
+
+def _direct_script_field(
+    lines: Sequence[str],
+) -> Optional[Tuple[int, int, str]]:
+    type_index = None
+    type_indent = 0
+    for index, line in enumerate(lines):
+        if line.strip() == "MonoBehaviour:":
+            type_index = index
+            type_indent = _indent(line)
+            break
+    if type_index is None:
+        return None
+    field_indent = type_indent + 2
+    for index in range(type_index + 1, len(lines)):
+        line = lines[index]
+        if not line.strip():
+            continue
+        indent = _indent(line)
+        if indent <= type_indent:
+            break
+        if (
+            indent == field_indent
+            and line.strip().startswith("m_Script:")
+        ):
+            value = line.strip()[len("m_Script:") :].strip()
+            return index, field_indent, value
+    return None
+
+
+def _inline_fields(raw: str) -> Optional[Dict[str, str]]:
+    map_match = INLINE_MAP.fullmatch(raw)
+    if map_match is None:
+        return None
+    fields: Dict[str, str] = {}
+    body = map_match.group("body")
+    if not body:
+        return fields
+    for entry in body.split(","):
+        match = INLINE_ENTRY.fullmatch(entry)
+        if match is None or match.group("key") in fields:
+            return None
+        fields[match.group("key")] = match.group("value").strip().strip("'\"")
+    return fields
+
+
+def _decimal_integer(raw: Optional[str], minimum: int, maximum: int) -> Optional[int]:
+    if raw is None or DECIMAL_INTEGER.fullmatch(raw) is None:
+        return None
+    try:
+        value = int(raw)
+    except ValueError:
+        return None
+    return value if minimum <= value <= maximum else None
+
+
+def _block_fields(
+    lines: Sequence[str],
+    field_index: int,
+    field_indent: int,
+) -> Tuple[Dict[str, str], str]:
+    fields: Dict[str, str] = {}
+    raw_lines: List[str] = []
+    for line in lines[field_index + 1 :]:
+        if not line.strip():
+            raw_lines.append(line)
+            continue
+        if _indent(line) <= field_indent:
+            break
+        raw_lines.append(line)
+        if _indent(line) != field_indent + 2:
+            continue
+        key, separator, value = line.strip().partition(":")
+        if separator and key.strip() in {"fileID", "guid", "type"}:
+            fields[key.strip()] = value.strip().strip("'\"")
+    return fields, "\n".join(raw_lines).strip()
+
+
+def _bounded_raw_reference(raw: str) -> str:
+    text = raw.replace("\r\n", "\n").replace("\r", "\n")
+    text = "".join(
+        character
+        if character >= " " or character in "\t\n"
+        else " "
+        for character in text
+    )
+    if len(text) > 512:
+        return text[:509] + "..."
+    return text
+
+
+def _new_binding_census() -> Dict[str, object]:
+    return {
+        "rows": 0,
+        "candidate_source_files": 0,
+        "source_asset_kind": {key: 0 for key in CENSUS_SOURCE_KINDS},
+        "reference_shape": {
+            key: 0 for key in ("structured", "null", "malformed")
+        },
+        "target_category": {key: 0 for key in CENSUS_TARGET_CATEGORIES},
+        "asset_resolution": {
+            key: 0 for key in ASSET_RESOLUTIONS
+        },
+        "script_object_resolution": {
+            key: 0 for key in SCRIPT_OBJECT_RESOLUTIONS
+        },
+        "non_typical_file_id_rows": 0,
+        "warning_codes": {},
+        "samples": {},
+        "_file_ids": set(),
+    }
+
+
+def _target_category(row: Dict[str, object]) -> str:
+    shape = row.get("reference_shape")
+    if shape in {"null", "malformed"}:
+        return str(shape)
+    kind = row.get("target_asset_kind")
+    if kind == "cs":
+        return "cs"
+    if kind == "binary":
+        path = str(row.get("target_asset_path") or "")
+        return "dll" if path.casefold().endswith(".dll") else "binary_other"
+    if kind == "unresolved":
+        return "unresolved"
+    return "other"
+
+
+def _binding_sample(row: Dict[str, object]) -> Dict[str, object]:
+    guid = row.get("m_script_guid")
+    return {
+        "source_asset_path": row.get("source_asset_path"),
+        "source_asset_kind": row.get("source_asset_kind"),
+        "source_object_file_id": row.get("source_object_file_id"),
+        "reference_shape": row.get("reference_shape"),
+        "m_script_file_id": row.get("m_script_file_id"),
+        "m_script_guid_sha256": (
+            hashlib.sha256(str(guid).encode("ascii")).hexdigest()
+            if guid is not None
+            else None
+        ),
+        "m_script_type": row.get("m_script_type"),
+        "target_asset_kind": row.get("target_asset_kind"),
+        "target_asset_path": row.get("target_asset_path"),
+        "target_asset_candidate_count": len(
+            row.get("target_asset_candidates") or []
+        ),
+        "asset_resolution": row.get("asset_resolution"),
+        "asset_resolution_reason": row.get("asset_resolution_reason"),
+        "script_object_resolution": row.get("script_object_resolution"),
+    }
+
+
+def _increment(counts: Dict[str, int], key: object) -> None:
+    name = str(key)
+    counts[name] = counts.get(name, 0) + 1
+
+
+def _record_binding_census_row(
+    census: Dict[str, object],
+    row: Dict[str, object],
+) -> None:
+    census["rows"] += 1
+    _increment(census["source_asset_kind"], row.get("source_asset_kind"))
+    _increment(census["reference_shape"], row.get("reference_shape"))
+    _increment(census["target_category"], _target_category(row))
+    _increment(census["asset_resolution"], row.get("asset_resolution"))
+    _increment(
+        census["script_object_resolution"],
+        row.get("script_object_resolution"),
+    )
+    file_id = row.get("m_script_file_id")
+    if file_id is not None:
+        census["_file_ids"].add(file_id)
+    if (
+        row.get("reference_shape") == "structured"
+        and file_id != TYPICAL_SCRIPT_FILE_ID
+    ):
+        census["non_typical_file_id_rows"] += 1
+
+    categories = [_target_category(row)]
+    if (
+        row.get("reference_shape") == "structured"
+        and file_id != TYPICAL_SCRIPT_FILE_ID
+    ):
+        categories.append("non_typical_file_id")
+    if row.get("source_asset_kind") == "asset":
+        categories.append("asset")
+    for key in ("source_asset_path", "target_asset_path"):
+        if str(row.get(key) or "").startswith("Packages/"):
+            categories.append("packages")
+            break
+    for category in categories:
+        census["samples"].setdefault(category, _binding_sample(row))
+
+
+def _finalize_binding_census(
+    census: Dict[str, object],
+    warnings: Sequence[Dict[str, object]],
+) -> None:
+    census["distinct_m_script_file_ids"] = len(census.pop("_file_ids"))
+    for warning in warnings:
+        _increment(census["warning_codes"], warning.get("code"))
+
+
+def _parse_script_reference(
+    lines: Sequence[str],
+    field_index: int,
+    field_indent: int,
+    value: str,
+) -> Dict[str, object]:
+    raw = value
+    if value.startswith("{") and value.endswith("}"):
+        fields = _inline_fields(value) or {}
+    elif value == "" or value in {"null", "~"}:
+        fields, raw = _block_fields(lines, field_index, field_indent)
+    elif value == "0":
+        fields = {"fileID": "0"}
+    else:
+        fields = {}
+
+    file_id_raw = fields.get("fileID")
+    guid_raw = fields.get("guid")
+    type_raw = fields.get("type")
+    file_id = _decimal_integer(file_id_raw, INT64_MIN, INT64_MAX)
+    script_type = _decimal_integer(
+        type_raw,
+        -(1 << 31),
+        (1 << 31) - 1,
+    )
+    guid = (
+        guid_raw.lower()
+        if guid_raw is not None and GUID_PATTERN.fullmatch(guid_raw)
+        else None
+    )
+    malformed = any(
+        (
+            file_id_raw is not None and file_id is None,
+            guid_raw is not None and guid is None,
+            type_raw is not None and script_type is None,
+        )
+    )
+
+    if file_id == 0 and not malformed:
+        return {
+            "reference_shape": "null",
+            "m_script_file_id": "0",
+            "m_script_guid": guid,
+            "m_script_type": script_type,
+        }
+    if file_id is not None and guid is not None and not malformed:
+        return {
+            "reference_shape": "structured",
+            "m_script_file_id": str(file_id),
+            "m_script_guid": guid,
+            "m_script_type": script_type,
+        }
+    return {
+        "reference_shape": "malformed",
+        "m_script_file_id": str(file_id) if file_id is not None else None,
+        "m_script_guid": guid,
+        "m_script_type": script_type,
+        "raw_reference": _bounded_raw_reference(raw),
+    }
+
+
+def _parse_source(
+    path: Path,
+    root: Path,
+    text: str,
+) -> Tuple[List[Dict[str, object]], Optional[Dict[str, object]]]:
+    rows: List[Dict[str, object]] = []
+    if "--- !u!114" not in text:
+        return rows, None
+    kind = SOURCE_KINDS[path.suffix.lower()]
+    source_path = _relative(path, root)
+    malformed = False
+    for header, lines in _iter_documents(text):
+        if header is None:
+            malformed = True
+            continue
+        class_id, object_file_id = header
+        if class_id != 114:
+            continue
+        field = _direct_script_field(lines)
+        if field is None:
+            continue
+        field_index, field_indent, value = field
+        row: Dict[str, object] = {
+            "source_asset_path": source_path,
+            "source_asset_kind": kind,
+            "source_object_file_id": str(object_file_id),
+            "source_class_id": 114,
+            "source_class_name": "MonoBehaviour",
+        }
+        row.update(
+            _parse_script_reference(
+                lines,
+                field_index,
+                field_indent,
+                value,
+            )
+        )
+        rows.append(row)
+    warning = (
+        _warning(
+            "malformed_document",
+            "Source contains an unparseable Unity YAML document header.",
+            source_path,
+        )
+        if malformed
+        else None
+    )
+    return rows, warning
+
+
+def _asset_kind(path: Path) -> str:
+    suffix = path.suffix.lower()
+    if suffix == ".cs":
+        return "cs"
+    if suffix == ".dll" or suffix in BINARY_SUFFIXES:
+        return "binary"
+    return "other"
+
+
+def _read_metadata(
+    path: Path,
+) -> Tuple[Path, Optional[bytes], Optional[OSError]]:
+    try:
+        return path, path.read_bytes(), None
+    except OSError as error:
+        return path, None, error
+
+
+def _metadata_reads(
+    paths: Sequence[Path],
+    deadline: float,
+) -> Iterator[Tuple[Path, Optional[bytes], Optional[OSError]]]:
+    if not paths:
+        return
+    workers = min(METADATA_READ_WORKERS, len(paths))
+    executor = concurrent.futures.ThreadPoolExecutor(max_workers=workers)
+    iterator = iter(paths)
+    pending = deque()
+    try:
+        while True:
+            while len(pending) < workers:
+                _check_deadline(deadline)
+                try:
+                    path = next(iterator)
+                except StopIteration:
+                    break
+                pending.append(executor.submit(_read_metadata, path))
+            if not pending:
+                break
+            _check_deadline(deadline)
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                _check_deadline(deadline)
+            try:
+                result = pending.popleft().result(timeout=remaining)
+            except concurrent.futures.TimeoutError as error:
+                raise NavigationError(
+                    "timeout",
+                    "The binding metadata scan timed out before evidence "
+                    "collection completed.",
+                ) from error
+            yield result
+    finally:
+        for future in pending:
+            future.cancel()
+        executor.shutdown(wait=False, cancel_futures=True)
+
+
+def _build_guid_index(
+    root: Path,
+    files: Sequence[Path],
+    deadline: float,
+) -> Tuple[Dict[str, List[Dict[str, object]]], List[Dict[str, object]]]:
+    index: Dict[str, List[Dict[str, object]]] = defaultdict(list)
+    warnings: List[Dict[str, object]] = []
+    meta_paths = [
+        path
+        for path in files
+        if path.suffix.lower() == ".meta"
+        and path.with_suffix("").suffix.lower() != ".meta"
+    ]
+    for meta_path, data, read_error in _metadata_reads(meta_paths, deadline):
+        _check_deadline(deadline)
+        target = meta_path.with_suffix("")
+        relative = _relative(meta_path, root)
+        if read_error is not None:
+            warnings.append(
+                _warning(
+                    "metadata_unusable",
+                    f"Metadata could not be read: {read_error}",
+                    relative,
+                )
+            )
+            continue
+        unreadable = False
+        try:
+            text = data.decode("utf-8-sig")
+        except UnicodeDecodeError:
+            text = data.decode("utf-8-sig", errors="replace")
+            unreadable = True
+            warnings.append(
+                _warning(
+                    "metadata_unusable",
+                    "Metadata is not valid UTF-8 and was only partially read.",
+                    relative,
+                )
+            )
+        guid_matches = list(META_GUID.finditer(text))
+        if not guid_matches:
+            warnings.append(
+                _warning(
+                    "metadata_unusable",
+                    "Metadata has no valid GUID.",
+                    relative,
+                )
+            )
+            continue
+        if len(META_GUID_KEY.findall(text)) != 1 or len(guid_matches) != 1:
+            unreadable = True
+            warnings.append(
+                _warning(
+                    "metadata_unusable",
+                    "Metadata must have exactly one valid GUID.",
+                    relative,
+                )
+            )
+        version_match = META_VERSION.search(text)
+        if version_match is None:
+            unreadable = True
+            warnings.append(
+                _warning(
+                    "metadata_unusable",
+                    "Metadata has no usable fileFormatVersion.",
+                    relative,
+                )
+            )
+        else:
+            version_value = version_match.group(1)
+            if len(version_value) > MAX_METADATA_VERSION_DIGITS:
+                unreadable = True
+                warnings.append(
+                    _warning(
+                        "metadata_unusable",
+                        "Metadata has an unsupported fileFormatVersion.",
+                        relative,
+                    )
+                )
+            else:
+                try:
+                    int(version_value)
+                except ValueError:
+                    unreadable = True
+                    warnings.append(
+                        _warning(
+                            "metadata_unusable",
+                            "Metadata has an unusable fileFormatVersion.",
+                            relative,
+                        )
+                    )
+        guids = {match.group(1).lower() for match in guid_matches}
+        try:
+            exists = (
+                target.is_file()
+                and not _is_link_like(target)
+                and _within(target, root)
+            )
+        except OSError:
+            exists = False
+        for guid in guids:
+            index[guid].append(
+                {
+                    "exists": exists,
+                    "kind": _asset_kind(target),
+                    "metadata_unreadable": unreadable,
+                    "path": _relative(target, root),
+                }
+            )
+    for candidates in index.values():
+        candidates.sort(
+            key=lambda item: (
+                str(item["path"]).casefold(),
+                str(item["path"]),
+                str(item["kind"]),
+            )
+        )
+    return index, warnings
+
+
+def _target_fields(
+    reference_shape: object,
+    script_guid: object,
+    index: Dict[str, List[Dict[str, object]]],
+) -> Dict[str, object]:
+    fields: Dict[str, object] = {
+        "target_asset_kind": "not_applicable",
+        "target_asset_path": None,
+        "target_asset_candidates": [],
+        "asset_resolution": "not_applicable",
+        "asset_resolution_reason": None,
+        "script_object_resolution": "not_applicable",
+    }
+    if reference_shape != "structured" or not isinstance(script_guid, str):
+        return fields
+    candidates = index.get(script_guid, [])
+    if not candidates:
+        fields.update(
+            target_asset_kind="unresolved",
+            asset_resolution="missing",
+            asset_resolution_reason="missing_meta",
+        )
+        return fields
+    if len(candidates) > 1:
+        fields.update(
+            target_asset_kind="unresolved",
+            target_asset_candidates=[
+                {
+                    "kind": candidate["kind"],
+                    "path": candidate["path"],
+                }
+                for candidate in candidates
+            ],
+            asset_resolution="ambiguous",
+            asset_resolution_reason="duplicate_guid",
+        )
+        return fields
+    candidate = candidates[0]
+    if candidate.get("metadata_unreadable"):
+        fields.update(
+            target_asset_kind="unresolved",
+            asset_resolution="missing",
+            asset_resolution_reason="unreadable_meta",
+        )
+        return fields
+    if not candidate["exists"]:
+        fields.update(
+            target_asset_kind="unresolved",
+            asset_resolution="missing",
+            asset_resolution_reason="missing_target",
+        )
+        return fields
+    kind = str(candidate["kind"])
+    path = str(candidate["path"])
+    fields.update(
+        target_asset_kind=kind,
+        target_asset_path=path,
+        asset_resolution="resolved",
+    )
+    if kind == "cs":
+        fields["script_object_resolution"] = "asset_level_only"
+    elif kind == "binary" and path.lower().endswith(".dll"):
+        fields["script_object_resolution"] = "not_verifiable_binary"
+    elif kind == "binary":
+        fields.update(
+            asset_resolution="unsupported_binary",
+            asset_resolution_reason="unsupported_format",
+        )
+    return fields
+
+
+def _row_key(
+    row: Dict[str, object],
+) -> Tuple[str, int, str, str, str, str]:
+    return (
+        str(row["source_asset_path"]),
+        int(row["source_object_file_id"]),
+        str(row.get("m_script_guid") or ""),
+        str(row.get("m_script_file_id") or ""),
+        str(row["reference_shape"]),
+        (
+            str(row["m_script_type"])
+            if row.get("m_script_type") is not None
+            else ""
+        ),
+    )
+
+
+def _positioned_rows(
+    rows: Sequence[Dict[str, object]],
+) -> List[Tuple[Tuple[str, int, str, str, str, str, int], Dict[str, object]]]:
+    keyed = [(_row_key(row), row) for row in rows]
+    keyed.sort(key=lambda item: item[0])
+    positioned: List[
+        Tuple[Tuple[str, int, str, str, str, str, int], Dict[str, object]]
+    ] = []
+    previous = None
+    occurrence = 0
+    for key, row in keyed:
+        if key == previous:
+            occurrence += 1
+        else:
+            previous = key
+            occurrence = 0
+        positioned.append((key + (occurrence,), row))
+    return positioned
+
+
+def _read_source(
+    path: Path,
+    root: Path,
+) -> Tuple[Optional[str], Optional[Dict[str, object]]]:
+    relative = _relative(path, root)
+    try:
+        data = path.read_bytes()
+    except OSError as error:
+        return None, _warning(
+            "source_unreadable",
+            f"Candidate source asset could not be read: {error}",
+            relative,
+        )
+    if b"\x00" in data:
+        return None, _warning(
+            "source_binary",
+            "Candidate source asset is binary and was not inspected.",
+            relative,
+        )
+    try:
+        text = data.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        return None, _warning(
+            "source_binary",
+            "Candidate source asset is not UTF-8 text and was not inspected.",
+            relative,
+        )
+    if not text.lstrip().startswith("%YAML") and "--- !u!" not in text:
+        return None, _warning(
+            "source_unrecognized",
+            "Candidate source asset is not recognized as Unity text serialization.",
+            relative,
+        )
+    return text, None
+
+
+def _normalized_values(
+    values: Optional[Sequence[str]],
+    allowed: frozenset,
+    label: str,
+) -> List[str]:
+    if not values:
+        return []
+    normalized = set()
+    for value in values:
+        if value not in allowed:
+            raise NavigationError(
+                "invalid_query",
+                f"Unsupported {label}: {value}",
+            )
+        normalized.add(value)
+    return sorted(normalized)
+
+
+def _normalized_source_paths(
+    root: Path,
+    included_roots: Sequence[Path],
+    values: Optional[Sequence[str]],
+) -> List[str]:
+    if not values:
+        return []
+    normalized = set()
+    for value in values:
+        target = _normalize_path(root, included_roots, value)
+        relative = _relative(target, root)
+        if target.suffix.lower() not in SOURCE_KINDS:
+            raise NavigationError(
+                "unsupported_format",
+                "Binding paths must name .unity, .prefab, or .asset sources.",
+            )
+        if not target.is_file():
+            raise NavigationError(
+                "invalid_query",
+                f"Binding source asset does not exist or is not a file: {relative}",
+            )
+        normalized.add(relative)
+    return sorted(normalized, key=lambda value: (value.casefold(), value))
+
+
+def _normalized_script_guids(
+    values: Optional[Sequence[str]],
+) -> List[str]:
+    if not values:
+        return []
+    normalized = set()
+    for value in values:
+        if GUID_PATTERN.fullmatch(value) is None:
+            raise NavigationError(
+                "invalid_query",
+                "Script GUID filters require 32 hexadecimal characters.",
+            )
+        normalized.add(value.lower())
+    return sorted(normalized)
+
+
+def _build_binding_query(
+    root: Path,
+    included_roots: Sequence[Path],
+    paths: Optional[Sequence[str]],
+    object_file_id: Optional[str],
+    script_guids: Optional[Sequence[str]],
+    reference_shapes: Optional[Sequence[str]],
+    asset_resolutions: Optional[Sequence[str]],
+    script_object_resolutions: Optional[Sequence[str]],
+) -> Dict[str, object]:
+    if object_file_id is not None and (
+        paths is None or len(paths) != 1
+    ):
+        raise NavigationError(
+            "invalid_query",
+            "--object-file-id requires exactly one --path.",
+        )
+    source_paths = _normalized_source_paths(root, included_roots, paths)
+    query: Dict[str, object] = {}
+    if source_paths:
+        query["source_asset_paths"] = source_paths
+    if object_file_id is not None:
+        parsed_object_id = _decimal_integer(
+            object_file_id,
+            INT64_MIN,
+            INT64_MAX,
+        )
+        if parsed_object_id is None:
+            raise NavigationError(
+                "invalid_query",
+                "--object-file-id requires a signed 64-bit decimal integer.",
+            )
+        query["source_object_file_id"] = str(parsed_object_id)
+    normalized_guids = _normalized_script_guids(script_guids)
+    if normalized_guids:
+        query["script_guids"] = normalized_guids
+    normalized_shapes = _normalized_values(
+        reference_shapes,
+        REFERENCE_SHAPES,
+        "reference shape",
+    )
+    if normalized_shapes:
+        query["reference_shapes"] = normalized_shapes
+    normalized_asset_resolutions = _normalized_values(
+        asset_resolutions,
+        ASSET_RESOLUTIONS,
+        "asset resolution",
+    )
+    if normalized_asset_resolutions:
+        query["asset_resolutions"] = normalized_asset_resolutions
+    normalized_object_resolutions = _normalized_values(
+        script_object_resolutions,
+        SCRIPT_OBJECT_RESOLUTIONS,
+        "script object resolution",
+    )
+    if normalized_object_resolutions:
+        query["script_object_resolutions"] = normalized_object_resolutions
+    return query
+
+
+def _matches_binding_query(
+    row: Dict[str, object],
+    query: Dict[str, object],
+) -> bool:
+    source_paths = query.get("source_asset_paths")
+    if source_paths and row["source_asset_path"] not in source_paths:
+        return False
+    object_file_id = query.get("source_object_file_id")
+    if object_file_id and row["source_object_file_id"] != object_file_id:
+        return False
+    script_guids = query.get("script_guids")
+    if script_guids and row.get("m_script_guid") not in script_guids:
+        return False
+    reference_shapes = query.get("reference_shapes")
+    if reference_shapes and row["reference_shape"] not in reference_shapes:
+        return False
+    asset_resolutions = query.get("asset_resolutions")
+    if asset_resolutions and row["asset_resolution"] not in asset_resolutions:
+        return False
+    object_resolutions = query.get("script_object_resolutions")
+    if object_resolutions and row["script_object_resolution"] not in object_resolutions:
+        return False
+    return True
+
+
+def bindings_query(
+    project: Optional[Path],
+    limit: Optional[str],
+    cursor: Optional[str],
+    timeout_seconds: Optional[str] = None,
+    *,
+    census_summary: bool = False,
+    paths: Optional[Sequence[str]] = None,
+    object_file_id: Optional[str] = None,
+    script_guids: Optional[Sequence[str]] = None,
+    reference_shapes: Optional[Sequence[str]] = None,
+    asset_resolutions: Optional[Sequence[str]] = None,
+    script_object_resolutions: Optional[Sequence[str]] = None,
+) -> Dict[str, object]:
+    """Return a version-1 component-script binding envelope."""
+
+    payload: Dict[str, object] = {
+        "schema_version": SCHEMA_VERSION,
+        "command": "bindings",
+        "status": "invalid_project",
+        "project": {"root": str(project) if project is not None else ""},
+        "query": {},
+        "results": [],
+        "limits": {},
+        "truncated": False,
+        "warnings": [],
+        "error": None,
+        "scan_coverage": "pending",
+        "next_cursor": None,
+    }
+    warnings: List[Dict[str, object]] = []
+    project_valid = False
+    timeout = DEFAULT_TIMEOUT_SECONDS
+    try:
+        if project is None:
+            raise NavigationError(
+                "invalid_project",
+                "The bindings command requires a Unity project root.",
+            )
+        root, included_roots = _validated_project(Path(project))
+        project_valid = True
+        project_info, version_warnings = _project_info(root, included_roots)
+        payload["project"] = project_info
+        warnings.extend(version_warnings)
+
+        page_limit = _parse_limit(limit)
+        timeout = _parse_timeout(timeout_seconds)
+        if census_summary and (
+            cursor is not None
+            or limit is not None
+            or object_file_id is not None
+        ):
+            raise NavigationError(
+                "invalid_query",
+                "--census-summary cannot be combined with --limit, --cursor, "
+                "or --object-file-id.",
+            )
+        query = _build_binding_query(
+            root,
+            included_roots,
+            paths,
+            object_file_id,
+            script_guids,
+            reference_shapes,
+            asset_resolutions,
+            script_object_resolutions,
+        )
+        payload["query"] = query
+        cursor_key = (
+            _decode_cursor(root, query, cursor)
+            if cursor is not None
+            else None
+        )
+        payload["limits"] = (
+            {
+                "limit": None,
+                "default_limit": DEFAULT_LIMIT,
+                "max_limit": MAX_LIMIT,
+                "timeout_seconds": timeout,
+                "census_summary": True,
+            }
+            if census_summary
+            else {
+                "limit": page_limit,
+                "default_limit": DEFAULT_LIMIT,
+                "max_limit": MAX_LIMIT,
+                "timeout_seconds": timeout,
+            }
+        )
+
+        deadline = time.monotonic() + timeout
+        _check_deadline(deadline)
+        files, scan_warnings = _walk_files(
+            root,
+            included_roots,
+            deadline=deadline,
+        )
+        warnings.extend(scan_warnings)
+        guid_index, metadata_warnings = _build_guid_index(
+            root,
+            files,
+            deadline,
+        )
+        warnings.extend(metadata_warnings)
+        rows: List[Dict[str, object]] = []
+        census = _new_binding_census() if census_summary else None
+        source_warnings: List[Dict[str, object]] = []
+        for path in files:
+            _check_deadline(deadline)
+            if path.suffix.lower() not in SOURCE_KINDS:
+                continue
+            if census is not None:
+                census["candidate_source_files"] += 1
+            text, warning = _read_source(path, root)
+            if warning is not None:
+                source_warnings.append(warning)
+                continue
+            parsed_rows, parse_warning = _parse_source(path, root, str(text))
+            if parse_warning is not None:
+                source_warnings.append(parse_warning)
+            for row in parsed_rows:
+                row.update(
+                    _target_fields(
+                        row["reference_shape"],
+                        row.get("m_script_guid"),
+                        guid_index,
+                    )
+                )
+                if census is None:
+                    rows.append(row)
+                elif _matches_binding_query(row, query):
+                    _record_binding_census_row(census, row)
+        _check_deadline(deadline)
+        warnings.extend(source_warnings)
+
+        coverage = (
+            "partial"
+            if scan_warnings or source_warnings or metadata_warnings
+            else "complete"
+        )
+        if census is not None:
+            _finalize_binding_census(census, warnings)
+            payload["census"] = census
+            payload["scan_coverage"] = coverage
+            payload["status"] = (
+                "partial" if coverage == "partial" else "ok"
+            )
+        else:
+            rows = [row for row in rows if _matches_binding_query(row, query)]
+            unique_status = None
+            if object_file_id is not None:
+                if not rows:
+                    unique_status = "not_found"
+                elif len(rows) > 1:
+                    unique_status = "ambiguous"
+            _check_deadline(deadline)
+            positioned = _positioned_rows(rows)
+            _check_deadline(deadline)
+            if cursor_key is not None and not any(
+                item[0] == cursor_key for item in positioned
+            ):
+                raise NavigationError(
+                    "invalid_query",
+                    "The cursor position does not belong to this query.",
+                )
+            if cursor_key is not None:
+                positioned = [
+                    item for item in positioned if item[0] > cursor_key
+                ]
+            page_positions = positioned[:page_limit]
+            page = [row for _, row in page_positions]
+            has_more = len(positioned) > page_limit
+            payload["results"] = page
+            payload["next_cursor"] = (
+                _encode_cursor(root, query, page_positions[-1][0])
+                if has_more and page
+                else None
+            )
+            payload["scan_coverage"] = (
+                "pending"
+                if coverage == "complete" and has_more
+                else coverage
+            )
+            if coverage == "partial":
+                payload["status"] = "partial"
+            elif unique_status is not None:
+                payload["status"] = unique_status
+            else:
+                payload["status"] = "ok"
+    except NavigationError as error:
+        if error.code == "timeout":
+            message = (
+                f"The binding scan timed out after {timeout:g} seconds; "
+                "evidence is incomplete."
+            )
+            payload["status"] = "timeout"
+            payload["scan_coverage"] = "partial"
+            warnings.append(_warning("timeout", message))
+            payload["error"] = {"code": "timeout", "message": message}
+        else:
+            payload["error"] = {"code": error.code, "message": str(error)}
+            payload["status"] = (
+                "invalid_query" if project_valid else "invalid_project"
+            )
+    except OSError as error:
+        payload["status"] = "invalid_project"
+        payload["error"] = {"code": "invalid_project", "message": str(error)}
+    payload["warnings"] = _sorted_warnings(warnings)
+    return payload
+
+
+def bindings_exit_code(payload: Dict[str, object]) -> int:
+    status = payload.get("status")
+    if status == "ok":
+        return 0
+    if status in {"ambiguous", "not_found"}:
+        return 2
+    if status == "partial":
+        return 4
+    return 3

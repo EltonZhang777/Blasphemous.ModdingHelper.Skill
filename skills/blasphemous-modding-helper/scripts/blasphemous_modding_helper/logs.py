@@ -72,6 +72,8 @@ class EvidenceReport:
     sources: Tuple[LogEvidenceSource, ...]
     warnings: Tuple[str, ...]
     hits: Tuple[EvidenceHit, ...] = ()
+    evidence_source: str = "current"
+    snapshot_metadata: Optional[Mapping[str, object]] = None
 
 
 def _expand_path(value: str, base: Path) -> Path:
@@ -101,7 +103,7 @@ def resolve_unity_log_path(
         return None, (
             "Unity log directory is not configured. Ask the user for the Unity "
             "log directory, then add 'unity_log_dir: PATH' to the active "
-            f"preferences.md: {preference_path}"
+            f"config.yml: {preference_path}"
         )
 
     directory = _expand_path(configured, cwd or Path.cwd())
@@ -131,7 +133,7 @@ def resolve_unity_log_path(
     return directory / filenames[0], (
         f"{reason} Expected {expected}. Ask the user for the correct directory, "
         "then add or update 'unity_log_dir: PATH' in the active "
-        f"preferences.md: {preference_path}."
+        f"config.yml: {preference_path}."
     )
 
 
@@ -875,6 +877,8 @@ def wait_for_startup_evidence(
                 final_report.sources,
                 final_report.warnings,
                 final_report.hits,
+                final_report.evidence_source,
+                final_report.snapshot_metadata,
             )
             if update is not None:
                 update(timed_out)

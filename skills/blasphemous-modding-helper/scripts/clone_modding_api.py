@@ -22,6 +22,11 @@ if str(SCRIPT_ROOT) not in sys.path:
     sys.path.insert(0, str(SCRIPT_ROOT))
 
 from blasphemous_modding_helper.runtime import run_command  # noqa: E402
+from blasphemous_modding_helper.preferences import (  # noqa: E402
+    PreferenceError,
+    parse_preferences,
+    update_config_text,
+)
 import resolve_modding_api  # noqa: E402
 
 
@@ -94,7 +99,7 @@ def usage() -> str:
 Options:
   --scope project|user      Use the approved project or user reference path.
   --target-path PATH        Override the reference checkout path.
-  --preferences-file PATH   Write the selected path and selector to preferences.md.
+  --preferences-file PATH   Write the selected path and selector to config.yml.
   --selector SELECTOR       latest, tag:REF, branch:REF, or commit:SHA.
   --metadata-file PATH      Test-only resolver metadata fixture.
   --help                    Show this help.
@@ -206,19 +211,15 @@ def read_key_value(path: Optional[Path], key: str) -> str:
     if path is None or not path_exists(path):
         return ""
     try:
-        content = path.read_text(encoding="utf-8")
-    except (OSError, UnicodeError) as error:
+        values = parse_preferences(path)
+    except (OSError, UnicodeError, PreferenceError) as error:
         raise CloneError(
             EXIT_RUNTIME,
-            f"could not read preferences file: {path} ({error})",
-            "Fix the preferences path or permissions, then retry.",
+            f"could not read config.yml: {path} ({error})",
+            "Fix the config path or permissions, then retry.",
         ) from error
-    pattern = re.compile(r"^[ \t]*" + re.escape(key) + r"[ \t]*:[ \t]*(.*)$")
-    for line in content.splitlines():
-        match = pattern.match(line)
-        if match:
-            return match.group(1).strip()
-    return ""
+    value = values.get(key, "")
+    return value.strip() if isinstance(value, str) else ""
 
 
 def select_preference_context(state: CloneState) -> Optional[Path]:
@@ -229,9 +230,9 @@ def select_preference_context(state: CloneState) -> Optional[Path]:
         else Path.home()
     )
     project_target = cwd / ".skills" / "blasphemous-modding-helper" / "references" / "modding-api"
-    project_preferences = cwd / ".skills" / "blasphemous-modding-helper" / "preferences.md"
+    project_preferences = cwd / ".skills" / "blasphemous-modding-helper" / "config.yml"
     user_target = home / ".skills" / "blasphemous-modding-helper" / "references" / "modding-api"
-    user_preferences = home / ".skills" / "blasphemous-modding-helper" / "preferences.md"
+    user_preferences = home / ".skills" / "blasphemous-modding-helper" / "config.yml"
     default_target: Optional[Path] = None
     default_preferences: Optional[Path] = None
 
@@ -268,8 +269,8 @@ def select_preference_context(state: CloneState) -> Optional[Path]:
         ):
             raise CloneError(
                 EXIT_USAGE,
-                f"preferences file scope does not match --scope {state.scope}",
-                "Use the preferences path belonging to the selected scope.",
+                f"configuration file scope does not match --scope {state.scope}",
+                "Use the configuration path belonging to the selected scope.",
             )
     return default_target
 
@@ -288,7 +289,7 @@ def select_target(state: CloneState, default_target: Optional[Path]) -> None:
                 EXIT_USAGE,
                 "no local reference path was provided",
                 "Use --target-path, --scope, or configure "
-                "modding_api_reference_path in preferences.md.",
+                "modding_api_reference_path in config.yml.",
             )
     state.target_path = normalize_path(target)
     state.lock_path = Path(str(state.target_path) + ".lock")
@@ -305,7 +306,7 @@ def select_selector(state: CloneState) -> None:
         raise CloneError(
             EXIT_USAGE,
             "no selector was configured",
-            "Use --selector or add modding_api_reference_selector to preferences.md.",
+            "Use --selector or add modding_api_reference_selector to config.yml.",
         )
 
 
@@ -584,25 +585,14 @@ def atomic_write(path: Path, content: str) -> Tuple[int, int, int, int]:
 def write_preferences(state: CloneState) -> Tuple[int, int, int, int]:
     assert state.preferences_file is not None
     existing = state.preferences_content if state.preferences_existed else ""
-    lines = existing.splitlines()
-    output: List[str] = []
-    path_seen = False
-    selector_seen = False
-    reference_path = str(state.target_path)
-    for line in lines:
-        if re.match(r"^\s*modding_api_reference_path\s*:", line):
-            output.append(f"modding_api_reference_path: {reference_path}")
-            path_seen = True
-        elif re.match(r"^\s*modding_api_reference_selector\s*:", line):
-            output.append(f"modding_api_reference_selector: {state.selector}")
-            selector_seen = True
-        else:
-            output.append(line)
-    if not path_seen:
-        output.append(f"modding_api_reference_path: {reference_path}")
-    if not selector_seen:
-        output.append(f"modding_api_reference_selector: {state.selector}")
-    return atomic_write(state.preferences_file, "\n".join(output) + "\n")
+    updated = update_config_text(
+        existing,
+        {
+            "modding_api_reference_path": str(state.target_path),
+            "modding_api_reference_selector": state.selector,
+        },
+    )
+    return atomic_write(state.preferences_file, updated)
 
 
 def write_lock_state(state: CloneState) -> None:
@@ -673,8 +663,8 @@ def capture_preferences(state: CloneState) -> None:
         except (OSError, UnicodeError) as error:
             raise CloneError(
                 EXIT_RUNTIME,
-                f"could not read preferences file: {state.preferences_file} ({error})",
-                "Fix the preferences path or permissions, then retry.",
+                f"could not read configuration file: {state.preferences_file} ({error})",
+                "Fix the configuration path or permissions, then retry.",
             ) from error
 
 
@@ -716,13 +706,13 @@ def rollback(state: CloneState) -> List[str]:
                 state.preferences_file,
                 state.preferences_after_identity,
             ):
-                raise OSError(f"preferences file was replaced: {state.preferences_file}")
+                raise OSError(f"configuration file was replaced: {state.preferences_file}")
             if state.preferences_existed:
                 atomic_write(state.preferences_file, state.preferences_content)
             elif path_exists(state.preferences_file):
                 state.preferences_file.unlink()
         except OSError as error:
-            errors.append(f"preferences restore: {error}")
+            errors.append(f"configuration restore: {error}")
     return errors
 
 

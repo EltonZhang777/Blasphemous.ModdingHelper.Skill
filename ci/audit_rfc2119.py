@@ -164,13 +164,17 @@ def audit_file(path: Path, skill_root: Path) -> list[tuple[int, str, str]]:
 
 
 def parse_args() -> argparse.Namespace:
-    default_root = Path(__file__).resolve().parents[1]
+    default_root = (
+        Path(__file__).resolve().parents[1]
+        / "skills"
+        / "blasphemous-modding-helper"
+    )
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--root",
         type=Path,
         default=default_root,
-        help="Skill directory to audit (default: this script's parent Skill directory)",
+        help="Skill directory to audit (default: packaged Skill directory)",
     )
     parser.add_argument(
         "--strict",

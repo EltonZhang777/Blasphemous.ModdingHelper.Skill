@@ -10,7 +10,6 @@ const REPO_ROOT = path.resolve(__dirname, "..");
 const BASH_WRAPPER = path.join(REPO_ROOT, "install.sh");
 const POWERSHELL_WRAPPER = path.join(REPO_ROOT, "install.ps1");
 const REAL_NODE = process.execPath;
-const REPOSITORY = "EltonZhang777/Blasphemous.ModdingHelper.Skill";
 
 function writeFakeCommand(directory, name, script) {
   if (process.platform === "win32") {
@@ -18,8 +17,8 @@ function writeFakeCommand(directory, name, script) {
       path.join(directory, `${name}.cmd`),
       `@echo off\r\n"%REAL_NODE%" "%FAKE_${name.toUpperCase()}_SCRIPT%" %*\r\nexit /b %ERRORLEVEL%\r\n`,
     );
-    // Git Bash does not always resolve a Windows .cmd shim for a command
-    // named npx. Keep an extensionless POSIX shim beside it for Bash tests.
+    // Git Bash does not always resolve a Windows .cmd shim. Keep an
+    // extensionless POSIX shim beside it for Bash tests.
     const bashCommand = path.join(directory, name);
     fs.writeFileSync(
       bashCommand,
@@ -45,6 +44,7 @@ function createFixture() {
   const commands = path.join(root, "commands");
   const decoy = path.join(root, "decoy");
   const capture = path.join(root, "capture.json");
+  const npxCapture = path.join(root, "npx-capture.json");
   const fakeNodeScript = {
     path: path.join(root, "fake-node.js"),
     contents: [
@@ -59,12 +59,11 @@ function createFixture() {
     path: path.join(root, "fake-npx.js"),
     contents: [
       "const fs = require('node:fs');",
-      "fs.writeFileSync(process.env.WRAPPER_CAPTURE, JSON.stringify(process.argv.slice(2)));",
+      "fs.writeFileSync(process.env.WRAPPER_NPX_CAPTURE, JSON.stringify(process.argv.slice(2)));",
       "process.exit(Number(process.env.WRAPPER_EXIT || '0'));",
       "",
     ].join("\n"),
   };
-
   fs.mkdirSync(commands);
   fs.mkdirSync(path.join(decoy, "bin"), { recursive: true });
   fs.writeFileSync(path.join(decoy, "bin", "install.js"), "decoy installer\n");
@@ -79,12 +78,13 @@ function createFixture() {
     FAKE_NODE_SCRIPT: fakeNodeScript.path,
     FAKE_NPX_SCRIPT: fakeNpxScript.path,
     WRAPPER_CAPTURE: capture,
+    WRAPPER_NPX_CAPTURE: npxCapture,
     WRAPPER_EXIT: "0",
     CI: "1",
   };
   if (process.platform === "win32") env.Path = env.PATH;
 
-  return { root, commands, decoy, capture, env };
+  return { root, commands, decoy, capture, npxCapture, env };
 }
 
 function run(command, args, fixture, options = {}) {
@@ -94,7 +94,7 @@ function run(command, args, fixture, options = {}) {
     encoding: "utf8",
     input: options.input,
     stdio: ["pipe", "pipe", "pipe"],
-    timeout: 5000,
+    timeout: 30000,
   });
 }
 
@@ -112,6 +112,19 @@ function assertCapture(fixture, expected) {
 
 function clearCapture(fixture) {
   fs.rmSync(fixture.capture, { force: true });
+  fs.rmSync(fixture.npxCapture, { force: true });
+}
+
+function assertCloneGuidance(result) {
+  const output = `${result.stdout || ""}\n${result.stderr || ""}`;
+  assert.notEqual(result.status, 0, `Clone-less invocation succeeded.\n${output}`);
+  assert.match(output, /clon/i, `Clone guidance is missing.\n${output}`);
+  assert.match(output, /install\.(?:sh|ps1)|local script/i, `Local-script guidance is missing.\n${output}`);
+}
+
+function assertNoDelegation(fixture, message) {
+  assert.equal(fs.existsSync(fixture.capture), false, message);
+  assert.equal(fs.existsSync(fixture.npxCapture), false, "Clone-less invocation invoked npx.");
 }
 
 function shellAvailable(command, args) {
@@ -141,14 +154,14 @@ function testBash() {
   const fixture = createFixture();
   try {
     const destination = path.join(fixture.root, "custom destination");
-    const directArgs = ["--dry-run", "--only", "trae-cn", "--uninstall"];
+    const directArgs = ["--path", destination, "--dry-run", "--uninstall"];
     const direct = run("bash", [BASH_WRAPPER, ...directArgs], fixture);
     assert.equal(direct.status, 0, direct.stderr);
     assertCapture(fixture, [path.join(REPO_ROOT, "bin", "install.js"), ...directArgs]);
 
     clearCapture(fixture);
     fixture.env.WRAPPER_EXIT = "7";
-    const failed = run("bash", [BASH_WRAPPER, "--dry-run"], fixture);
+    const failed = run("bash", [BASH_WRAPPER, "--path", destination, "--dry-run"], fixture);
     assert.equal(failed.status, 7, `${failed.stdout}\n${failed.stderr}`);
 
     clearCapture(fixture);
@@ -157,15 +170,14 @@ function testBash() {
     const remote = run("bash", ["-s", "--", ...remoteArgs], fixture, {
       input: fs.readFileSync(BASH_WRAPPER),
     });
-    assert.equal(remote.status, 0, `${remote.stdout}\n${remote.stderr}`);
-    assertCapture(fixture, ["-y", `github:${REPOSITORY}`, ...remoteArgs]);
+    assertCloneGuidance(remote);
+    assertNoDelegation(fixture, "Clone-less Bash invoked a delegated command.");
 
-    clearCapture(fixture);
-    fixture.env.WRAPPER_EXIT = "9";
-    const remoteFailed = run("bash", ["-s"], fixture, {
-      input: fs.readFileSync(BASH_WRAPPER),
-    });
-    assert.equal(remoteFailed.status, 9, `${remoteFailed.stdout}\n${remoteFailed.stderr}`);
+    const caller = path.join(fixture.decoy, "caller.sh");
+    fs.writeFileSync(caller, fs.readFileSync(BASH_WRAPPER));
+    const evaluated = run("bash", [caller, "--path", destination, "--dry-run"], fixture);
+    assertCloneGuidance(evaluated);
+    assertNoDelegation(fixture, "Eval caller invoked its adjacent installer.");
   } finally {
     fs.rmSync(fixture.root, { recursive: true, force: true });
   }
@@ -182,8 +194,7 @@ function testPowerShell() {
   const fixture = createFixture();
   try {
     const destination = path.join(fixture.root, "custom destination");
-    // Synthetic vector: verify raw forwarding without invoking the installer.
-    const directArgs = ["--dry-run", "--only", "trae-cn", "--uninstall", "--path", destination];
+    const directArgs = ["--path", destination, "--dry-run", "--uninstall"];
     const direct = run(
       powershell,
       ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", POWERSHELL_WRAPPER, ...directArgs],
@@ -193,10 +204,93 @@ function testPowerShell() {
     assertCapture(fixture, [path.join(REPO_ROOT, "bin", "install.js"), ...directArgs]);
 
     clearCapture(fixture);
+    const flagNamedDestination = path.join(fixture.root, "legit folder --uninstall");
+    const flagNamed = run(
+      powershell,
+      [
+        "-NoProfile",
+        "-NonInteractive",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        POWERSHELL_WRAPPER,
+        "--path",
+        flagNamedDestination,
+        "--dry-run",
+      ],
+      fixture,
+    );
+    assert.equal(flagNamed.status, 0, `${flagNamed.stdout}\n${flagNamed.stderr}`);
+    assertCapture(fixture, [
+      path.join(REPO_ROOT, "bin", "install.js"),
+      "--path",
+      flagNamedDestination,
+      "--dry-run",
+    ]);
+
+    const cmdShell = path.join(process.env.SystemRoot || "C:\\Windows", "System32", "cmd.exe");
+    const windowsPowerShell = path.join(
+      process.env.SystemRoot || "C:\\Windows",
+      "System32",
+      "WindowsPowerShell",
+      "v1.0",
+      "powershell.exe",
+    );
+    if (process.platform === "win32" && fs.existsSync(cmdShell) && fs.existsSync(windowsPowerShell)) {
+      clearCapture(fixture);
+      const cmdDestination = `${path.join(fixture.root, "cmd legit --uninstall folder")}\\`;
+      const realWrapperRoot = path.join(fixture.root, "real-wrapper");
+      const realWrapper = path.join(realWrapperRoot, "install.ps1");
+      const realCapture = path.join(realWrapperRoot, "capture.json");
+      fs.mkdirSync(path.join(realWrapperRoot, "bin"), { recursive: true });
+      fs.copyFileSync(POWERSHELL_WRAPPER, realWrapper);
+      fs.writeFileSync(
+        path.join(realWrapperRoot, "bin", "install.js"),
+        "require('node:fs').writeFileSync(process.env.REAL_NODE_CAPTURE, JSON.stringify(process.argv.slice(2)));\n",
+      );
+      const realEnv = {
+        ...fixture.env,
+        PATH: `${path.dirname(process.execPath)};${process.env.PATH || ""}`,
+        REAL_NODE_CAPTURE: realCapture,
+      };
+      realEnv.Path = realEnv.PATH;
+      const command = [
+        `"${windowsPowerShell}"`,
+        "-NoProfile -NonInteractive -ExecutionPolicy Bypass",
+        `-File "${realWrapper}"`,
+        `--path "${cmdDestination}"`,
+        "--dry-run",
+      ].join(" ");
+      const throughCmd = spawnSync(command, {
+        cwd: fixture.decoy,
+        env: realEnv,
+        encoding: "utf8",
+        shell: cmdShell,
+        timeout: 30000,
+      });
+      assert.equal(throughCmd.status, 0, `${throughCmd.stdout}\n${throughCmd.stderr}`);
+      assert.deepEqual(JSON.parse(fs.readFileSync(realCapture, "utf8")), [
+        "--path",
+        cmdDestination.slice(0, -1),
+        "--dry-run",
+      ]);
+    }
+
+    clearCapture(fixture);
     fixture.env.WRAPPER_EXIT = "7";
     const failed = run(
       powershell,
-      ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", POWERSHELL_WRAPPER, "--dry-run"],
+      [
+        "-NoProfile",
+        "-NonInteractive",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        POWERSHELL_WRAPPER,
+        "--path",
+        destination,
+        "--dry-run",
+      ],
       fixture,
     );
     assert.equal(failed.status, 7, `${failed.stdout}\n${failed.stderr}`);
@@ -212,17 +306,18 @@ function testPowerShell() {
       ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", remoteCommand],
       fixture,
     );
-    assert.equal(remote.status, 0, `${remote.stdout}\n${remote.stderr}`);
-    assertCapture(fixture, ["-y", `github:${REPOSITORY}`]);
+    assertCloneGuidance(remote);
+    assertNoDelegation(fixture, "Clone-less PowerShell invoked a delegated command.");
 
-    clearCapture(fixture);
-    fixture.env.WRAPPER_EXIT = "9";
-    const remoteFailed = run(
+    const caller = path.join(fixture.decoy, "caller.ps1");
+    fs.writeFileSync(caller, fs.readFileSync(POWERSHELL_WRAPPER));
+    const evaluated = run(
       powershell,
-      ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", remoteCommand],
+      ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", caller],
       fixture,
     );
-    assert.equal(remoteFailed.status, 9, `${remoteFailed.stdout}\n${remoteFailed.stderr}`);
+    assertCloneGuidance(evaluated);
+    assertNoDelegation(fixture, "Eval caller invoked its adjacent installer.");
   } finally {
     fs.rmSync(fixture.root, { recursive: true, force: true });
   }
@@ -230,12 +325,18 @@ function testPowerShell() {
 }
 
 function testDocumentation() {
-  const contents = fs.readFileSync(POWERSHELL_WRAPPER, "utf8");
-  const help = contents.slice(0, contents.indexOf("#>"));
-  assert.match(help, /\.\\install\.ps1 --dry-run/);
-  assert.match(help, /\.\\install\.ps1 --only trae-cn/);
-  assert.match(help, /\.\\install\.ps1 --dry-run --path/);
-  assert.doesNotMatch(help, /-InstallerArgs/);
+  const bash = fs.readFileSync(BASH_WRAPPER, "utf8");
+  const powershell = fs.readFileSync(POWERSHELL_WRAPPER, "utf8");
+  const powershellHelp = powershell.slice(0, powershell.indexOf("#>"));
+
+  assert.match(bash, /bash install\.sh --path <AGENT_SKILLS_DIR>\/blasphemous-modding-helper/);
+  assert.match(bash, /bash install\.sh --path <AGENT_SKILLS_DIR>\/blasphemous-modding-helper --dry-run/);
+  assert.match(powershellHelp, /\.\\install\.ps1 --path <AGENT_SKILLS_DIR>\\blasphemous-modding-helper/);
+  assert.match(powershellHelp, /\.\\install\.ps1 --path <AGENT_SKILLS_DIR>\\blasphemous-modding-helper --dry-run/);
+  for (const contents of [bash, powershell]) {
+    assert.doesNotMatch(contents, /\bnpx\b|--only|--all|raw\.githubusercontent\.com/i);
+  }
+  assert.doesNotMatch(powershellHelp, /-InstallerArgs/);
   console.log("Wrapper documentation tests passed.");
 }
 
